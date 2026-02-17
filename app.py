@@ -86,7 +86,7 @@ T = {
         "notes": "Notes",
         "notes_body": "- Sidebar is collapsible (top-left arrow).\n- Drag & drop: yes — just drop your base Excel in the uploader.\n- Filters are on top (Game → Season → League).\n- Tabs keep things uncluttered.",
         "safe_delete": "Files you can safely delete",
-        "version": "F1 Game Dashboard • v20",
+        "version": "F1 Game Dashboard • v23",
         "language": "Language",
         "no_rows": "No rows match the current filters.",
         "not_enough": "Not enough data for this view.",
@@ -582,42 +582,30 @@ default_pairs = latest_per_game[latest_per_game["Game"].isin(default_games)]["Se
 
 game_options = ["All"] + games
 
-f1, f2 = st.columns([1, 2], gap="large")
+# Filters are shown only inside the Statistics section (Dashboard tab).
+# We still keep the selected values in session_state so other tabs stay in sync.
+if "flt_game" not in st.session_state:
+    st.session_state["flt_game"] = "All"
+if "flt_pair" not in st.session_state:
+    st.session_state["flt_pair"] = "All"
 
-with f1:
-    game_sel = st.selectbox(tr(lang, "game"), game_options, index=0, key="flt_game")
+game_sel = st.session_state["flt_game"]
 
 pairs_g = pairs if game_sel == "All" else pairs[pairs["Game"] == game_sel].copy()
-
-# Combined Season—League selector
 pairs_g["SeasonLeague"] = pairs_g["SeasonLabel"].astype(str) + " — " + pairs_g["League Name"].astype(str)
 pair_options = ["All"] + sorted(pairs_g["SeasonLeague"].dropna().unique().tolist())
 
-# Keep selection valid if game changes
-if "flt_pair" not in st.session_state:
+sel_pair = st.session_state["flt_pair"]
+# keep selection valid when game changes
+if sel_pair != "All" and sel_pair not in pair_options:
     st.session_state["flt_pair"] = "All"
-if st.session_state["flt_pair"] not in pair_options:
-    st.session_state["flt_pair"] = "All"
+    sel_pair = "All"
 
-with f2:
-    pair_sel = st.selectbox("Season — League", pair_options, index=pair_options.index(st.session_state["flt_pair"]), key="flt_pair")
-
-# Derive Season + League for downstream code (compat keys preserved)
-if pair_sel == "All":
+if sel_pair == "All":
     season_sel = "All"
     league_sel = "All"
 else:
-    # split only on first separator in case league name contains ' — '
-    parts = pair_sel.split(" — ", 1)
-    season_sel = parts[0].strip() if parts else "All"
-    league_sel = parts[1].strip() if len(parts) > 1 else "All"
-
-# keep compatibility with previous session_state keys used elsewhere
-st.session_state["flt_game_single"] = game_sel
-st.session_state["flt_season_single"] = season_sel
-st.session_state["flt_league_single"] = league_sel
-
-# Apply filters
+    season_sel, league_sel = sel_pair.split(" — ", 1)
 df_filtered = raw.copy()
 if game_sel != "All":
     df_filtered = df_filtered[df_filtered["Game"] == game_sel]
@@ -650,7 +638,7 @@ with tab_dash:
         if last_tbl.empty:
             st.caption(tr(lang, "not_enough"))
         else:
-            st.caption(f"{sel_game} • {sel_pair}")
+            st.caption(f"{latest_meta['Game']} • {latest_meta['SeasonLabel']} • {latest_meta['League Name']}")
             st.dataframe(last_tbl, use_container_width=True, hide_index=True)
 
     with a2:
@@ -661,6 +649,31 @@ with tab_dash:
 
     st.divider()
     st.markdown("## Statistics")
+    # Filters (Statistics)
+    f1, f2 = st.columns([1, 2], gap="large")
+    with f1:
+        st.selectbox(tr(lang, "game"), game_options, index=game_options.index(game_sel) if game_sel in game_options else 0, key="flt_game")
+    # Recompute options based on selected game
+    game_sel = st.session_state["flt_game"]
+    pairs_g = pairs if game_sel == "All" else pairs[pairs["Game"] == game_sel].copy()
+    pairs_g["SeasonLeague"] = pairs_g["SeasonLabel"].astype(str) + " — " + pairs_g["League Name"].astype(str)
+    pair_options = ["All"] + sorted(pairs_g["SeasonLeague"].dropna().unique().tolist())
+    # ensure current pair exists
+    if st.session_state.get("flt_pair","All") != "All" and st.session_state["flt_pair"] not in pair_options:
+        st.session_state["flt_pair"] = "All"
+    with f2:
+        st.selectbox(tr(lang, "season") + " — " + tr(lang, "league"), pair_options, index=pair_options.index(st.session_state.get("flt_pair","All")) if st.session_state.get("flt_pair","All") in pair_options else 0, key="flt_pair")
+
+    # Rerun-safe derived filters
+    sel_pair = st.session_state.get("flt_pair","All")
+    if sel_pair == "All":
+        season_sel = "All"
+        league_sel = "All"
+    else:
+        season_sel, league_sel = sel_pair.split(" — ", 1)
+
+    st.caption(f"{game_sel} • {sel_pair}")
+
     if df.empty:
         st.info(tr(lang, "no_rows"))
     else:
