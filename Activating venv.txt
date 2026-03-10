@@ -1,0 +1,13 @@
+Step 1
+.\.venv\Scripts\Activate.ps1
+
+Step 2
+cd f1gamedashboard
+
+Step 3
+pip install -r requirements.txt
+
+Step 4
+python -m streamlit run app.py
+
+
