@@ -1406,7 +1406,7 @@ with tab_dash:
             .sort_values(["Round", "GP Name"])
         )
         race_labels = [f"R{int(r.Round)} — {r['GP Name']}" for _, r in race_list.iterrows()]
-        idx = st.session_state.get("dash_race_idx", len(race_labels)-1)
+        idx = st.session_state.get("dash_race_idx", 0)
         idx = max(0, min(int(idx), len(race_labels)-1))
 
         selected_label = st.selectbox(tr(lang, "select_race"), race_labels, index=idx, key="dash_race_selector")
