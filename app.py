@@ -1570,7 +1570,7 @@ with tab_dash:
     st.html(render_puskas_hero(latest_meta))
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta)
     import streamlit.components.v1 as stc
-    stc.html(html_dashboard, height=1800, scrolling=False)
+    stc.html(html_dashboard, height=1800, scrolling=True)
 
 
 

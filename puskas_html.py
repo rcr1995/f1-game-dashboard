@@ -835,6 +835,12 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 <div class="p-btn-outline" id="btn-all-drivers">ALL DRIVERS</div>
                 <script>
                 (function() {{
+                    function resizeIframe() {{
+                        if (window.frameElement) {{
+                            window.frameElement.style.height = (document.documentElement.scrollHeight + 50) + 'px';
+                        }}
+                    }}
+                    
                     function setupToggle(btnId, elId, showText, hideText, displayStyle) {{
                         var btn = document.getElementById(btnId);
                         var el  = document.getElementById(elId);
@@ -847,6 +853,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                                     el.style.display = 'none';
                                     btn.textContent = showText;
                                 }}
+                                setTimeout(resizeIframe, 50);
                             }});
                         }}
                     }}
@@ -854,6 +861,11 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     setupToggle('btn-full-standings',  'standings-extra',  'FULL STANDINGS',  'HIDE STANDINGS',  'block');
                     setupToggle('btn-full-results',    'race-extra',       'FULL RESULTS',    'HIDE RESULTS',    'block');
                     setupToggle('btn-full-calendar',   'cal-extra',        'FULL CALENDAR',   'HIDE CALENDAR',   'block');
+                    
+                    // Initial resize
+                    setTimeout(resizeIframe, 500);
+                    // Also resize on window resize
+                    window.addEventListener('resize', function() {{ setTimeout(resizeIframe, 200); }});
 
                     // Attach event listeners to hero buttons (which live in the parent window)
                     setTimeout(function() {{
