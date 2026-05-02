@@ -299,6 +299,12 @@ def render_puskas_hero(meta: dict) -> str:
         background: #1a1a1a;
         border: 1px solid #333;
     }
+    
+    @media (max-width: 768px) {
+        .puskas-container { margin: -1rem; }
+        .p-hero { padding: 3rem 1rem; }
+        .p-hero-title { font-size: 3rem; }
+    }
     </style>
     """
     html = f"""
@@ -728,6 +734,16 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         padding: 2rem 1rem;
         color: #888;
         font-size: 0.8rem;
+    }
+    
+    @media (max-width: 900px) {
+        .puskas-container { margin: -1rem; }
+        .p-grid, .p-grid-2 { grid-template-columns: 1fr; padding: 1rem; }
+        .p-hof-grid { flex-direction: column; }
+        .p-hof { padding: 0 1rem 1rem 1rem; }
+        .p-stats-grid { flex-direction: column; }
+        .p-col { font-size: 0.75rem; }
+        .p-driver { font-size: 0.8rem; }
     }
     </style>
     """
