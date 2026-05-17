@@ -1316,6 +1316,33 @@ h2, h3 {
 </style>
 """
 
+def render_st_dataframe(df_or_styler):
+    """Fallback renderer that converts pandas DataFrame or Styler to HTML to avoid pyarrow dependency."""
+    try:
+        is_light = st.session_state.get("theme_mode", "Dark") == "Light"
+        text_color = "#333" if is_light else "#eee"
+        border_color = "#ccc" if is_light else "#333"
+        
+        table_css = f"""
+        <style>
+        .st-table-fallback {{ width:100%; border-collapse:collapse; color:{text_color}; font-size:0.85rem; text-align:left; margin-bottom:1rem; }}
+        .st-table-fallback th {{ border-bottom:1px solid {border_color}; padding:0.6rem 0.5rem; font-weight:700; color:{text_color}; text-transform:uppercase; font-size:0.7rem; opacity:0.8; }}
+        .st-table-fallback td {{ border-bottom:1px solid {border_color}; padding:0.5rem; }}
+        .st-table-fallback tr:hover td {{ background: rgba(225,6,0,0.05); }}
+        </style>
+        """
+        
+        if hasattr(df_or_styler, 'hide'):
+            html = df_or_styler.hide(axis="index").to_html()
+            html = html.replace('<table id="', '<table class="st-table-fallback" id="')
+        else:
+            html = df_or_styler.to_html(index=False, escape=False)
+            html = html.replace('<table border="1" class="dataframe">', '<table class="st-table-fallback">')
+            
+        st.html(f"{table_css}<div style='overflow-x:auto;'>{html}</div>")
+    except Exception as e:
+        st.error(f"Could not render table: {e}")
+
 def style_pos_column(df: pd.DataFrame, pos_col: str = "Pos", is_light: bool = False):
     """Return a Pandas Styler with gold/silver/bronze on the position column."""
     def _row(row):
@@ -1568,7 +1595,7 @@ with st.sidebar:
 
 with tab_dash:
     st.html(render_puskas_hero(latest_meta))
-    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta)
+    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all)
     import streamlit.components.v1 as stc
     stc.html(html_dashboard, height=1800, scrolling=True)
 
@@ -1614,9 +1641,9 @@ with tab_gp:
             st_table = st_table.merge(form, on=entity_col, how="left") if not form.empty else st_table
         loc_st = localized_table(st_table, lang)
         if "Pos" in loc_st.columns:
-            st.dataframe(style_pos_column(loc_st, is_light=(st.session_state.get("theme_mode", "Dark") == "Light")), use_container_width=True, hide_index=True)
+            render_st_dataframe(style_pos_column(loc_st, is_light=(st.session_state.get("theme_mode", "Dark") == "Light")))
         else:
-            st.dataframe(loc_st, use_container_width=True, hide_index=True)
+            render_st_dataframe(loc_st)
 
         st.subheader(tr(lang, "gp_progression"))
         preset = st.radio(tr(lang, "chart_preset"), ["Top 5", "Top 10", "Custom"], horizontal=True, key="gp_chart_preset")
@@ -1702,7 +1729,7 @@ with tab_gp:
 
             delta_show = delta_tbl.rename(columns={"Delta": tr(lang, "change"), "MomentumL3": tr(lang, "momentum_l3")})
 
-            st.dataframe(style_by_columns(localized_table(delta_show, lang), [tr(lang, "change"), tr(lang, "momentum_l3")]), use_container_width=True, hide_index=True)
+            render_st_dataframe(style_by_columns(localized_table(delta_show, lang), [tr(lang, "change"), tr(lang, "momentum_l3")]))
 
         st.markdown(f"### {tr(lang, 'biggest_movers')}")
 
@@ -1746,7 +1773,7 @@ with tab_circuits:
 
         circuits_show = circuits.rename(columns={"GP Name": "GP" if lang == "en" else "Grande Prémio"})
 
-        st.dataframe(circuits_show, use_container_width=True, hide_index=True)
+        render_st_dataframe(circuits_show)
 
 with tab_all:
 
@@ -1860,7 +1887,7 @@ with tab_all:
 
         )
 
-        st.dataframe(localized_table(table_df, lang), use_container_width=True, hide_index=True)
+        render_st_dataframe(localized_table(table_df, lang))
 
 
 
@@ -2072,7 +2099,7 @@ with tab_analysis:
                                         "Drivers": " vs ".join(g2.head(2)["Driver"].tolist())})
                 if summary:
                     sm_df = pd.DataFrame(summary)
-                    st.dataframe(sm_df, use_container_width=True, hide_index=True)
+                    render_st_dataframe(sm_df)
 
                 # Bar chart: per-team points side by side  
                 if PLOTLY_OK:

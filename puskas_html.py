@@ -322,7 +322,7 @@ def render_puskas_hero(meta: dict) -> str:
     """
     return "\n".join(line.lstrip() for line in html.split("\n"))
 
-def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict) -> str:
+def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None) -> str:
 
     # ── Build driver→team lookup from latest GP data ──
     driver_team = {}
@@ -464,30 +464,48 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     # 4. LEAGUE STATISTICS
     stats_html = ""
     if not st_tbl_latest.empty:
-        most_wins = st_tbl_latest.sort_values("Wins", ascending=False).iloc[0]
-        most_podiums = st_tbl_latest.sort_values("Podiums", ascending=False).iloc[0]
-        best_avg = st_tbl_latest[st_tbl_latest["Races"]>0].sort_values("AvgFinish", ascending=True).iloc[0]
+        wins_df = st_tbl_latest.sort_values("Wins", ascending=False).head(3).to_dict('records')
+        pod_df = st_tbl_latest.sort_values("Podiums", ascending=False).head(3).to_dict('records')
+        avg_df = st_tbl_latest[st_tbl_latest["Races"]>0].sort_values("AvgFinish", ascending=True).head(3).to_dict('records')
         
-        stats_html += f"""
-        <div class="p-stat-box">
-            <div class="p-stat-icon">🏆</div>
-            <div class="p-stat-label">MOST WINS</div>
-            <div class="p-stat-driver">{most_wins['Driver']}</div>
-            <div class="p-stat-val">{int(most_wins['Wins'])}</div>
-        </div>
-        <div class="p-stat-box">
-            <div class="p-stat-icon">🥈</div>
-            <div class="p-stat-label">MOST PODIUMS</div>
-            <div class="p-stat-driver">{most_podiums['Driver']}</div>
-            <div class="p-stat-val">{int(most_podiums['Podiums'])}</div>
-        </div>
-        <div class="p-stat-box">
-            <div class="p-stat-icon">🎯</div>
-            <div class="p-stat-label">BEST AVG FINISH</div>
-            <div class="p-stat-driver">{best_avg['Driver']}</div>
-            <div class="p-stat-val">{float(best_avg['AvgFinish']):.1f}</div>
-        </div>
-        """
+        def _sub_html(rows, col, fmt="int"):
+            if len(rows) <= 1:
+                return ""
+            h = '<div style="margin-top: 0.8rem; font-size: 0.7rem; color: #aaa; text-align: left; padding-top: 0.5rem; border-top: 1px solid #222;">'
+            for idx, r in enumerate(rows[1:], start=2):
+                v = f"{int(r[col])}" if fmt=="int" else f"{float(r[col]):.1f}"
+                h += f'<div style="display: flex; justify-content: space-between; padding: 0.15rem 0;"><span>{idx}. {r["Driver"]}</span><span style="color:#fff;font-weight:600;">{v}</span></div>'
+            h += '</div>'
+            return h
+
+        if wins_df and pod_df and avg_df:
+            most_wins = wins_df[0]
+            most_podiums = pod_df[0]
+            best_avg = avg_df[0]
+            
+            stats_html += f"""
+            <div class="p-stat-box">
+                <div class="p-stat-icon">🏆</div>
+                <div class="p-stat-label">MOST WINS</div>
+                <div class="p-stat-driver">{most_wins['Driver']}</div>
+                <div class="p-stat-val">{int(most_wins['Wins'])}</div>
+                {_sub_html(wins_df, 'Wins', 'int')}
+            </div>
+            <div class="p-stat-box">
+                <div class="p-stat-icon">🥈</div>
+                <div class="p-stat-label">MOST PODIUMS</div>
+                <div class="p-stat-driver">{most_podiums['Driver']}</div>
+                <div class="p-stat-val">{int(most_podiums['Podiums'])}</div>
+                {_sub_html(pod_df, 'Podiums', 'int')}
+            </div>
+            <div class="p-stat-box">
+                <div class="p-stat-icon">🎯</div>
+                <div class="p-stat-label">BEST AVG FINISH</div>
+                <div class="p-stat-driver">{best_avg['Driver']}</div>
+                <div class="p-stat-val">{float(best_avg['AvgFinish']):.1f}</div>
+                {_sub_html(avg_df, 'AvgFinish', 'float')}
+            </div>
+            """
 
     # 5. SEASON CALENDAR (show first 8 rows with flags + short track names)
     cal_top_html = ""
@@ -748,6 +766,78 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     </style>
     """
 
+    def _hof_sub_list(items, limit=5, stacked=False):
+        if len(items) <= 1:
+            return ""
+        h = '<div style="margin-top: 0.8rem; font-size: 0.7rem; color: #aaa; text-align: left; padding-top: 0.5rem; border-top: 1px solid #222;">'
+        for i, item in enumerate(items[1:limit], start=2):
+            if stacked:
+                h += f'<div style="padding: 0.3rem 0; border-bottom: 1px solid rgba(255,255,255,0.05);"><div>{i}. {item[0]}</div><div style="color:#fff;font-weight:600;font-size:0.65rem;margin-top:0.1rem;">{item[1]}</div></div>'
+            else:
+                h += f'<div style="display: flex; justify-content: space-between; padding: 0.15rem 0;"><span>{i}. {item[0]}</span><span style="color:#fff;font-weight:600;">{item[1]}</span></div>'
+        h += '</div>'
+        return h
+
+    champ_name = "Coming soon"
+    dom_name = "Coming soon"
+    best_race = "Coming soon"
+    funny_crash = "Coming soon"
+    
+    if base_all is not None and not base_all.empty:
+        df_hof = base_all.dropna(subset=['Driver', 'Finish Pos', 'Points']).copy()
+        if not df_hof.empty:
+            champs = df_hof.groupby(['League Name', 'Driver'])['Points'].sum().reset_index()
+            idx = champs.groupby(['League Name'])['Points'].idxmax()
+            most_champs = champs.loc[idx].groupby('Driver').size().sort_values(ascending=False)
+            if not most_champs.empty:
+                champs_items = [(idx, val) for idx, val in zip(most_champs.index, most_champs.values)]
+                champ_name = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{champs_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{champs_items[0][1]} Titles</span>{_hof_sub_list(champs_items)}"
+            
+            # Most Dominant Season
+            champs_df = champs.loc[idx]
+            dom_candidates = []
+            for _, c in champs_df.iterrows():
+                league = c['League Name']
+                driver = c['Driver']
+                points = c['Points']
+                
+                league_data = df_hof[df_hof['League Name'] == league]
+                total_races = league_data['Round'].nunique()
+                if total_races == 0: total_races = league_data['GP Name'].nunique()
+                
+                driver_points = league_data.groupby('Driver')['Points'].sum().sort_values(ascending=False)
+                p2_points = driver_points.iloc[1] if len(driver_points) > 1 else 0
+                
+                gap_score = int(points - p2_points)
+                
+                dom_candidates.append({
+                    'Driver': driver,
+                    'League Name': league,
+                    'Score': gap_score
+                })
+
+            if dom_candidates:
+                dom_df = pd.DataFrame(dom_candidates).sort_values('Score', ascending=False)
+                def trunc(name): return str(name)[:15] + "..." if len(str(name)) > 15 else str(name)
+                dom_items = [(r['Driver'], f"{int(r['Score'])} Pts Gap ({trunc(r['League Name'])})") for _, r in dom_df.iterrows()]
+                dom_name = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{dom_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{dom_items[0][1]}</span>{_hof_sub_list(dom_items, stacked=True)}"
+
+            wins_df = df_hof[df_hof['Finish Pos'] == 1]
+            if not wins_df.empty:
+                
+                all_time_wins = wins_df.groupby('Driver').size().sort_values(ascending=False)
+                if not all_time_wins.empty:
+                    wins_items = [(idx, val) for idx, val in zip(all_time_wins.index, all_time_wins.values)]
+                    best_race = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{wins_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{wins_items[0][1]} Wins</span>{_hof_sub_list(wins_items)}"
+                
+            pod_df = df_hof[df_hof['Finish Pos'] <= 3]
+            if not pod_df.empty:
+                all_time_pod = pod_df.groupby('Driver').size().sort_values(ascending=False)
+                if not all_time_pod.empty:
+                    pod_items = [(idx, val) for idx, val in zip(all_time_pod.index, all_time_pod.values)]
+                    funny_crash = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{pod_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{pod_items[0][1]} Podiums</span>{_hof_sub_list(pod_items)}"
+
+
     html = f"""
     {css}
     <div class="puskas-container">
@@ -837,7 +927,9 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 (function() {{
                     function resizeIframe() {{
                         if (window.frameElement) {{
-                            window.frameElement.style.height = (document.documentElement.scrollHeight + 50) + 'px';
+                            var container = document.querySelector('.puskas-container');
+                            var h = container ? container.scrollHeight : document.documentElement.scrollHeight;
+                            window.frameElement.style.height = (h + 50) + 'px';
                         }}
                     }}
                     
@@ -864,8 +956,16 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     
                     // Initial resize
                     setTimeout(resizeIframe, 500);
-                    // Also resize on window resize
-                    window.addEventListener('resize', function() {{ setTimeout(resizeIframe, 200); }});
+                    
+                    // Use ResizeObserver for accurate and safe resizing without infinite loops
+                    var container = document.querySelector('.puskas-container');
+                    if (container && window.ResizeObserver) {{
+                        new ResizeObserver(function() {{
+                            resizeIframe();
+                        }}).observe(container);
+                    }} else {{
+                        window.addEventListener('resize', function() {{ setTimeout(resizeIframe, 500); }});
+                    }}
 
                     // Attach event listeners to hero buttons (which live in the parent window)
                     setTimeout(function() {{
@@ -893,10 +993,10 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         <div class="p-hof">
             <div class="p-card-title">🏆 HALL OF FAME</div>
             <div class="p-hof-grid">
-                <div class="p-hof-card">SEASON CHAMPIONS<br><br>Coming soon</div>
-                <div class="p-hof-card">MOST DOMINANT SEASON<br><br>Coming soon</div>
-                <div class="p-hof-card">BEST RACE EVER<br><br>Coming soon</div>
-                <div class="p-hof-card">FUNNIEST CRASH<br><br>Coming soon</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">MOST CHAMPIONSHIPS</div>{champ_name}</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">MOST DOMINANT SEASON</div>{dom_name}</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">ALL-TIME WINS</div>{best_race}</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">ALL-TIME PODIUMS</div>{funny_crash}</div>
             </div>
         </div>
     </div>
