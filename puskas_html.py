@@ -548,7 +548,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         w_p1 = min(100, (p1_pts / finish_line * 100)) if finish_line > 0 else 0
         w_p2 = min(100, (p2_pts / finish_line * 100)) if finish_line > 0 else 0
         
-        details = f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Races left</span><span style='color:#fff;font-weight:600;'>{races_left}</span></div>"
+        details = f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Points Still Open</span><span style='color:#fff;font-weight:600;'>{max_available}</span></div>"
+        details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Races left</span><span style='color:#fff;font-weight:600;'>{races_left}</span></div>"
         if not is_decided and races_left > 0:
             details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Magic No. {p1_name} (P1)</span><span style='color:#fff;font-weight:600;'>{magic_number}</span></div>"
             if magic_number <= max_pts_per_race:
@@ -567,10 +568,18 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 <span style="color:#fff;font-weight:700;">{p1_name}</span> leads <span style="color:#fff;font-weight:700;">{p2_name}</span> by <b style="color:#E10600">{gap} pts</b>
             </div>
             
+            <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#888; margin-bottom:2px; z-index:5; position:relative;">
+                <span>0</span>
+                <span>Finish Line: {finish_line} pts</span>
+            </div>
             <div class="p-prog-wrap" style="z-index:5;">
                 <div class="p-prog-bar1" style="width:{w_p1}%;"></div>
                 <div class="p-prog-bar2" style="width:{w_p2}%;"></div>
                 <div class="p-prog-finish" title="Finish Line (P2 + Max Available)"></div>
+            </div>
+            <div style="display:flex; gap:10px; font-size:0.65rem; color:#888; margin-top:4px; z-index:5; position:relative; margin-bottom:10px;">
+                <span style="display:flex; align-items:center; gap:3px;"><span style="display:inline-block; width:8px; height:8px; background:#58a6ff; border-radius:2px;"></span>{p1_name} ({p1_pts})</span>
+                <span style="display:flex; align-items:center; gap:3px;"><span style="display:inline-block; width:8px; height:8px; background:rgba(225,6,0,0.7); border-radius:2px;"></span>{p2_name} ({p2_pts})</span>
             </div>
             
             <div style="font-size:0.7rem; color:#aaa; margin-top:0.5rem; z-index:5; position:relative;">
