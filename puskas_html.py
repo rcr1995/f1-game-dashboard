@@ -516,14 +516,9 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         races_left = (total_races - rounds_done) if (total_races and total_races > rounds_done) else 0
         
         if is_team:
-            if "Team" in latest_gp.columns:
-                pts_agg = latest_gp.groupby(["Round", "Team"])["Points"].sum()
-                max_pts_per_race = float(pts_agg.max()) if not pts_agg.empty else 44.0
-            else:
-                max_pts_per_race = 44.0
+            max_pts_per_race = 44.0
         else:
-            pts_agg = latest_gp.groupby(["Round", "Driver"])["Points"].sum()
-            max_pts_per_race = float(pts_agg.max()) if not pts_agg.empty else 26.0
+            max_pts_per_race = 26.0
 
         max_available = int(races_left * max_pts_per_race)
         magic_number = p2_pts + max_available - p1_pts + 1
