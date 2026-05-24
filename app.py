@@ -671,6 +671,7 @@ def load_calendar_from_excel(file) -> pd.DataFrame:
     d = d.sort_values(["Round", "Date", "GP Name"], na_position="last").reset_index(drop=True)
     return d
 
+@st.cache_data(show_spinner=False)
 def find_bundled_excel() -> str | None:
     candidates = [
         "F1_Standings.xlsx",
@@ -682,10 +683,12 @@ def find_bundled_excel() -> str | None:
     for c in candidates:
         if Path(c).exists():
             return c
-    for p in Path(".").rglob("*.xlsx"):
-        if p.name.lower().startswith("~$"):
-            continue
-        return str(p)
+    import os
+    for root, dirs, files in os.walk("."):
+        dirs[:] = [d for d in dirs if d not in {".venv", ".git", "__pycache__", "venv"}]
+        for file in files:
+            if file.lower().endswith(".xlsx") and not file.startswith("~$"):
+                return os.path.join(root, file)
     return None
 
 DEFAULT_POINTS = {1:25,2:18,3:15,4:12,5:10,6:8,7:6,8:4,9:2,10:1}
@@ -1321,14 +1324,21 @@ with st.sidebar:
     custom_map = {}
     if canonical_points_mode == "Custom mapping":
         st.caption(tr(lang, "custom_caption"))
-        txt = st.text_area(tr(lang, "custom_json"), value=json.dumps(DEFAULT_POINTS, indent=2))
-        try:
-            m = json.loads(txt) if txt.strip() else {}
-            custom_map = {int(k): float(v) for k, v in m.items()}
-            st.success("OK")
-        except Exception as e:
-            st.error(f"Invalid JSON: {e}")
-            custom_map = {}
+        if "custom_points_map" not in st.session_state:
+            st.session_state["custom_points_map"] = DEFAULT_POINTS
+        with st.form("custom_points_form"):
+            default_val = json.dumps(st.session_state["custom_points_map"], indent=2)
+            txt = st.text_area(tr(lang, "custom_json"), value=default_val)
+            apply_btn = st.form_submit_button("Apply Points Mapping" if lang == "en" else "Aplicar Mapeamento")
+        if apply_btn:
+            try:
+                m = json.loads(txt) if txt.strip() else {}
+                parsed_map = {int(k): float(v) for k, v in m.items()}
+                st.session_state["custom_points_map"] = parsed_map
+                st.rerun()
+            except Exception as e:
+                st.error(f"Invalid JSON: {e}" if lang == "en" else f"JSON inválido: {e}")
+        custom_map = st.session_state["custom_points_map"]
 
 base_all = apply_points_override(raw.copy(), mode=canonical_points_mode, custom_map=custom_map, last_round_multiplier=1.0)
 

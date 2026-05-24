@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import base64
 from pathlib import Path
+from functools import lru_cache
 
 def get_base64_image(path: str) -> str:
     """Read a local image file and return a base64 data URI string."""
@@ -37,6 +38,7 @@ DRIVER_HELMET_FILE = {
     "Polingua": "polingua",
 }
 
+@lru_cache(maxsize=128)
 def _get_helmet_b64(driver: str, team: str) -> str:
     """Return base64 data URI for a driver's helmet, falling back to team."""
     fname = DRIVER_HELMET_FILE.get(driver, TEAM_HELMET_FILE.get(team, ""))
@@ -47,6 +49,7 @@ def _get_helmet_b64(driver: str, team: str) -> str:
 
 _TRACKS_DIR = Path(__file__).parent / "assets" / "tracks"
 
+@lru_cache(maxsize=32)
 def _get_track_bg_b64(gp_name: str) -> str:
     """Return base64 data URI for a track background image."""
     short_name = GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
