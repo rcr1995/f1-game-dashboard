@@ -238,7 +238,66 @@ def _team_badge_html(team_name: str, size: int = 16) -> str:
     )
 
 
-def render_puskas_hero(meta: dict) -> str:
+def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
+    next_race_name = ""
+    next_race_target_iso = ""
+    if calendar_raw is not None and not calendar_raw.empty:
+        cal = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")]
+        if not cal.empty:
+            upcoming = cal[cal["Status"].astype(str).str.lower() == "upcoming"]
+            if not upcoming.empty:
+                nr = upcoming.iloc[0]
+                next_race_name = nr.get("GP Name", "TBD")
+                date_val = nr.get("Date", "")
+                if pd.notna(date_val):
+                    try:
+                        # Lisbon time is target: 7 AM
+                        dt = pd.Timestamp(date_val).replace(hour=7, minute=0, second=0)
+                        # Localize to Europe/Lisbon timezone
+                        dt_tz = dt.tz_localize("Europe/Lisbon")
+                        next_race_target_iso = dt_tz.isoformat()
+                    except Exception:
+                        ts = pd.Timestamp(date_val)
+                        month = ts.month
+                        offset = "+00:00"
+                        if 3 < month < 10:
+                            offset = "+01:00"
+                        elif month == 3:
+                            last_sun = 31 - (pd.Timestamp(f"{ts.year}-03-31").dayofweek + 1) % 7
+                            if ts.day >= last_sun:
+                                offset = "+01:00"
+                        elif month == 10:
+                            last_sun = 31 - (pd.Timestamp(f"{ts.year}-10-31").dayofweek + 1) % 7
+                            if ts.day < last_sun:
+                                offset = "+01:00"
+                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T07:00:00{offset}"
+
+    countdown_html = ""
+    if next_race_target_iso:
+        countdown_html = f"""
+        <div class="p-countdown-container" id="p-countdown-box">
+            <div class="p-countdown-timer">
+                <div class="p-countdown-segment">
+                    <span class="p-countdown-value" id="cd-days">00</span>
+                    <span class="p-countdown-label">DAYS</span>
+                </div>
+                <div class="p-countdown-segment">
+                    <span class="p-countdown-value" id="cd-hours">00</span>
+                    <span class="p-countdown-label">HOURS</span>
+                </div>
+                <div class="p-countdown-segment">
+                    <span class="p-countdown-value" id="cd-minutes">00</span>
+                    <span class="p-countdown-label">MINUTES</span>
+                </div>
+                <div class="p-countdown-segment">
+                    <span class="p-countdown-value" id="cd-seconds">00</span>
+                    <span class="p-countdown-label">SECONDS</span>
+                </div>
+            </div>
+            <div class="p-countdown-text" id="cd-text">UNTIL {next_race_name.upper()} RESUMES</div>
+        </div>
+        """
+
     css = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@400;600;700&family=Inter:wght@400;600;800&display=swap');
@@ -257,8 +316,11 @@ def render_puskas_hero(meta: dict) -> str:
         background-color: #1a1a20; /* fallback */
         background-size: cover;
         background-position: center;
-        padding: 4rem 2rem;
+        padding: 4rem 2rem 2.5rem 2rem;
         border-bottom: 2px solid #e10600;
+        position: relative;
+        display: flex;
+        flex-direction: column;
     }
     .p-hero-title {
         font-family: 'Teko', sans-serif;
@@ -299,11 +361,64 @@ def render_puskas_hero(meta: dict) -> str:
         background: #1a1a1a;
         border: 1px solid #333;
     }
+    .p-countdown-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        margin-top: 2.5rem;
+        text-align: center;
+    }
+    .p-countdown-timer {
+        display: flex;
+        gap: 1.5rem;
+        justify-content: center;
+        align-items: center;
+    }
+    .p-countdown-segment {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 60px;
+    }
+    .p-countdown-value {
+        font-family: 'Teko', sans-serif;
+        font-size: 3.5rem;
+        font-weight: 600;
+        line-height: 0.9;
+        color: #ffffff;
+        letter-spacing: 1px;
+        text-shadow: 0 4px 10px rgba(0, 0, 0, 0.9), 0 0 20px rgba(0, 0, 0, 0.6);
+    }
+    .p-countdown-label {
+        font-size: 0.65rem;
+        font-weight: 600;
+        color: #aaa;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 0.2rem;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+    }
+    .p-countdown-text {
+        font-family: 'Teko', sans-serif;
+        font-size: 1.6rem;
+        font-weight: 600;
+        color: #ffffff;
+        letter-spacing: 2px;
+        margin-top: 0.6rem;
+        text-transform: uppercase;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+    }
     
     @media (max-width: 768px) {
         .puskas-container { margin: -1rem; }
-        .p-hero { padding: 3rem 1rem; }
+        .p-hero { padding: 3rem 1rem 1.5rem 1rem; }
         .p-hero-title { font-size: 3rem; }
+        .p-countdown-value { font-size: 2.5rem; }
+        .p-countdown-text { font-size: 1.2rem; }
+        .p-countdown-timer { gap: 1rem; }
+        .p-countdown-segment { min-width: 45px; }
     }
     </style>
     """
@@ -312,17 +427,52 @@ def render_puskas_hero(meta: dict) -> str:
     <div class="puskas-container">
         <!-- HERO -->
         <div class="p-hero" style="position: relative;">
-            <div class="p-hero-title">F1 PUSKAS<br><span class="red">LEAGUE</span></div>
-            <div class="p-hero-sub">Our PS5 F1 league.<br>One competition.<br>No mercy.</div>
-            <div class="p-hero-season">SEASON 1 • {meta.get("SeasonLabel", "2025")}</div>
-            <div class="p-btn" id="btn-hero-alltime" style="cursor: pointer;">ALL-TIME 🏆</div>
-            <div class="p-btn dark" id="btn-hero-gpstats" style="cursor: pointer;">GP STATISTICS 🏁</div>
+            <div class="p-hero-main">
+                <div class="p-hero-title">F1 PUSKAS<br><span class="red">LEAGUE</span></div>
+                <div class="p-hero-sub">Our PS5 F1 league.<br>One competition.<br>No mercy.</div>
+                <div class="p-hero-season">SEASON 1 • {meta.get("SeasonLabel", "2025")}</div>
+                <div style="margin-top: 1rem;">
+                    <div class="p-btn" id="btn-hero-alltime" style="cursor: pointer;">ALL-TIME 🏆</div>
+                    <div class="p-btn dark" id="btn-hero-gpstats" style="cursor: pointer;">GP STATISTICS 🏁</div>
+                </div>
+            </div>
+            {countdown_html}
         </div>
     </div>
     """
     return "\n".join(line.lstrip() for line in html.split("\n"))
 
 def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None) -> str:
+    next_race_target_iso = ""
+    if calendar_raw is not None and not calendar_raw.empty:
+        cal = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")]
+        if not cal.empty:
+            upcoming = cal[cal["Status"].astype(str).str.lower() == "upcoming"]
+            if not upcoming.empty:
+                nr = upcoming.iloc[0]
+                date_val = nr.get("Date", "")
+                if pd.notna(date_val):
+                    try:
+                        # Lisbon time is target: 7 AM
+                        dt = pd.Timestamp(date_val).replace(hour=7, minute=0, second=0)
+                        # Localize to Europe/Lisbon timezone
+                        dt_tz = dt.tz_localize("Europe/Lisbon")
+                        next_race_target_iso = dt_tz.isoformat()
+                    except Exception:
+                        ts = pd.Timestamp(date_val)
+                        month = ts.month
+                        offset = "+00:00"
+                        if 3 < month < 10:
+                            offset = "+01:00"
+                        elif month == 3:
+                            last_sun = 31 - (pd.Timestamp(f"{ts.year}-03-31").dayofweek + 1) % 7
+                            if ts.day >= last_sun:
+                                offset = "+01:00"
+                        elif month == 10:
+                            last_sun = 31 - (pd.Timestamp(f"{ts.year}-10-31").dayofweek + 1) % 7
+                            if ts.day < last_sun:
+                                offset = "+01:00"
+                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T07:00:00{offset}"
 
     # ── Build driver→team lookup from latest GP data ──
     driver_team = {}
@@ -1294,6 +1444,44 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                             }});
                         }}
                     }}, 200);
+
+                    // Dynamic Countdown Timer (targets Lisbon 7 AM time)
+                    var targetIso = "{next_race_target_iso}";
+                    if (targetIso) {{
+                        var targetDate = new Date(targetIso).getTime();
+                        function updateCountdown() {{
+                            var pDoc = window.parent.document;
+                            var daysEl = pDoc.getElementById("cd-days");
+                            var hoursEl = pDoc.getElementById("cd-hours");
+                            var minutesEl = pDoc.getElementById("cd-minutes");
+                            var secondsEl = pDoc.getElementById("cd-seconds");
+                            var textEl = pDoc.getElementById("cd-text");
+                            
+                            var now = new Date().getTime();
+                            var diff = targetDate - now;
+                            
+                            if (diff <= 0) {{
+                                if (daysEl) daysEl.textContent = "00";
+                                if (hoursEl) hoursEl.textContent = "00";
+                                if (minutesEl) minutesEl.textContent = "00";
+                                if (secondsEl) secondsEl.textContent = "00";
+                                if (textEl) textEl.textContent = "RACE IN PROGRESS / COMPLETED";
+                                return;
+                            }}
+                            
+                            var d = Math.floor(diff / (1000 * 60 * 60 * 24));
+                            var h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                            var m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                            var s = Math.floor((diff % (1000 * 60)) / 1000);
+                            
+                            if (daysEl) daysEl.textContent = String(d).padStart(2, '0');
+                            if (hoursEl) hoursEl.textContent = String(h).padStart(2, '0');
+                            if (minutesEl) minutesEl.textContent = String(m).padStart(2, '0');
+                            if (secondsEl) secondsEl.textContent = String(s).padStart(2, '0');
+                        }}
+                        updateCountdown();
+                        setInterval(updateCountdown, 1000);
+                    }}
                 }})();
                 </script>
             </div>

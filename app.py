@@ -1399,7 +1399,7 @@ with st.sidebar:
         st.html(rows_html)
 
 with tab_dash:
-    st.html(render_puskas_hero(latest_meta))
+    st.html(render_puskas_hero(latest_meta, calendar_raw))
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all)
     import streamlit.components.v1 as stc
     stc.html(html_dashboard, height=1800, scrolling=True)
