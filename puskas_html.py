@@ -126,6 +126,10 @@ CIRCUIT_SVG_MAP = {
     "Monaco GP":          f"{_SVG_BASE}/monaco-6.svg",
     "French GP":          f"{_SVG_BASE}/paul-ricard-3.svg",
     "Portuguese GP":      f"{_SVG_BASE}/portimao-1.svg",
+    "Brazil GP":          f"{_SVG_BASE}/interlagos-2.svg",
+    "Mexico GP":          f"{_SVG_BASE}/mexico-city-3.svg",
+    "Brazilian GP":       f"{_SVG_BASE}/interlagos-2.svg",
+    "Mexican GP":         f"{_SVG_BASE}/mexico-city-3.svg",
 }
 
 # GP name → country flag emoji
@@ -139,6 +143,8 @@ GP_FLAGS = {
     "Chinese GP": "🇨🇳", "São Paulo GP": "🇧🇷", "Las Vegas GP": "🇺🇸",
     "Qatar GP": "🇶🇦", "Abu Dhabi GP": "🇦🇪", "Monaco GP": "🇲🇨",
     "French GP": "🇫🇷", "Portuguese GP": "🇵🇹",
+    "Brazil GP": "🇧🇷", "Mexico GP": "🇲🇽",
+    "Brazilian GP": "🇧🇷", "Mexican GP": "🇲🇽",
 }
 
 # GP name → short track name for calendar display
@@ -156,6 +162,8 @@ GP_SHORT_TRACK = {
     "Las Vegas GP": "Las Vegas", "Qatar GP": "Lusail",
     "Abu Dhabi GP": "Yas Marina", "Monaco GP": "Monaco",
     "French GP": "Paul Ricard", "Portuguese GP": "Portimão",
+    "Brazil GP": "Interlagos", "Mexico GP": "Mexico City",
+    "Brazilian GP": "Interlagos", "Mexican GP": "Mexico City",
 }
 
 # GP name → ISO country code for flag images
@@ -169,6 +177,8 @@ GP_COUNTRY_CODES = {
     "Chinese GP": "cn", "São Paulo GP": "br", "Las Vegas GP": "us",
     "Qatar GP": "qa", "Abu Dhabi GP": "ae", "Monaco GP": "mc",
     "French GP": "fr", "Portuguese GP": "pt",
+    "Brazil GP": "br", "Mexico GP": "mx",
+    "Brazilian GP": "br", "Mexican GP": "mx",
 }
 
 def _flag_img(gp_name: str, height: int = 18) -> str:
@@ -435,7 +445,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
                 <div class="p-hero-sub">Our PS5 F1 league.<br>One competition.<br>No mercy.</div>
                 <div class="p-hero-season">SEASON 1 • {meta.get("SeasonLabel", "2025")}</div>
                 <div style="margin-top: 1rem;">
-                    <div class="p-btn" id="btn-hero-alltime" style="cursor: pointer;">ALL-TIME 🏆</div>
+                    <div class="p-btn" id="btn-hero-circuits" style="cursor: pointer;">CIRCUITS 🛣️</div>
                     <div class="p-btn dark" id="btn-hero-gpstats" style="cursor: pointer;">GP STATISTICS 🏁</div>
                 </div>
             </div>
@@ -1465,11 +1475,11 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
                     // Attach event listeners to hero buttons (which live in the parent window)
                     setTimeout(function() {{
-                        var btn1 = window.parent.document.getElementById('btn-hero-alltime');
+                        var btn1 = window.parent.document.getElementById('btn-hero-circuits');
                         if (btn1) {{
                             btn1.addEventListener('click', function() {{
                                 var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                                if (tabs.length > 3) tabs[3].click();
+                                if (tabs.length > 2) tabs[2].click();
                             }});
                         }}
                         var btn2 = window.parent.document.getElementById('btn-hero-gpstats');

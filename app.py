@@ -9,7 +9,15 @@ import json
 import re
 
 from pathlib import Path
-from puskas_html import render_puskas_dashboard, render_puskas_hero
+from puskas_html import (
+    render_puskas_dashboard,
+    render_puskas_hero,
+    CIRCUIT_SVG_MAP,
+    GP_FLAGS,
+    GP_SHORT_TRACK,
+    _flag_img,
+    _team_badge_html
+)
 
 # Plotly (recommended)
 
@@ -859,6 +867,18 @@ def titles_count(df: pd.DataFrame, entity_col: str):
     t.insert(0, "Rank", range(1, len(t)+1))
     return t, champs
 
+def make_pill_html(val) -> str:
+    try:
+        v = int(val)
+    except Exception:
+        return str(val)
+    if v > 0:
+        return f'<span style="background:rgba(46,204,113,0.15); color:#2ecc71; padding:3px 8px; border-radius:12px; font-weight:700; font-size:0.75rem; white-space:nowrap;">▲ +{v}</span>'
+    elif v < 0:
+        return f'<span style="background:rgba(231,76,60,0.15); color:#ff4b4b; padding:3px 8px; border-radius:12px; font-weight:700; font-size:0.75rem; white-space:nowrap;">▼ {v}</span>'
+    else:
+        return f'<span style="background:rgba(127,140,141,0.15); color:#95a5a6; padding:3px 8px; border-radius:12px; font-weight:700; font-size:0.75rem; white-space:nowrap;">= 0</span>'
+
 def _color_pos_change(val):
     try:
         v = float(val)
@@ -1158,22 +1178,93 @@ h2, h3 {
 
 /* ── All-time title cards ─────────────────────────────────── */
 .title-card {
-    background: var(--title-card-bg);
-    border: 1px solid var(--title-card-border);
-    border-top: 3px solid #f5c518;
-    border-radius: 10px;
-    padding: 0.8rem 0.6rem;
+    background: linear-gradient(145deg, #1c1400 0%, #0c0d12 100%) !important;
+    border: 1px solid #ffd700 !important;
+    border-radius: 12px !important;
+    padding: 1rem 0.8rem !important;
     text-align: center;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease !important;
+    box-shadow: 0 4px 15px rgba(245, 197, 24, 0.05) !important;
     height: 100%;
+    position: relative;
+    overflow: hidden;
 }
 .title-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 24px rgba(245,197,24,0.1);
+    transform: translateY(-6px) scale(1.05) rotate(1deg) !important;
+    box-shadow: 0 8px 25px rgba(245, 197, 24, 0.25) !important;
+    border-color: #ffffff !important;
 }
-.title-card-name  { font-weight:700; font-size:0.9rem; color:var(--text-main); margin-bottom:0.3rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.title-card-count { font-size:2rem; font-weight:800; color:#f5c518; line-height:1; }
-.title-card-label { font-size:0.6rem; text-transform:uppercase; letter-spacing:0.15em; color:var(--text-muted); margin-top:0.2rem; }
+.title-card-trophy {
+    font-size: 1.5rem;
+    margin-bottom: 0.2rem;
+    transition: transform 0.3s ease, filter 0.3s ease;
+    filter: drop-shadow(0 0 2px rgba(255, 215, 0, 0.2));
+}
+.title-card:hover .title-card-trophy {
+    transform: scale(1.2) rotate(-10deg);
+    filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8));
+}
+.title-card-name  { font-weight:800; font-size:0.95rem; color:#ffffff; margin-bottom:0.4rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.title-card-count { font-size:2.5rem; font-weight:900; color:#ffd700; line-height:1; font-family: 'Teko', sans-serif; text-shadow: 0 0 10px rgba(255, 215, 0, 0.3); }
+.title-card-label { font-size:0.65rem; font-weight:700; text-transform:uppercase; letter-spacing:0.15em; color:#ffd700; margin-top:0.3rem; opacity:0.8; }
+
+/* ── Circuits gallery cards ────────────────────────────────── */
+.p-tracks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1.5rem;
+    margin-bottom: 2rem;
+}
+.p-track-card {
+    background: #111115;
+    border: 1px solid #222;
+    border-radius: 10px;
+    padding: 1.2rem 1rem;
+    text-align: center;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), border-color 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+.p-track-card:hover {
+    transform: translateY(-5px) scale(1.03);
+    border-color: #e10600;
+    box-shadow: 0 8px 25px rgba(225, 6, 0, 0.15);
+}
+.p-track-image {
+    width: 100%;
+    height: 100px;
+    object-fit: contain;
+    margin: 0.8rem 0;
+    filter: drop-shadow(0 0 6px rgba(255,255,255,0.25));
+    transition: filter 0.3s ease;
+}
+.p-track-card:hover .p-track-image {
+    filter: drop-shadow(0 0 8px rgba(225,6,0,0.5));
+}
+.p-track-title {
+    font-family: 'Teko', sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.1;
+    letter-spacing: 1px;
+    color: #ffffff;
+}
+.p-track-country {
+    font-size: 0.72rem;
+    color: #888888;
+    margin-top: 0.1rem;
+}
+.p-track-stats {
+    font-size: 0.7rem;
+    color: #aaaaaa;
+    margin-top: 0.6rem;
+    border-top: 1px solid #222;
+    padding-top: 0.5rem;
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+}
 
 /* ── About card (settings) ────────────────────────────────── */
 .about-card {
@@ -1431,7 +1522,11 @@ with tab_gp:
 
     seasonleague_options = gp_pairs["SeasonLeague"].unique().tolist()
     options = [tr(lang, "all_gp_label")] + seasonleague_options
-    sel_gp_pair = st.selectbox(tr(lang, "season_league_gp"), options, index=0, key="gp_pair")
+    ongoing_key = f"{latest_meta.get('SeasonLabel', '')} ||| {latest_meta.get('League Name', '')}"
+    default_index = 0
+    if ongoing_key in options:
+        default_index = options.index(ongoing_key)
+    sel_gp_pair = st.selectbox(tr(lang, "season_league_gp"), options, index=default_index, key="gp_pair")
 
     df_gp = d_gp.copy()
     gp_all_time = True
@@ -1483,9 +1578,41 @@ with tab_gp:
                               category_orders={"EventLabel": order_x, entity_col: order_entities},
                               color_discrete_sequence=THEME_CFG["line_palette"],
                               template=THEME_CFG["plotly_template"])
-                fig.update_layout(height=550, margin=dict(l=10, r=10, t=10, b=40), legend_title_text="")
-                fig.update_xaxes(type="category", title=(tr(lang,"timeline_label") if gp_all_time else tr(lang,"gp_label")),
-                                 rangeslider_visible=False)
+                fig.update_layout(
+                    font_family="Inter, sans-serif",
+                    title_font_family="Teko, sans-serif",
+                    height=550,
+                    margin=dict(l=10, r=10, t=10, b=40),
+                    legend_title_text="",
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1,
+                        bgcolor="rgba(0,0,0,0)",
+                        font=dict(size=11)
+                    ),
+                    hovermode="x unified",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                )
+                fig.update_xaxes(
+                    type="category",
+                    title=(tr(lang,"timeline_label") if gp_all_time else tr(lang,"gp_label")),
+                    rangeslider_visible=False,
+                    showgrid=True,
+                    gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                )
+                fig.update_yaxes(
+                    showgrid=True,
+                    gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                )
+                fig.update_traces(
+                    line=dict(width=3),
+                    marker=dict(size=7),
+                    hovertemplate="%{y} pts"
+                )
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.line_chart(wide[keep].ffill().fillna(0), height=550)
@@ -1513,15 +1640,34 @@ with tab_gp:
             ))
 
             fig_tension.update_layout(
-
-                template=THEME_CFG["plotly_template"], height=360,
-
-                margin=dict(l=10, r=10, t=10, b=10),
-
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-
+                template=THEME_CFG["plotly_template"],
+                font_family="Inter, sans-serif",
+                title_font_family="Teko, sans-serif",
+                height=360,
+                margin=dict(l=10, r=10, t=10, b=20),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1,
+                    bgcolor="rgba(0,0,0,0)"
+                ),
+                hovermode="x unified",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)"
             )
-
+            fig_tension.update_xaxes(
+                showgrid=True,
+                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+            )
+            fig_tension.update_yaxes(
+                showgrid=True,
+                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+            )
+            fig_tension.update_traces(
+                marker=dict(size=6)
+            )
             st.plotly_chart(fig_tension, use_container_width=True)
 
         elif not gp_tension_df.empty:
@@ -1541,18 +1687,21 @@ with tab_gp:
             st.info(tr(lang, "not_enough"))
 
         else:
-
             delta_show = delta_tbl.rename(columns={"Delta": tr(lang, "change"), "MomentumL3": tr(lang, "momentum_l3")})
-
-            render_st_dataframe(style_by_columns(localized_table(delta_show, lang), [tr(lang, "change"), tr(lang, "momentum_l3")]))
+            loc_delta = localized_table(delta_show, lang)
+            col_change = tr(lang, "change")
+            col_mom = tr(lang, "momentum_l3")
+            if col_change in loc_delta.columns:
+                loc_delta[col_change] = loc_delta[col_change].map(make_pill_html)
+            if col_mom in loc_delta.columns:
+                loc_delta[col_mom] = loc_delta[col_mom].map(make_pill_html)
+            render_st_dataframe(loc_delta)
 
         st.markdown(f"### {tr(lang, 'biggest_movers')}")
 
         render_movers_chart(df_gp, entity_col=entity_col)
 
 with tab_circuits:
-
-    st.subheader(tr(lang, "gp_winners_top3"))
 
     circuits = circuits_top3(base_all)
 
@@ -1562,33 +1711,58 @@ with tab_circuits:
 
     else:
 
-        # ── Wins-per-circuit horizontal bar chart ──
-
+        # ── Circuit SVG Map Gallery ──
+        st.markdown("### " + ("Circuit Layouts" if lang == "en" else "Layouts dos Circuitos"))
+        
         d_cir = base_all[(~base_all["IsSeasonFinal"]) & (base_all["Finish Pos"] == 1)].copy()
+        gps = sorted([g for g in base_all[~base_all["IsSeasonFinal"]]["GP Name"].unique() if g and g != "Season Final"])
+        
+        cards_html = '<div class="p-tracks-grid">'
+        for gp in gps:
+            svg_url = CIRCUIT_SVG_MAP.get(gp, "")
+            flag_html = _flag_img(gp, height=14)
+            short_name = GP_SHORT_TRACK.get(gp, gp)
+            
+            # Wins calculation
+            gp_wins = d_cir[d_cir["GP Name"] == gp].groupby("Driver").size().reset_index(name="Wins")
+            t1_text = "-"
+            t2_text = ""
+            t3_text = ""
+            if not gp_wins.empty:
+                gp_wins = gp_wins.sort_values(["Wins", "Driver"], ascending=[False, True])
+                
+                t1_driver = gp_wins.iloc[0]["Driver"]
+                t1_wins = gp_wins.iloc[0]["Wins"]
+                t1_text = f"🥇 {t1_driver} ({t1_wins} 🏆)"
+                
+                if len(gp_wins) > 1:
+                    t2_driver = gp_wins.iloc[1]["Driver"]
+                    t2_wins = gp_wins.iloc[1]["Wins"]
+                    t2_text = f"🥈 {t2_driver} ({t2_wins} 🏆)"
+                    
+                if len(gp_wins) > 2:
+                    t3_driver = gp_wins.iloc[2]["Driver"]
+                    t3_wins = gp_wins.iloc[2]["Wins"]
+                    t3_text = f"🥉 {t3_driver} ({t3_wins} 🏆)"
+            
+            svg_img_tag = f'<img class="p-track-image" src="{svg_url}" alt="{gp}" />' if svg_url else '<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#666;border:1px dashed #333;border-radius:6px;margin:0.8rem 0;font-size:0.8rem;">No Layout Outline</div>'
+            
+            cards_html += f"""
+            <div class="p-track-card">
+                <div class="p-track-title">{gp.replace(" GP", "").upper()}</div>
+                <div class="p-track-country">{short_name} {flag_html}</div>
+                {svg_img_tag}
+                <div class="p-track-stats" style="flex-direction: column; align-items: center; gap: 2px; display: flex; border-top: 1px solid #222; margin-top: 0.6rem; padding-top: 0.5rem;">
+                    <div style="font-size:0.65rem; margin-bottom:4px; opacity:0.6; text-transform:uppercase; letter-spacing:0.05em; color:#aaa;">GP Winners</div>
+                    <div style="font-size:0.78rem; color:#ffd700; font-weight:700;">{t1_text}</div>
+                    {f'<div style="font-size:0.72rem; color:#e0e0e0; font-weight:600; margin-top:1px;">{t2_text}</div>' if t2_text else ''}
+                    {f'<div style="font-size:0.72rem; color:#cd7f32; font-weight:600; margin-top:1px;">{t3_text}</div>' if t3_text else ''}
+                </div>
+            </div>
+            """
+        cards_html += "</div>"
+        st.html(cards_html)
 
-        if not d_cir.empty and PLOTLY_OK:
-
-            wins_per_driver = d_cir.groupby("Driver").size().reset_index(name="Wins").sort_values("Wins", ascending=True)
-            fig_cir = go.Figure(go.Bar(
-                x=wins_per_driver["Wins"],
-                y=wins_per_driver["Driver"],
-                orientation="h",
-                marker_color="#E10600",
-                text=wins_per_driver["Wins"],
-                textposition="outside",
-            ))
-            fig_cir.update_layout(
-                template=THEME_CFG["plotly_template"],
-                height=max(300, len(wins_per_driver) * 28),
-                margin=dict(l=10, r=50, t=10, b=10),
-                xaxis_title=tr(lang, "total_wins_all_circuits"),
-                yaxis_title="",
-            )
-            st.plotly_chart(fig_cir, use_container_width=True)
-
-        circuits_show = circuits.rename(columns={"GP Name": "GP" if lang == "en" else "Grande Prémio"})
-
-        render_st_dataframe(circuits_show)
 
 with tab_all:
 
@@ -1633,13 +1807,10 @@ with tab_all:
                     st.html(f"""
 
                     <div class="title-card">
-
+                      <div class="title-card-trophy">🏆</div>
                       <div class="title-card-name" title="{row['Champion']}">{row['Champion']}</div>
-
                       <div class="title-card-count">{int(row['Titles'])}</div>
-
-                      <div class="title-card-label">{'🏆 ' + (tr(lang,"titles_plural") if row["Titles"] != 1 else tr(lang,"title_singular"))}</div>
-
+                      <div class="title-card-label">{(tr(lang,"titles_plural") if row["Titles"] != 1 else tr(lang,"title_singular"))}</div>
                     </div>
 
                     """)
@@ -1683,14 +1854,42 @@ with tab_all:
             )
 
             fig.update_layout(
-
-                height=460, margin=dict(l=10, r=10, t=10, b=40), legend_title_text="",
-
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-
+                font_family="Inter, sans-serif",
+                title_font_family="Teko, sans-serif",
+                height=460,
+                margin=dict(l=10, r=10, t=10, b=40),
+                legend_title_text="",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1,
+                    bgcolor="rgba(0,0,0,0)",
+                    font=dict(size=11)
+                ),
+                hovermode="x unified",
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
             )
 
-            fig.update_xaxes(type="category", title=tr(lang, "season"))
+            fig.update_xaxes(
+                type="category",
+                title=tr(lang, "season"),
+                showgrid=True,
+                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+            )
+            
+            fig.update_yaxes(
+                showgrid=True,
+                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+            )
+            
+            fig.update_traces(
+                line=dict(width=3),
+                marker=dict(size=7),
+                hovertemplate="%{y} pts"
+            )
 
             st.plotly_chart(fig, use_container_width=True)
 
@@ -1701,9 +1900,31 @@ with tab_all:
             ["SeasonLabel", "Points"], ascending=[True, False],
 
         )
+        
+        # Format standings table rows to highlight champions and add team badges
+        gp_rows = base_all[~base_all["IsSeasonFinal"]]
+        driver_team = {}
+        if not gp_rows.empty:
+            driver_team = gp_rows.drop_duplicates(subset=["Driver"], keep="last").set_index("Driver")["Team"].to_dict()
+            
+        champs_map = {}
+        for sl, grp in table_df.groupby("SeasonLabel"):
+            if not grp.empty:
+                top_row = grp.sort_values("Points", ascending=False).iloc[0]
+                champs_map[sl] = top_row[entity]
+                
+        def format_alltime_standings_row(r):
+            val = r[entity]
+            sl = r["SeasonLabel"]
+            is_champ = (champs_map.get(sl) == val)
+            badge = _team_badge_html(val if entity == "Team" else driver_team.get(val, ""), 16)
+            if is_champ:
+                return f'<span style="white-space:nowrap;">{badge}<b style="color:#ffd700;">{val} 🏆</b></span>'
+            return f'<span style="white-space:nowrap;">{badge}{val}</span>'
+            
+        table_show = table_df.copy()
+        table_show[entity] = table_show.apply(format_alltime_standings_row, axis=1)
 
-        render_st_dataframe(localized_table(table_df, lang))
-
-
+        render_st_dataframe(localized_table(table_show, lang))
 
 st.caption(tr(lang, "version"))
