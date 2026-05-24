@@ -254,8 +254,8 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
                 date_val = nr.get("Date", "")
                 if pd.notna(date_val):
                     try:
-                        # Lisbon time is target: 7 AM
-                        dt = pd.Timestamp(date_val).replace(hour=7, minute=0, second=0)
+                        # Lisbon time is target: 6:30 AM
+                        dt = pd.Timestamp(date_val).replace(hour=6, minute=30, second=0)
                         # Localize to Europe/Lisbon timezone
                         dt_tz = dt.tz_localize("Europe/Lisbon")
                         next_race_target_iso = dt_tz.isoformat()
@@ -273,7 +273,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
                             last_sun = 31 - (pd.Timestamp(f"{ts.year}-10-31").dayofweek + 1) % 7
                             if ts.day < last_sun:
                                 offset = "+01:00"
-                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T07:00:00{offset}"
+                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T06:30:00{offset}"
 
     countdown_html = ""
     if next_race_target_iso:
@@ -456,8 +456,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 date_val = nr.get("Date", "")
                 if pd.notna(date_val):
                     try:
-                        # Lisbon time is target: 7 AM
-                        dt = pd.Timestamp(date_val).replace(hour=7, minute=0, second=0)
+                        # Lisbon time is target: 6:30 AM
+                        dt = pd.Timestamp(date_val).replace(hour=6, minute=30, second=0)
                         # Localize to Europe/Lisbon timezone
                         dt_tz = dt.tz_localize("Europe/Lisbon")
                         next_race_target_iso = dt_tz.isoformat()
@@ -475,7 +475,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                             last_sun = 31 - (pd.Timestamp(f"{ts.year}-10-31").dayofweek + 1) % 7
                             if ts.day < last_sun:
                                 offset = "+01:00"
-                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T07:00:00{offset}"
+                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T06:30:00{offset}"
 
     # ── Build driver→team lookup from latest GP data ──
     driver_team = {}
