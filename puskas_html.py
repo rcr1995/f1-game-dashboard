@@ -872,9 +872,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             else:
                 cal_extra_html += row_html
 
-    # 6. DRIVER LINEUP – top 4 always visible, rest toggled by button
-    drivers_top_html = ""
-    drivers_extra_html = ""
+    # 6. DRIVER LINEUP
+    drivers_html = ""
     if not st_tbl_latest.empty:
         all_drivers = list(st_tbl_latest.head(20).iterrows())
         for i, (_, drow) in enumerate(all_drivers):
@@ -910,10 +909,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 </div>
             </div>
             """
-            if i < 4:
-                drivers_top_html += card
-            else:
-                drivers_extra_html += card
+            drivers_html += card
 
     css = """
     <style>
@@ -1377,10 +1373,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             <div class="p-card">
                 <div class="p-card-title">🏎️ DRIVER LINEUP</div>
                 <div class="p-drivers-flex">
-                    {drivers_top_html}
-                </div>
-                <div id="drivers-extra" class="p-drivers-extra" style="display:none;">
-                    {drivers_extra_html}
+                    {drivers_html}
                 </div>
                 <div class="p-btn-outline" id="btn-all-drivers">ALL DRIVERS</div>
                 <script>
@@ -1410,7 +1403,46 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                             }});
                         }}
                     }}
-                    setupToggle('btn-all-drivers',    'drivers-extra',    'ALL DRIVERS',    'HIDE DRIVERS',    'flex');
+                    
+                    function updateDriverLineup() {{
+                        var container = document.querySelector('.p-drivers-flex');
+                        if (!container) return;
+                        var cards = container.querySelectorAll('.p-driver-card-v2');
+                        if (cards.length === 0) return;
+                        
+                        var btn = document.getElementById('btn-all-drivers');
+                        var isExpanded = btn && btn.textContent === 'HIDE DRIVERS';
+                        
+                        for (var i = 0; i < cards.length; i++) {{
+                            cards[i].style.display = 'block';
+                        }}
+                        
+                        if (!isExpanded) {{
+                            var firstTop = cards[0].offsetTop;
+                            for (var i = 1; i < cards.length; i++) {{
+                                if (cards[i].offsetTop > firstTop + 15) {{
+                                    cards[i].style.display = 'none';
+                                }}
+                            }}
+                        }}
+                    }}
+                    
+                    var btnAllDrivers = document.getElementById('btn-all-drivers');
+                    if (btnAllDrivers) {{
+                        btnAllDrivers.addEventListener('click', function() {{
+                            var isExpanded = btnAllDrivers.textContent === 'HIDE DRIVERS';
+                            btnAllDrivers.textContent = isExpanded ? 'ALL DRIVERS' : 'HIDE DRIVERS';
+                            updateDriverLineup();
+                            window.dispatchEvent(new Event('resize'));
+                            setTimeout(resizeIframe, 50);
+                        }});
+                    }}
+                    
+                    window.addEventListener('resize', function() {{
+                        updateDriverLineup();
+                        setTimeout(resizeIframe, 50);
+                    }});
+                    
                     setupToggle('btn-full-standings',  'standings-extra',  'FULL STANDINGS',  'HIDE STANDINGS',  'block');
                     setupToggle('btn-full-c-standings','c-standings-extra','FULL STANDINGS',  'HIDE STANDINGS',  'block');
                     setupToggle('btn-full-team-chart', 'team-chart-extra', 'FULL LIST',       'HIDE LIST',       'block');
@@ -1418,6 +1450,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     setupToggle('btn-full-calendar',   'cal-extra',        'FULL CALENDAR',   'HIDE CALENDAR',   'block');
                     
                     // Initial resize
+                    updateDriverLineup();
                     setTimeout(resizeIframe, 500);
                     
                     // Use ResizeObserver for accurate and safe resizing without infinite loops
