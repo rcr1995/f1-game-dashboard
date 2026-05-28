@@ -653,9 +653,9 @@ def load_calendar_from_excel(file) -> pd.DataFrame:
 
     df.columns = [str(c).strip() for c in df.columns]
     if df.empty:
-        return pd.DataFrame(columns=["League Name", "Round", "Date", "GP Name", "Status"])
+        return pd.DataFrame(columns=["League Name", "Round", "Date", "GP Name", "Status", "Time (Lisbon)"])
 
-    keep = [c for c in ["League Name", "Round", "Date", "GP Name", "Circuit", "Status"] if c in df.columns]
+    keep = [c for c in ["League Name", "Round", "Date", "GP Name", "Circuit", "Status", "Time (Lisbon)"] if c in df.columns]
     d = df[keep].copy()
 
     if "League Name" not in d.columns:
@@ -668,6 +668,8 @@ def load_calendar_from_excel(file) -> pd.DataFrame:
         d["GP Name"] = ""
     if "Status" not in d.columns:
         d["Status"] = ""
+    if "Time (Lisbon)" not in d.columns:
+        d["Time (Lisbon)"] = pd.NA
 
     d["League Name"] = d["League Name"].astype(str).str.strip()
     d["Round"] = pd.to_numeric(d["Round"], errors="coerce").astype("Int64")

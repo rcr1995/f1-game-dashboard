@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import base64
+import re
 from pathlib import Path
 from functools import lru_cache
 
@@ -251,6 +252,34 @@ def _team_badge_html(team_name: str, size: int = 16) -> str:
     )
 
 
+def _parse_lisbon_time(time_val):
+    """
+    Parses a time value from the 'Time (Lisbon)' column.
+    Returns (hour, minute, second). Defaults to (7, 30, 0).
+    """
+    if pd.isna(time_val) or time_val is None:
+        return 7, 30, 0
+    if isinstance(time_val, str):
+        s = time_val.strip()
+        if not s:
+            return 7, 30, 0
+        m = re.match(r"^(\d{1,2}):(\d{2})(?::(\d{2}))?$", s)
+        if m:
+            h = int(m.group(1))
+            m_val = int(m.group(2))
+            s_val = int(m.group(3)) if m.group(3) else 0
+            return h, m_val, s_val
+    elif hasattr(time_val, "hour"):
+        return time_val.hour, time_val.minute, time_val.second
+    elif isinstance(time_val, (int, float)):
+        total_seconds = int(time_val * 86400)
+        h = (total_seconds // 3600) % 24
+        m_val = (total_seconds // 60) % 60
+        s_val = total_seconds % 60
+        return h, m_val, s_val
+    return 7, 30, 0
+
+
 def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
     next_race_name = ""
     next_race_target_iso = ""
@@ -264,9 +293,8 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
                 date_val = nr.get("Date", "")
                 if pd.notna(date_val):
                     try:
-                        # Lisbon time is target: 6:30 AM
-                        dt = pd.Timestamp(date_val).replace(hour=6, minute=30, second=0)
-                        # Localize to Europe/Lisbon timezone
+                        h, m, s = _parse_lisbon_time(nr.get("Time (Lisbon)", None))
+                        dt = pd.Timestamp(date_val).replace(hour=h, minute=m, second=s)
                         dt_tz = dt.tz_localize("Europe/Lisbon")
                         next_race_target_iso = dt_tz.isoformat()
                     except Exception:
@@ -283,7 +311,8 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
                             last_sun = 31 - (pd.Timestamp(f"{ts.year}-10-31").dayofweek + 1) % 7
                             if ts.day < last_sun:
                                 offset = "+01:00"
-                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T06:30:00{offset}"
+                        h, m, s = _parse_lisbon_time(nr.get("Time (Lisbon)", None))
+                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T{h:02d}:{m:02d}:{s:02d}{offset}"
 
     countdown_html = ""
     if next_race_target_iso:
@@ -466,9 +495,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 date_val = nr.get("Date", "")
                 if pd.notna(date_val):
                     try:
-                        # Lisbon time is target: 6:30 AM
-                        dt = pd.Timestamp(date_val).replace(hour=6, minute=30, second=0)
-                        # Localize to Europe/Lisbon timezone
+                        h, m, s = _parse_lisbon_time(nr.get("Time (Lisbon)", None))
+                        dt = pd.Timestamp(date_val).replace(hour=h, minute=m, second=s)
                         dt_tz = dt.tz_localize("Europe/Lisbon")
                         next_race_target_iso = dt_tz.isoformat()
                     except Exception:
@@ -485,7 +513,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                             last_sun = 31 - (pd.Timestamp(f"{ts.year}-10-31").dayofweek + 1) % 7
                             if ts.day < last_sun:
                                 offset = "+01:00"
-                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T06:30:00{offset}"
+                        h, m, s = _parse_lisbon_time(nr.get("Time (Lisbon)", None))
+                        next_race_target_iso = f"{ts.strftime('%Y-%m-%d')}T{h:02d}:{m:02d}:{s:02d}{offset}"
 
     # ── Build driver→team lookup from latest GP data ──
     driver_team = {}
@@ -622,9 +651,11 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 date_val = nr.get("Date", "")
                 if pd.notna(date_val):
                     try:
+                        h, m, s = _parse_lisbon_time(nr.get("Time (Lisbon)", None))
+                        dt = pd.Timestamp(date_val).replace(hour=h, minute=m, second=s)
+                        next_race_date = dt.strftime("%A, %d %b · %H:%M")
+                    except Exception:
                         next_race_date = pd.Timestamp(date_val).strftime("%A, %d %b · %H:%M")
-                    except:
-                        next_race_date = str(date_val)
                 next_race_circuit_svg = CIRCUIT_SVG_MAP.get(next_race_name, "")
 
     # Build Next Race card HTML
