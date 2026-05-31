@@ -57,7 +57,7 @@ APP_VERSION = "v35"
 
 # -----------------------------
 
-LANGS = {"English": "en", "Português": "pt"}
+LANGS = {"English": "en", "Português (Portugal)": "pt"}
 
 T = {
 
@@ -202,6 +202,10 @@ T = {
         "gp_winners_top3": "Top 3 drivers by wins per GP",
 
         "no_gp_winners": "No GP winner data available.",
+
+        "gp_winners": "GP Winners",
+
+        "no_layout_outline": "No Layout Outline",
 
         "version": f"F1 Game Dashboard • {APP_VERSION}",
 
@@ -452,6 +456,10 @@ T = {
 
         "no_gp_winners": "Sem dados de vencedores de GP disponíveis.",
 
+        "gp_winners": "Vencedores do GP",
+
+        "no_layout_outline": "Sem Esboço do Traçado",
+
         "version": f"Dashboard F1 • {APP_VERSION}",
 
         "language": "Idioma",
@@ -561,6 +569,54 @@ T = {
 
 def tr(lang: str, key: str):
     return T[lang].get(key, key)
+
+def tr_gp(lang: str, gp_name: str) -> str:
+    if lang == "pt":
+        gp_map = {
+            "British GP": "Grã-Bretanha",
+            "Belgian GP": "Bélgica",
+            "Japanese GP": "Japão",
+            "Bahrain GP": "Barém",
+            "Saudi Arabian GP": "Arábia Saudita",
+            "Miami GP": "Miami",
+            "Emilia Romagna GP": "Emília-Romanha",
+            "Spanish GP": "Espanha",
+            "Canadian GP": "Canadá",
+            "Austrian GP": "Áustria",
+            "Hungarian GP": "Hungria",
+            "Dutch GP": "Países Baixos",
+            "Italian GP": "Itália",
+            "Azerbaijan GP": "Azerbaijão",
+            "Singapore GP": "Singapura",
+            "United States GP": "Estados Unidos",
+            "Mexico City GP": "Cidade do México",
+            "Australian GP": "Austrália",
+            "Chinese GP": "China",
+            "São Paulo GP": "São Paulo",
+            "Las Vegas GP": "Las Vegas",
+            "Qatar GP": "Catar",
+            "Abu Dhabi GP": "Abu Dhabi",
+            "Monaco GP": "Mónaco",
+            "French GP": "França",
+            "Portuguese GP": "Portugal",
+            "Brazil GP": "Brasil",
+            "Mexico GP": "México",
+            "Brazilian GP": "Brasil",
+            "Mexican GP": "México",
+            "70th Anniversary GP": "70.º Aniversário",
+            "Eifel GP": "Eifel",
+            "Styrian GP": "Estíria",
+            "Turkish GP": "Turquia",
+            "Tuscan GP": "Toscana",
+        }
+        return gp_map.get(gp_name, gp_name.replace(" GP", ""))
+    return gp_name.replace(" GP", "")
+
+def tr_track(lang: str, gp_name: str) -> str:
+    short_name = GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
+    if lang == "pt" and short_name == "Mexico City":
+        return "Cidade do México"
+    return short_name
 
 def effective_rows(df: pd.DataFrame) -> pd.DataFrame:
     """Avoid double-counting when both GP-level rows and season-total rows exist.
@@ -701,21 +757,6 @@ def find_bundled_excel() -> str | None:
                 return os.path.join(root, file)
     return None
 
-DEFAULT_POINTS = {1:25,2:18,3:15,4:12,5:10,6:8,7:6,8:4,9:2,10:1}
-
-def apply_points_override(df: pd.DataFrame, mode: str, custom_map: dict, last_round_multiplier: float = 1.0) -> pd.DataFrame:
-    d = df.copy()
-    if mode == "Use points from Excel":
-        pass
-    elif mode == "F1 default (25-18-...)":
-        d["Points"] = d["Finish Pos"].map(DEFAULT_POINTS).fillna(0.0)
-    else:
-        mapping = custom_map or {}
-        d["Points"] = d["Finish Pos"].map(mapping).fillna(0.0)
-    if last_round_multiplier != 1.0 and not d.empty:
-        last_round = d["Round"].max()
-        d.loc[d["Round"] == last_round, "Points"] = d.loc[d["Round"] == last_round, "Points"] * float(last_round_multiplier)
-    return d
 
 def latest_league_slice(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Return df filtered to the latest SeasonLabel and its linked League/Game."""
@@ -1140,11 +1181,11 @@ div[data-testid="stMetricLabel"] {
 }
 
 /* ── Sidebar ──────────────────────────────────────────────── */
-div[data-testid="stSidebar"] {
+[data-testid="stSidebar"] {
     background: var(--bg-sidebar) !important;
     border-right: 1px solid var(--border-color) !important;
 }
-div[data-testid="stSidebar"] hr {
+[data-testid="stSidebar"] hr {
     border-color: #E10600 !important;
     opacity: 0.2;
 }
@@ -1245,7 +1286,7 @@ h2, h3 {
 }
 .p-track-title {
     font-family: 'Teko', sans-serif;
-    font-size: 1.5rem;
+    font-size: 1.3rem;
     font-weight: 700;
     margin: 0;
     line-height: 1.1;
@@ -1373,67 +1414,39 @@ def render_movers_chart(df: pd.DataFrame, entity_col: str, top_n: int = 6):
 
 if "theme_mode" not in st.session_state:
     st.session_state["theme_mode"] = "Dark"
+st.session_state["theme_mode"] = "Dark"
 if "app_lang" not in st.session_state:
-    st.session_state["app_lang"] = "English"
+    st.session_state["app_lang"] = "Português (Portugal)"
 
-lang_name = st.session_state.get("app_lang", "English")
-lang_name = lang_name if lang_name in LANGS else "English"
-lang = LANGS[lang_name]
+# Select language early in the sidebar
+with st.sidebar:
+    st.session_state["app_lang"] = st.selectbox(
+        "Language / Idioma",
+        options=list(LANGS.keys()),
+        index=list(LANGS.keys()).index(st.session_state["app_lang"]) if st.session_state["app_lang"] in LANGS else 0,
+        key="app_lang_selector"
+    )
+    st.divider()
+    
+    lang_name = st.session_state.get("app_lang", "English")
+    lang_name = lang_name if lang_name in LANGS else "English"
+    lang = LANGS[lang_name]
+    
+    st.caption(tr(lang, "version"))
 
 THEME_CFG = theme_palette(st.session_state.get("theme_mode", "Dark"))
 apply_theme_css(THEME_CFG)
 st.html(GLOBAL_CSS)
 
-# st.title(tr(lang, "title"))
+# Load data silently in background
+bundled = find_bundled_excel()
+if bundled is None:
+    st.warning(tr(lang, "no_bundled"))
+    st.stop()
+raw = load_data_from_excel(bundled)
+calendar_raw = load_calendar_from_excel(bundled)
 
-with st.sidebar:
-    st.header(tr(lang, "data"))
-    uploaded = st.file_uploader(tr(lang, "upload"), type=["xlsx"], help=tr(lang, "upload_help"), key="sidebar_excel_upload")
-    if uploaded is None:
-        bundled = find_bundled_excel()
-        if bundled is None:
-            st.warning(tr(lang, "no_bundled"))
-            st.stop()
-        st.caption(tr(lang, "using_bundled") + f"  \n• `{bundled}`")
-        raw = load_data_from_excel(bundled)
-        calendar_raw = load_calendar_from_excel(bundled)
-    else:
-        raw = load_data_from_excel(uploaded)
-        calendar_raw = load_calendar_from_excel(uploaded)
-
-    st.divider()
-    st.header(tr(lang, "points_system_global"))
-    points_mode = st.selectbox(
-        tr(lang, "how_score"),
-        [tr(lang, "use_excel"), tr(lang, "f1_default"), tr(lang, "custom_mapping")],
-        index=0
-    )
-    mode_map = {
-        tr(lang, "use_excel"): "Use points from Excel",
-        tr(lang, "f1_default"): "F1 default (25-18-...)",
-        tr(lang, "custom_mapping"): "Custom mapping",
-    }
-    canonical_points_mode = mode_map[points_mode]
-    custom_map = {}
-    if canonical_points_mode == "Custom mapping":
-        st.caption(tr(lang, "custom_caption"))
-        if "custom_points_map" not in st.session_state:
-            st.session_state["custom_points_map"] = DEFAULT_POINTS
-        with st.form("custom_points_form"):
-            default_val = json.dumps(st.session_state["custom_points_map"], indent=2)
-            txt = st.text_area(tr(lang, "custom_json"), value=default_val)
-            apply_btn = st.form_submit_button("Apply Points Mapping" if lang == "en" else "Aplicar Mapeamento")
-        if apply_btn:
-            try:
-                m = json.loads(txt) if txt.strip() else {}
-                parsed_map = {int(k): float(v) for k, v in m.items()}
-                st.session_state["custom_points_map"] = parsed_map
-                st.rerun()
-            except Exception as e:
-                st.error(f"Invalid JSON: {e}" if lang == "en" else f"JSON inválido: {e}")
-        custom_map = st.session_state["custom_points_map"]
-
-base_all = apply_points_override(raw.copy(), mode=canonical_points_mode, custom_map=custom_map, last_round_multiplier=1.0)
+base_all = raw.copy()
 
 pairs = (
     base_all[["Game", "SeasonLabel", "SeasonNum", "League Name"]]
@@ -1479,31 +1492,10 @@ st_tbl_latest = standings_table(latest_gp, entity="Drivers") if not latest_gp.em
 
 tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(tr(lang, "tabs"))
 
-with st.sidebar:
-
-    # ── Quick-compare: persistent Top-3 widget ──────────────────────────
-    if not st_tbl_latest.empty:
-        st.markdown("---")
-        st.caption(f"📊 **{tr(lang, 'sidebar_top3_label')}**")
-        top3 = st_tbl_latest.head(3)
-        rows_html = ""
-        for _, r in top3.iterrows():
-            gap_str = ""
-            if r["Pos"] > 1 and not st_tbl_latest.empty:
-                g = int(st_tbl_latest.iloc[0]["Points"] - r["Points"])
-                gap_str = f' <span style="color:#E10600;font-size:0.75rem">-{g}</span>'
-            rows_html += (
-                f'<div class="qc-row">' +
-                f'<span class="qc-pos">P{int(r["Pos"])}</span>' +
-                f'<span class="qc-name">{r["Driver"]}</span>' +
-                f'<span class="qc-pts">{int(r["Points"])} pts{gap_str}</span>' +
-                '</div>'
-            )
-        st.html(rows_html)
 
 with tab_dash:
-    st.html(render_puskas_hero(latest_meta, calendar_raw))
-    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all)
+    st.html(render_puskas_hero(latest_meta, calendar_raw, lang=lang))
+    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
     import streamlit.components.v1 as stc
     stc.html(html_dashboard, height=1800, scrolling=True)
 
@@ -1723,7 +1715,7 @@ with tab_circuits:
         for gp in gps:
             svg_url = CIRCUIT_SVG_MAP.get(gp, "")
             flag_html = _flag_img(gp, height=14)
-            short_name = GP_SHORT_TRACK.get(gp, gp)
+            short_name = tr_track(lang, gp)
             
             # Wins calculation
             gp_wins = d_cir[d_cir["GP Name"] == gp].groupby("Driver").size().reset_index(name="Wins")
@@ -1747,15 +1739,15 @@ with tab_circuits:
                     t3_wins = gp_wins.iloc[2]["Wins"]
                     t3_text = f"🥉 {t3_driver} ({t3_wins} 🏆)"
             
-            svg_img_tag = f'<img class="p-track-image" src="{svg_url}" alt="{gp}" />' if svg_url else '<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#666;border:1px dashed #333;border-radius:6px;margin:0.8rem 0;font-size:0.8rem;">No Layout Outline</div>'
+            svg_img_tag = f'<img class="p-track-image" src="{svg_url}" alt="{gp}" />' if svg_url else f'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#666;border:1px dashed #333;border-radius:6px;margin:0.8rem 0;font-size:0.8rem;">{tr(lang, "no_layout_outline")}</div>'
             
             cards_html += f"""
             <div class="p-track-card">
-                <div class="p-track-title">{gp.replace(" GP", "").upper()}</div>
+                <div class="p-track-title">{tr_gp(lang, gp).upper()}</div>
                 <div class="p-track-country">{short_name} {flag_html}</div>
                 {svg_img_tag}
                 <div class="p-track-stats" style="flex-direction: column; align-items: center; gap: 2px; display: flex; border-top: 1px solid #222; margin-top: 0.6rem; padding-top: 0.5rem;">
-                    <div style="font-size:0.65rem; margin-bottom:4px; opacity:0.6; text-transform:uppercase; letter-spacing:0.05em; color:#aaa;">GP Winners</div>
+                    <div style="font-size:0.65rem; margin-bottom:4px; opacity:0.6; text-transform:uppercase; letter-spacing:0.05em; color:#aaa;">{tr(lang, "gp_winners")}</div>
                     <div style="font-size:0.78rem; color:#ffd700; font-weight:700;">{t1_text}</div>
                     {f'<div style="font-size:0.72rem; color:#e0e0e0; font-weight:600; margin-top:1px;">{t2_text}</div>' if t2_text else ''}
                     {f'<div style="font-size:0.72rem; color:#cd7f32; font-weight:600; margin-top:1px;">{t3_text}</div>' if t3_text else ''}
@@ -1928,5 +1920,4 @@ with tab_all:
         table_show[entity] = table_show.apply(format_alltime_standings_row, axis=1)
 
         render_st_dataframe(localized_table(table_show, lang))
-
-st.caption(tr(lang, "version"))
+

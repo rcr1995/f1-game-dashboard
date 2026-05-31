@@ -4,6 +4,251 @@ import base64
 import re
 from pathlib import Path
 from functools import lru_cache
+_T = {
+    "en": {
+        "days": "DAYS",
+        "hours": "HOURS",
+        "minutes": "MINUTES",
+        "seconds": "SECONDS",
+        "until_resumes": "UNTIL {next_race_name} RESUMES",
+        "circuits": "CIRCUITS 🛣️",
+        "gp_stats": "GP STATISTICS 🏁",
+        "our_league": "Our PS5 F1 league.<br>One competition.<br>No mercy.",
+        "season_label": "SEASON",
+        "drivers_championship_standings": "🏆 DRIVERS CHAMPIONSHIP STANDINGS",
+        "pos": "POS",
+        "driver": "DRIVER",
+        "points": "PTS",
+        "wins": "WINS",
+        "gap": "GAP",
+        "full_standings": "FULL STANDINGS",
+        "hide_standings": "HIDE STANDINGS",
+        "latest_race": "🏁 LATEST RACE",
+        "grand_prix": "GRAND PRIX",
+        "time": "TIME",
+        "fastest_lap": "FASTEST LAP",
+        "full_results": "FULL RESULTS",
+        "hide_results": "HIDE RESULTS",
+        "next_race": "📅 NEXT RACE",
+        "date": "DATE",
+        "race_length": "RACE LENGTH",
+        "weather": "WEATHER",
+        "assists": "ASSISTS",
+        "sunny_dry": "Sunny (Dry)",
+        "league_rules": "League Rules",
+        "constructors_standings": "🏎️ CONSTRUCTORS STANDINGS",
+        "team": "TEAM",
+        "teammate_battle": "⚔️ TEAMMATE BATTLE",
+        "full_list": "FULL LIST",
+        "hide_list": "HIDE LIST",
+        "league_statistics": "📊 LEAGUE STATISTICS",
+        "most_wins": "MOST WINS",
+        "most_podiums": "MOST PODIUMS",
+        "best_avg_finish": "BEST AVG FINISH",
+        "season_calendar": "📅 SEASON CALENDAR",
+        "rnd": "RND",
+        "track": "TRACK",
+        "winner": "WINNER",
+        "status": "STATUS",
+        "completed": "Completed",
+        "upcoming": "Upcoming",
+        "full_calendar": "FULL CALENDAR",
+        "hide_calendar": "HIDE CALENDAR",
+        "driver_lineup": "🏎️ DRIVER LINEUP",
+        "all_drivers": "ALL DRIVERS",
+        "hide_drivers": "HIDE DRIVERS",
+        "hall_of_fame": "🏆 HALL OF FAME",
+        "most_championships": "MOST CHAMPIONSHIPS",
+        "most_dominant_season": "MOST DOMINANT SEASON",
+        "all_time_wins": "ALL-TIME WINS",
+        "all_time_podiums": "ALL-TIME PODIUMS",
+        "titles_plural": "Titles",
+        "title_singular": "Title",
+        "wins_plural": "Wins",
+        "podiums_plural": "Podiums",
+        "pts_gap_suffix": " Pts Gap",
+        "drivers_title": "Drivers Title",
+        "constructors_title": "Constructors Title",
+        "decided": "DECIDED",
+        "is_still_open": "IS STILL OPEN",
+        "leads": "leads",
+        "by": "by",
+        "pts": "pts",
+        "finish_line": "Finish Line",
+        "points_still_open": "Points Still Open",
+        "races_left": "Races left",
+        "magic_no_p1": "Magic No. {p1_name} (P1)",
+        "magic_no_p2": "Magic No. {p2_name} (P2)",
+        "magic_no_p3": "Magic No. {p3_name} (P3)",
+        "match_point": "🚨 MATCH POINT: {p1_name} clinches next race with {magic_number} pts!",
+        "race_in_progress": "RACE IN PROGRESS / COMPLETED",
+        "wins_capital": "WINS",
+        "podiums_capital": "PODIUMS",
+        "best_finish": "BEST FINISH",
+        "style_label": "STYLE",
+        "style_Dominant": "Dominant",
+        "style_Aggressive": "Aggressive",
+        "style_Consistent": "Consistent",
+        "style_Calculated": "Calculated",
+        "style_Scrappy": "Scrappy",
+        "style_Resilient": "Resilient",
+        "style_Steady": "Steady",
+        "style_Chaotic": "Chaotic",
+        "style_Unlucky": "Unlucky",
+        "style_Wildcard": "Wildcard",
+        "round_label": "Round",
+        "Coming soon": "Coming soon",
+    },
+    "pt": {
+        "days": "DIAS",
+        "hours": "HORAS",
+        "minutes": "MINUTOS",
+        "seconds": "SEGUNDOS",
+        "until_resumes": "ATÉ AO GP DE {next_race_name}",
+        "circuits": "CIRCUITOS 🛣️",
+        "gp_stats": "ESTATÍSTICAS GP 🏁",
+        "our_league": "A nossa liga de F1 na PS5.<br>Uma competição.<br>Sem misericórdia.",
+        "season_label": "ÉPOCA",
+        "drivers_championship_standings": "🏆 CLASSIFICAÇÃO DE PILOTOS",
+        "pos": "POS",
+        "driver": "PILOTO",
+        "points": "PTS",
+        "wins": "VIT.",
+        "gap": "DIF.",
+        "full_standings": "VER TUDO",
+        "hide_standings": "OCULTAR",
+        "latest_race": "🏁 ÚLTIMA CORRIDA",
+        "grand_prix": "GP",
+        "time": "TEMPO",
+        "fastest_lap": "V. RÁPIDA",
+        "full_results": "RESULTADOS COMPLETOS",
+        "hide_results": "OCULTAR",
+        "next_race": "📅 PRÓXIMA CORRIDA",
+        "date": "DATA",
+        "race_length": "DISTÂNCIA",
+        "weather": "METEOROLOGIA",
+        "assists": "AJUDAS",
+        "sunny_dry": "Sol (Seco)",
+        "league_rules": "Regras da Liga",
+        "constructors_standings": "🏎️ CONSTRUTORES",
+        "team": "EQUIPA",
+        "teammate_battle": "⚔️ DUELO DE EQUIPA",
+        "full_list": "VER DUELOS",
+        "hide_list": "OCULTAR",
+        "league_statistics": "📊 ESTATÍSTICAS",
+        "most_wins": "MAIS VITÓRIAS",
+        "most_podiums": "MAIS PÓDIOS",
+        "best_avg_finish": "MELHOR MÉDIA",
+        "season_calendar": "📅 CALENDÁRIO",
+        "rnd": "RND",
+        "track": "PISTA",
+        "winner": "VENCEDOR",
+        "status": "ESTADO",
+        "completed": "Concluído",
+        "upcoming": "Próxima",
+        "full_calendar": "VER CALENDÁRIO",
+        "hide_calendar": "OCULTAR",
+        "driver_lineup": "🏎️ PILOTOS",
+        "all_drivers": "TODOS OS PILOTOS",
+        "hide_drivers": "OCULTAR PILOTOS",
+        "hall_of_fame": "🏆 SALÃO DA FAMA",
+        "most_championships": "MAIS CAMPEONATOS",
+        "most_dominant_season": "ÉPOCA MAIS DOMINANTE",
+        "all_time_wins": "VITÓRIAS HISTÓRICAS",
+        "all_time_podiums": "PÓDIOS HISTÓRICOS",
+        "titles_plural": "Títulos",
+        "title_singular": "Título",
+        "wins_plural": "Vitórias",
+        "podiums_plural": "Pódios",
+        "pts_gap_suffix": " Pts de Dif.",
+        "drivers_title": "Título de Pilotos",
+        "constructors_title": "Título de Construtores",
+        "decided": "DECIDIDO",
+        "is_still_open": "AINDA EM ABERTO",
+        "leads": "lidera",
+        "by": "por",
+        "pts": "pts",
+        "finish_line": "Meta",
+        "points_still_open": "Pts em jogo",
+        "races_left": "Corridas rest.",
+        "magic_no_p1": "Nº Mágico {p1_name} (P1)",
+        "magic_no_p2": "Nº Mágico {p2_name} (P2)",
+        "magic_no_p3": "Nº Mágico {p3_name} (P3)",
+        "match_point": "🚨 CAMPEÃO? {p1_name} garante o título no próximo GP com {magic_number} pts!",
+        "race_in_progress": "CORRIDA EM DECURSO / CONCLUÍDA",
+        "wins_capital": "VITÓRIAS",
+        "podiums_capital": "PÓDIOS",
+        "best_finish": "MELHOR POS.",
+        "style_label": "ESTILO",
+        "style_Dominant": "Dominador",
+        "style_Aggressive": "Agressivo",
+        "style_Consistent": "Consistente",
+        "style_Calculated": "Calculador",
+        "style_Scrappy": "Combativo",
+        "style_Resilient": "Resiliente",
+        "style_Steady": "Estável",
+        "style_Chaotic": "Caótico",
+        "style_Unlucky": "Azarado",
+        "style_Wildcard": "Imprevisível",
+        "round_label": "Ronda",
+        "Coming soon": "Em breve",
+    }
+}
+
+def _tr(lang: str, key: str) -> str:
+    return _T.get(lang, _T["en"]).get(key, key)
+
+
+def _tr_gp(lang: str, gp_name: str) -> str:
+    if lang == "pt":
+        gp_map = {
+            "British": "Grã-Bretanha",
+            "Belgian": "Bélgica",
+            "Japanese": "Japão",
+            "Bahrain": "Barém",
+            "Saudi Arabian": "Arábia Saudita",
+            "Miami": "Miami",
+            "Emilia Romagna": "Emília-Romanha",
+            "Spanish": "Espanha",
+            "Canadian": "Canadá",
+            "Austrian": "Áustria",
+            "Hungarian": "Hungria",
+            "Dutch": "Países Baixos",
+            "Italian": "Itália",
+            "Azerbaijan": "Azerbaijão",
+            "Singapore": "Singapura",
+            "United States": "Estados Unidos",
+            "Mexico City": "Cidade do México",
+            "Australian": "Austrália",
+            "Chinese": "China",
+            "São Paulo": "São Paulo",
+            "Las Vegas": "Las Vegas",
+            "Qatar": "Catar",
+            "Abu Dhabi": "Abu Dhabi",
+            "Monaco": "Mónaco",
+            "French": "França",
+            "Portuguese": "Portugal",
+            "Brazil": "Brasil",
+            "Mexico": "México",
+            "Brazilian": "Brasil",
+            "Mexican": "México",
+            "70th Anniversary": "70.º Aniversário",
+            "Eifel": "Eifel",
+            "Styrian": "Estíria",
+            "Turkish": "Turquia",
+            "Tuscan": "Toscana",
+        }
+        clean_name = gp_name.replace(" GP", "").strip()
+        return gp_map.get(clean_name, clean_name)
+    return gp_name.replace(" GP", "").strip()
+
+
+def _tr_track(lang: str, gp_name: str) -> str:
+    short_trk = GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
+    if lang == "pt" and short_trk == "Mexico City":
+        return "Cidade do México"
+    return short_trk
+
 
 def get_base64_image(path: str) -> str:
     """Read a local image file and return a base64 data URI string."""
@@ -280,7 +525,7 @@ def _parse_lisbon_time(time_val):
     return 7, 30, 0
 
 
-def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
+def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str = "en") -> str:
     next_race_name = ""
     next_race_target_iso = ""
     if calendar_raw is not None and not calendar_raw.empty:
@@ -316,27 +561,28 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
 
     countdown_html = ""
     if next_race_target_iso:
+        until_text = _tr(lang, "until_resumes").format(next_race_name=_tr_gp(lang, next_race_name).upper())
         countdown_html = f"""
         <div class="p-countdown-container" id="p-countdown-box">
             <div class="p-countdown-timer">
                 <div class="p-countdown-segment">
                     <span class="p-countdown-value" id="cd-days">00</span>
-                    <span class="p-countdown-label">DAYS</span>
+                    <span class="p-countdown-label">{_tr(lang, "days")}</span>
                 </div>
                 <div class="p-countdown-segment">
                     <span class="p-countdown-value" id="cd-hours">00</span>
-                    <span class="p-countdown-label">HOURS</span>
+                    <span class="p-countdown-label">{_tr(lang, "hours")}</span>
                 </div>
                 <div class="p-countdown-segment">
                     <span class="p-countdown-value" id="cd-minutes">00</span>
-                    <span class="p-countdown-label">MINUTES</span>
+                    <span class="p-countdown-label">{_tr(lang, "minutes")}</span>
                 </div>
                 <div class="p-countdown-segment">
                     <span class="p-countdown-value" id="cd-seconds">00</span>
-                    <span class="p-countdown-label">SECONDS</span>
+                    <span class="p-countdown-label">{_tr(lang, "seconds")}</span>
                 </div>
             </div>
-            <div class="p-countdown-text" id="cd-text">UNTIL {next_race_name.upper()} RESUMES</div>
+            <div class="p-countdown-text" id="cd-text">{until_text}</div>
         </div>
         """
 
@@ -471,11 +717,11 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
         <div class="p-hero" style="position: relative;">
             <div class="p-hero-main">
                 <div class="p-hero-title">F1 PUSKAS<br><span class="red">LEAGUE</span></div>
-                <div class="p-hero-sub">Our PS5 F1 league.<br>One competition.<br>No mercy.</div>
-                <div class="p-hero-season">SEASON 1 • {meta.get("SeasonLabel", "2025")}</div>
+                <div class="p-hero-sub">{_tr(lang, "our_league")}</div>
+                <div class="p-hero-season">{_tr(lang, "season_label")} 1 • {meta.get("SeasonLabel", "2025")}</div>
                 <div style="margin-top: 1rem;">
-                    <div class="p-btn" id="btn-hero-circuits" style="cursor: pointer;">CIRCUITS 🛣️</div>
-                    <div class="p-btn dark" id="btn-hero-gpstats" style="cursor: pointer;">GP STATISTICS 🏁</div>
+                    <div class="p-btn" id="btn-hero-circuits" style="cursor: pointer;">{_tr(lang, "circuits")}</div>
+                    <div class="p-btn dark" id="btn-hero-gpstats" style="cursor: pointer;">{_tr(lang, "gp_stats")}</div>
                 </div>
             </div>
             {countdown_html}
@@ -484,7 +730,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None) -> str:
     """
     return "\n".join(line.lstrip() for line in html.split("\n"))
 
-def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None) -> str:
+def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None, lang: str = "en") -> str:
     next_race_target_iso = ""
     if calendar_raw is not None and not calendar_raw.empty:
         cal = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")]
@@ -653,9 +899,38 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     try:
                         h, m, s = _parse_lisbon_time(nr.get("Time (Lisbon)", None))
                         dt = pd.Timestamp(date_val).replace(hour=h, minute=m, second=s)
-                        next_race_date = dt.strftime("%A, %d %b · %H:%M")
                     except Exception:
-                        next_race_date = pd.Timestamp(date_val).strftime("%A, %d %b · %H:%M")
+                        try:
+                            dt = pd.Timestamp(date_val)
+                        except Exception:
+                            dt = None
+                    
+                    if dt is not None:
+                        if lang == "pt":
+                            day_map = {
+                                "Monday": "Segunda-feira", "Tuesday": "Terça-feira", "Wednesday": "Quarta-feira",
+                                "Thursday": "Quinta-feira", "Friday": "Sexta-feira", "Saturday": "Sábado", "Sunday": "Domingo"
+                            }
+                            month_map = {
+                                "Jan": "Jan", "Feb": "Fev", "Mar": "Mar", "Apr": "Abr", "May": "Mai", "Jun": "Jun",
+                                "Jul": "Jul", "Aug": "Ago", "Sep": "Set", "Oct": "Out", "Nov": "Nov", "Dec": "Dez"
+                            }
+                            day_en = dt.strftime("%A").strip()
+                            month_en = dt.strftime("%b").strip()
+                            day_pt = day_map.get(day_en, day_map.get(day_en.title(), day_en))
+                            month_pt = month_map.get(month_en, month_map.get(month_en.title(), month_en))
+                            
+                            if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and pd.isna(nr.get("Time (Lisbon)", None)):
+                                next_race_date = f"{day_pt}, {dt.day} {month_pt}"
+                            else:
+                                next_race_date = f"{day_pt}, {dt.day} {month_pt} · {dt.strftime('%H:%M')}"
+                        else:
+                            if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and pd.isna(nr.get("Time (Lisbon)", None)):
+                                next_race_date = dt.strftime("%A, %d %b")
+                            else:
+                                next_race_date = dt.strftime("%A, %d %b · %H:%M")
+                    else:
+                        next_race_date = str(date_val)
                 next_race_circuit_svg = CIRCUIT_SVG_MAP.get(next_race_name, "")
 
     # Build Next Race card HTML
@@ -672,24 +947,24 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
     next_race_card_html = f"""
     <div style="text-align:center; padding: 0.5rem 0;">
-        <h2 style="margin:0; font-size:1.3rem; letter-spacing:2px; font-weight:800; text-shadow: 1px 1px 3px rgba(0,0,0,0.8);">{next_race_name.upper().replace(' GP','')} {next_race_flag_img}</h2>
+        <h2 style="margin:0; font-size:1.3rem; letter-spacing:2px; font-weight:800; text-shadow: 1px 1px 3px rgba(0,0,0,0.8);">{_tr_gp(lang, next_race_name).upper()} {next_race_flag_img}</h2>
         {circuit_img}
         <div style="text-align:left; padding: 0.5rem 1rem 0 1rem; font-size:0.78rem; color:#aaa; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">
             <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.1);">
-                <span>📅&nbsp; DATE</span>
+                <span>📅&nbsp; {_tr(lang, 'date')}</span>
                 <span style="color:#fff;font-weight:600;">{next_race_date}</span>
             </div>
             <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.1);">
-                <span>🏁&nbsp; RACE LENGTH</span>
+                <span>🏁&nbsp; {_tr(lang, 'race_length')}</span>
                 <span style="color:#fff;font-weight:600;">100%</span>
             </div>
             <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.1);">
-                <span>☀️&nbsp; WEATHER</span>
-                <span style="color:#fff;font-weight:600;">Sunny (Dry)</span>
+                <span>☀️&nbsp; {_tr(lang, 'weather')}</span>
+                <span style="color:#fff;font-weight:600;">{_tr(lang, 'sunny_dry')}</span>
             </div>
             <div style="display:flex;justify-content:space-between;padding:0.3rem 0;">
-                <span>🎮&nbsp; ASSISTS</span>
-                <span style="color:#fff;font-weight:600;">League Rules</span>
+                <span>🎮&nbsp; {_tr(lang, 'assists')}</span>
+                <span style="color:#fff;font-weight:600;">{_tr(lang, 'league_rules')}</span>
             </div>
         </div>
     </div>
@@ -731,40 +1006,50 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         is_decided = p2_pts + max_available < p1_pts
         
         card_cls = "p-maths-card " + ("p-maths-closed" if is_decided else "p-maths-open")
-        verdict = f"{title.upper()} DECIDED" if is_decided else f"{title.upper()} IS STILL OPEN"
+        title_str = _tr(lang, title)
+        verdict = f"{title_str.upper()} {(_tr(lang, 'decided').upper() if is_decided else _tr(lang, 'is_still_open').upper())}"
         
         finish_line = p2_pts + max_available
         w_p1 = min(100, (p1_pts / finish_line * 100)) if finish_line > 0 else 0
         w_p2 = min(100, (p2_pts / finish_line * 100)) if finish_line > 0 else 0
         
-        details = f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Points Still Open</span><span style='color:#fff;font-weight:600;'>{max_available}</span></div>"
-        details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Races left</span><span style='color:#fff;font-weight:600;'>{races_left}</span></div>"
+        leads_word = _tr(lang, "leads")
+        by_word = _tr(lang, "by")
+        pts_word = _tr(lang, "pts")
+        finish_line_label = _tr(lang, "finish_line")
+
+        details = f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>{_tr(lang, 'points_still_open')}</span><span style='color:#fff;font-weight:600;'>{max_available}</span></div>"
+        details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>{_tr(lang, 'races_left')}</span><span style='color:#fff;font-weight:600;'>{races_left}</span></div>"
         if not is_decided and races_left > 0:
-            details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Magic No. {p1_name} (P1)</span><span style='color:#fff;font-weight:600;'>{magic_number}</span></div>"
+            magic_label_p1 = _tr(lang, 'magic_no_p1').format(p1_name=p1_name)
+            details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>{magic_label_p1}</span><span style='color:#fff;font-weight:600;'>{magic_number}</span></div>"
             if magic_number <= max_pts_per_race:
-                details += f"<div class='p-maths-clinch'>🚨 MATCH POINT: {p1_name} clinches next race with {magic_number} pts!</div>"
+                clinch_text = _tr(lang, 'match_point').format(p1_name=p1_name, magic_number=magic_number)
+                details += f"<div class='p-maths-clinch'>{clinch_text}</div>"
         
         if races_left > 0:
             if magic_p2 is not None:
-                details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Magic No. {p2_name} (P2)</span><span style='color:#fff;font-weight:600;'>{magic_p2}</span></div>"
+                magic_label_p2 = _tr(lang, 'magic_no_p2').format(p2_name=p2_name)
+                details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>{magic_label_p2}</span><span style='color:#fff;font-weight:600;'>{magic_p2}</span></div>"
             if magic_p3 is not None and len(df) > 2:
-                details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>Magic No. {p3_name} (P3)</span><span style='color:#fff;font-weight:600;'>{magic_p3}</span></div>"
+                magic_label_p3 = _tr(lang, 'magic_no_p3').format(p3_name=p3_name)
+                details += f"<div style='display:flex;justify-content:space-between;padding:0.2rem 0; border-bottom:1px solid rgba(255,255,255,0.1);'><span>{magic_label_p3}</span><span style='color:#fff;font-weight:600;'>{magic_p3}</span></div>"
         
         return f"""
         <div class="{card_cls}" style="margin-bottom:0.8rem; padding:1rem;">
             <div style="font-size:0.9rem; font-weight:800; margin-bottom:0.3rem; z-index:5; position:relative;">{verdict}</div>
             <div style="color:#aaa; font-size:0.75rem; margin-bottom:0.5rem; z-index:5; position:relative;">
-                <span style="color:#fff;font-weight:700;">{p1_name}</span> leads <span style="color:#fff;font-weight:700;">{p2_name}</span> by <b style="color:#E10600">{gap} pts</b>
+                <span style="color:#fff;font-weight:700;">{p1_name}</span> {leads_word} <span style="color:#fff;font-weight:700;">{p2_name}</span> {by_word} <b style="color:#E10600">{gap} {pts_word}</b>
             </div>
             
             <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:#888; margin-bottom:2px; z-index:5; position:relative;">
                 <span>0</span>
-                <span>Finish Line: {finish_line} pts</span>
+                <span>{finish_line_label}: {finish_line} {pts_word}</span>
             </div>
             <div class="p-prog-wrap" style="z-index:5;">
                 <div class="p-prog-bar1" style="width:{w_p1}%;"></div>
                 <div class="p-prog-bar2" style="width:{w_p2}%;"></div>
-                <div class="p-prog-finish" title="Finish Line (P2 + Max Available)"></div>
+                <div class="p-prog-finish" title="{finish_line_label} ({p2_name} + {_tr(lang, 'points_still_open')})"></div>
             </div>
             <div style="display:flex; gap:10px; font-size:0.65rem; color:#888; margin-top:4px; z-index:5; position:relative; margin-bottom:10px;">
                 <span style="display:flex; align-items:center; gap:3px;"><span style="display:inline-block; width:8px; height:8px; background:#58a6ff; border-radius:2px;"></span>{p1_name} ({p1_pts})</span>
@@ -779,9 +1064,9 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
     maths_html = ""
     if not st_tbl_latest.empty and len(st_tbl_latest) >= 2:
-        maths_html += _build_math_section("Drivers Title", st_tbl_latest, is_team=False)
+        maths_html += _build_math_section("drivers_title", st_tbl_latest, is_team=False)
     if "team_st" in locals() and not team_st.empty and len(team_st) >= 2:
-        maths_html += _build_math_section("Constructors Title", team_st, is_team=True)
+        maths_html += _build_math_section("constructors_title", team_st, is_team=True)
 
 
     # 3.8 TEAMMATE BATTLE CHART
@@ -859,21 +1144,21 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             stats_html += f"""
             <div class="p-stat-box">
                 <div class="p-stat-icon">🏆</div>
-                <div class="p-stat-label">MOST WINS</div>
+                <div class="p-stat-label">{_tr(lang, 'most_wins')}</div>
                 <div class="p-stat-driver">{most_wins['Driver']}</div>
                 <div class="p-stat-val">{int(most_wins['Wins'])}</div>
                 {_sub_html(wins_df, 'Wins', 'int')}
             </div>
             <div class="p-stat-box">
                 <div class="p-stat-icon">🥈</div>
-                <div class="p-stat-label">MOST PODIUMS</div>
+                <div class="p-stat-label">{_tr(lang, 'most_podiums')}</div>
                 <div class="p-stat-driver">{most_podiums['Driver']}</div>
                 <div class="p-stat-val">{int(most_podiums['Podiums'])}</div>
                 {_sub_html(pod_df, 'Podiums', 'int')}
             </div>
             <div class="p-stat-box">
                 <div class="p-stat-icon">🎯</div>
-                <div class="p-stat-label">BEST AVG FINISH</div>
+                <div class="p-stat-label">{_tr(lang, 'best_avg_finish')}</div>
                 <div class="p-stat-driver">{best_avg['Driver']}</div>
                 <div class="p-stat-val">{float(best_avg['AvgFinish']):.1f}</div>
                 {_sub_html(avg_df, 'AvgFinish', 'float')}
@@ -889,7 +1174,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             rnd = row.get("Round", "-")
             gp_name = str(row.get("GP Name", "-"))
             flag_icon = _flag_img(gp_name, 14)
-            short_trk = GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
+            short_trk = _tr_track(lang, gp_name)
             status = str(row.get("Status", "")).lower()
 
             winner = "–"
@@ -899,7 +1184,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     winner = r_gp.iloc[0]["Driver"]
 
             status_cls = "status-done" if status == "done" else "status-up"
-            status_txt = "Completed" if status == "done" else "Upcoming"
+            status_txt = _tr(lang, "completed") if status == "done" else _tr(lang, "upcoming")
             row_html = f"""
             <div class="p-cal-row">
                 <div class="p-cal-rnd">{rnd}</div>
@@ -928,8 +1213,12 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             avg_f = float(drow.get("AvgFinish", 99))
             consist = float(drow.get("Consistency", 5))
             best_finish = 1 if wins > 0 else (2 if podiums > 0 else (int(avg_f) if avg_f < 20 else "-"))
-            best_str = f"{best_finish}{'st' if best_finish==1 else 'nd' if best_finish==2 else 'rd' if best_finish==3 else 'th'}" if isinstance(best_finish, int) else "-"
+            if lang == "pt":
+                best_str = f"{best_finish}º" if isinstance(best_finish, int) else "-"
+            else:
+                best_str = f"{best_finish}{'st' if best_finish==1 else 'nd' if best_finish==2 else 'rd' if best_finish==3 else 'th'}" if isinstance(best_finish, int) else "-"
             style = _driving_style(wins, podiums, avg_f, consist)
+            style_localized = _tr(lang, f"style_{style}")
 
             helmet_b64 = _get_helmet_b64(driver, team)
             helmet_html = f'<img src="{helmet_b64}" class="p-helmet-img" />' if helmet_b64 else '<div class="p-helmet-icon">🪖</div>'
@@ -943,10 +1232,10 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 <div class="p-drv-num">#{pos}</div>
                 <div class="p-drv-team">{badge} {team}</div>
                 <div class="p-drv-stats">
-                    <div class="p-drv-stat"><span class="p-stat-lbl">WINS</span> <span class="p-stat-v">{wins}</span></div>
-                    <div class="p-drv-stat"><span class="p-stat-lbl">PODIUMS</span> <span class="p-stat-v">{podiums}</span></div>
-                    <div class="p-drv-stat"><span class="p-stat-lbl">BEST FINISH</span> <span class="p-stat-v">{best_str}</span></div>
-                    <div class="p-drv-stat"><span class="p-stat-lbl">STYLE</span> <span class="p-stat-v">⚡ {style}</span></div>
+                    <div class="p-drv-stat"><span class="p-stat-lbl">{_tr(lang, "wins_capital")}</span> <span class="p-stat-v">{wins}</span></div>
+                    <div class="p-drv-stat"><span class="p-stat-lbl">{_tr(lang, "podiums_capital")}</span> <span class="p-stat-v">{podiums}</span></div>
+                    <div class="p-drv-stat"><span class="p-stat-lbl">{_tr(lang, "best_finish")}</span> <span class="p-stat-v">{best_str}</span></div>
+                    <div class="p-drv-stat"><span class="p-stat-lbl">{_tr(lang, "style_label")}</span> <span class="p-stat-v">⚡ {style_localized}</span></div>
                 </div>
             </div>
             """
@@ -1237,10 +1526,11 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         h += '</div>'
         return h
 
-    champ_name = "Coming soon"
-    dom_name = "Coming soon"
-    best_race = "Coming soon"
-    funny_crash = "Coming soon"
+    coming_soon_lbl = _tr(lang, "Coming soon")
+    champ_name = coming_soon_lbl
+    dom_name = coming_soon_lbl
+    best_race = coming_soon_lbl
+    funny_crash = coming_soon_lbl
     
     if base_all is not None and not base_all.empty:
         df_hof = base_all.dropna(subset=['Driver', 'Finish Pos', 'Points']).copy()
@@ -1252,7 +1542,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             most_champs = champs.groupby('Driver').size().sort_values(ascending=False)
             if not most_champs.empty:
                 champs_items = [(idx, val) for idx, val in zip(most_champs.index, most_champs.values)]
-                champ_name = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{champs_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{champs_items[0][1]} Titles</span>{_hof_sub_list(champs_items)}"
+                titles_lbl = _tr(lang, "titles_plural") if champs_items[0][1] != 1 else _tr(lang, "title_singular")
+                champ_name = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{champs_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{champs_items[0][1]} {titles_lbl}</span>{_hof_sub_list(champs_items)}"
             
             # Most Dominant Season
             dom_candidates = []
@@ -1275,27 +1566,29 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     'SeasonLabel': season,
                     'Score': gap_score
                 })
-
+ 
             if dom_candidates:
                 dom_df = pd.DataFrame(dom_candidates).sort_values('Score', ascending=False)
                 def trunc(name): return str(name)[:15] + "..." if len(str(name)) > 15 else str(name)
-                dom_items = [(r['Driver'], f"{int(r['Score'])} Pts Gap ({trunc(r['SeasonLabel'])})") for _, r in dom_df.iterrows()]
+                dom_items = [(r['Driver'], f"{int(r['Score'])}{_tr(lang, 'pts_gap_suffix')} ({trunc(r['SeasonLabel'])})") for _, r in dom_df.iterrows()]
                 dom_name = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{dom_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{dom_items[0][1]}</span>{_hof_sub_list(dom_items, stacked=True)}"
-
+ 
             wins_df = df_hof[(df_hof['Finish Pos'] == 1) & (~df_hof['IsSeasonFinal'])]
             if not wins_df.empty:
                 
                 all_time_wins = wins_df.groupby('Driver').size().sort_values(ascending=False)
                 if not all_time_wins.empty:
                     wins_items = [(idx, val) for idx, val in zip(all_time_wins.index, all_time_wins.values)]
-                    best_race = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{wins_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{wins_items[0][1]} Wins</span>{_hof_sub_list(wins_items)}"
+                    wins_lbl = _tr(lang, "wins_plural") if wins_items[0][1] != 1 else _tr(lang, "wins")
+                    best_race = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{wins_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{wins_items[0][1]} {wins_lbl}</span>{_hof_sub_list(wins_items)}"
                 
             pod_df = df_hof[(df_hof['Finish Pos'] <= 3) & (~df_hof['IsSeasonFinal'])]
             if not pod_df.empty:
                 all_time_pod = pod_df.groupby('Driver').size().sort_values(ascending=False)
                 if not all_time_pod.empty:
                     pod_items = [(idx, val) for idx, val in zip(all_time_pod.index, all_time_pod.values)]
-                    funny_crash = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{pod_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{pod_items[0][1]} Podiums</span>{_hof_sub_list(pod_items)}"
+                    pods_lbl = _tr(lang, "podiums_plural") if pod_items[0][1] != 1 else _tr(lang, "podiums")
+                    funny_crash = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{pod_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{pod_items[0][1]} {pods_lbl}</span>{_hof_sub_list(pod_items)}"
 
 
     html = f"""
@@ -1305,43 +1598,43 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         <div class="p-grid">
             <!-- STANDINGS -->
             <div class="p-card">
-                <div class="p-card-title">🏆 DRIVERS CHAMPIONSHIP STANDINGS</div>
+                <div class="p-card-title">{_tr(lang, "drivers_championship_standings")}</div>
                 <h3 style="margin:0 0 0.8rem 0;font-size:1.1rem;letter-spacing:1px;text-transform:uppercase;">{meta.get("League Name", "")}</h3>
                 <div class="p-row" style="color:#555; font-size:0.65rem; font-weight:800;">
-                    <div class="p-col p-pos">POS</div>
-                    <div class="p-col p-driver">DRIVER</div>
-                    <div class="p-col p-pts">POINTS</div>
-                    <div class="p-col p-wins">WINS</div>
-                    <div class="p-col p-gap">GAP</div>
+                    <div class="p-col p-pos">{_tr(lang, "pos")}</div>
+                    <div class="p-col p-driver">{_tr(lang, "driver")}</div>
+                    <div class="p-col p-pts">{_tr(lang, "points")}</div>
+                    <div class="p-col p-wins">{_tr(lang, "wins")}</div>
+                    <div class="p-col p-gap">{_tr(lang, "gap")}</div>
                 </div>
                 {standings_top_html}
                 <div id="standings-extra" style="display:none;">
                     {standings_extra_html}
                 </div>
-                <div class="p-btn-outline" id="btn-full-standings">FULL STANDINGS</div>
+                <div class="p-btn-outline" id="btn-full-standings">{_tr(lang, "full_standings")}</div>
             </div>
 
             <!-- LATEST RACE -->
             <div class="p-card">
-                <div class="p-card-title">🏁 LATEST RACE<span style="float:right;color:#555;">Round {latest_round}</span></div>
-                <h3 style="margin:0 0 0.8rem 0;font-size:1.1rem;letter-spacing:1px;">{latest_race_name.upper().replace(' GP',' GRAND PRIX')} {latest_flag_img}</h3>
+                <div class="p-card-title">{_tr(lang, "latest_race")}<span style="float:right;color:#555;">{_tr(lang, "round_label")} {latest_round}</span></div>
+                <h3 style="margin:0 0 0.8rem 0;font-size:1.1rem;letter-spacing:1px;">{f"{_tr(lang, 'grand_prix').upper()} - {latest_race_name.upper().replace(' GP','')}" if lang != "en" else latest_race_name.upper().replace(' GP',' GRAND PRIX')} {latest_flag_img}</h3>
                 <div class="p-row" style="color:#555; font-size:0.65rem; font-weight:800;">
-                    <div class="p-col p-pos">POS</div>
-                    <div class="p-col p-driver">DRIVER</div>
-                    <div class="p-time">TIME</div>
-                    <div class="p-fl">FASTEST LAP</div>
-                    <div class="p-col p-pts">POINTS</div>
+                    <div class="p-col p-pos">{_tr(lang, "pos")}</div>
+                    <div class="p-col p-driver">{_tr(lang, "driver")}</div>
+                    <div class="p-time">{_tr(lang, "time")}</div>
+                    <div class="p-fl">{_tr(lang, "fastest_lap")}</div>
+                    <div class="p-col p-pts">{_tr(lang, "points")}</div>
                 </div>
                 {race_top_html}
                 <div id="race-extra" style="display:none;">
                     {race_extra_html}
                 </div>
-                <div class="p-btn-outline" id="btn-full-results">FULL RESULTS</div>
+                <div class="p-btn-outline" id="btn-full-results">{_tr(lang, "full_results")}</div>
             </div>
 
             <!-- NEXT RACE -->
             <div class="p-card" style="{bg_style}">
-                <div class="p-card-title" style="{bg_title_style}">📅 NEXT RACE</div>
+                <div class="p-card-title" style="{bg_title_style}">{_tr(lang, "next_race")}</div>
                 {next_race_card_html}
             </div>
         </div>
@@ -1350,31 +1643,31 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         <div class="p-grid-3">
             <!-- CONSTRUCTORS STANDINGS -->
             <div class="p-card">
-                <div class="p-card-title">🏎️ CONSTRUCTORS STANDINGS</div>
+                <div class="p-card-title">{_tr(lang, "constructors_standings")}</div>
                 <div class="p-row" style="color:#555; font-size:0.65rem; font-weight:800;">
-                    <div class="p-col p-pos">POS</div>
-                    <div class="p-col p-driver">TEAM</div>
-                    <div class="p-col p-pts">POINTS</div>
-                    <div class="p-col p-wins">WINS</div>
-                    <div class="p-col p-gap">GAP</div>
+                    <div class="p-col p-pos">{_tr(lang, "pos")}</div>
+                    <div class="p-col p-driver">{_tr(lang, "team")}</div>
+                    <div class="p-col p-pts">{_tr(lang, "points")}</div>
+                    <div class="p-col p-wins">{_tr(lang, "wins")}</div>
+                    <div class="p-col p-gap">{_tr(lang, "gap")}</div>
                 </div>
                 {c_standings_top_html}
                 <div id="c-standings-extra" style="display:none;">
                     {c_standings_extra_html}
                 </div>
-                <div class="p-btn-outline" id="btn-full-c-standings">FULL STANDINGS</div>
+                <div class="p-btn-outline" id="btn-full-c-standings">{_tr(lang, "full_standings")}</div>
             </div>
             
             <!-- TEAMMATE BATTLE CHART -->
             <div class="p-card">
-                <div class="p-card-title">⚔️ TEAMMATE BATTLE</div>
+                <div class="p-card-title">{_tr(lang, "teammate_battle")}</div>
                 <div id="team-chart-top">
                     {team_chart_html}
                 </div>
                 <div id="team-chart-extra" style="display:none; margin-top: 1rem; border-top: 1px solid #333; padding-top: 1rem;">
                     {team_chart_extra_html}
                 </div>
-                <div class="p-btn-outline" id="btn-full-team-chart">FULL LIST</div>
+                <div class="p-btn-outline" id="btn-full-team-chart">{_tr(lang, "full_list")}</div>
             </div>
 
             <!-- CHAMPIONSHIP MATHS -->
@@ -1385,7 +1678,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
         <!-- ROW 2.5: LEAGUE STATS -->
         <div style="padding: 0 2rem;">
-            <div class="p-card-title" style="margin-bottom:0;">📊 LEAGUE STATISTICS</div>
+            <div class="p-card-title" style="margin-bottom:0;">{_tr(lang, "league_statistics")}</div>
             <div class="p-stats-grid">
                 {stats_html}
             </div>
@@ -1396,27 +1689,27 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         <div class="p-grid-2">
             <!-- CALENDAR -->
             <div class="p-card">
-                <div class="p-card-title">📅 SEASON CALENDAR</div>
+                <div class="p-card-title">{_tr(lang, "season_calendar")}</div>
                 <div class="p-cal-row" style="color:#555; font-size:0.6rem; font-weight:800; border-bottom: 1px solid #333;">
-                    <div class="p-cal-rnd">RND</div>
-                    <div class="p-cal-track">TRACK</div>
-                    <div class="p-cal-winner">WINNER</div>
-                    <div class="p-cal-status">STATUS</div>
+                    <div class="p-cal-rnd">{_tr(lang, "rnd")}</div>
+                    <div class="p-cal-track">{_tr(lang, "track")}</div>
+                    <div class="p-cal-winner">{_tr(lang, "winner")}</div>
+                    <div class="p-cal-status">{_tr(lang, "status")}</div>
                 </div>
                 {cal_top_html}
                 <div id="cal-extra" style="display:none;">
                     {cal_extra_html}
                 </div>
-                <div class="p-btn-outline" id="btn-full-calendar">FULL CALENDAR</div>
+                <div class="p-btn-outline" id="btn-full-calendar">{_tr(lang, "full_calendar")}</div>
             </div>
 
             <!-- DRIVERS -->
             <div class="p-card">
-                <div class="p-card-title">🏎️ DRIVER LINEUP</div>
+                <div class="p-card-title">{_tr(lang, "driver_lineup")}</div>
                 <div class="p-drivers-flex">
                     {drivers_html}
                 </div>
-                <div class="p-btn-outline" id="btn-all-drivers">ALL DRIVERS</div>
+                <div class="p-btn-outline" id="btn-all-drivers">{_tr(lang, "all_drivers")}</div>
                 <script>
                 (function() {{
                     function resizeIframe() {{
@@ -1432,7 +1725,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                         var el  = document.getElementById(elId);
                         if (btn && el) {{
                             btn.addEventListener('click', function() {{
-                                if (el.style.display === 'none') {{
+                                  if (el.style.display === 'none') {{
                                     el.style.display = displayStyle || 'block';
                                     btn.textContent = hideText;
                                     window.dispatchEvent(new Event('resize'));
@@ -1452,7 +1745,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                         if (cards.length === 0) return;
                         
                         var btn = document.getElementById('btn-all-drivers');
-                        var isExpanded = btn && btn.textContent === 'HIDE DRIVERS';
+                        var isExpanded = btn && btn.textContent === '{_tr(lang, "hide_drivers")}';
                         
                         for (var i = 0; i < cards.length; i++) {{
                             cards[i].style.display = 'block';
@@ -1471,8 +1764,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     var btnAllDrivers = document.getElementById('btn-all-drivers');
                     if (btnAllDrivers) {{
                         btnAllDrivers.addEventListener('click', function() {{
-                            var isExpanded = btnAllDrivers.textContent === 'HIDE DRIVERS';
-                            btnAllDrivers.textContent = isExpanded ? 'ALL DRIVERS' : 'HIDE DRIVERS';
+                            var isExpanded = btnAllDrivers.textContent === '{_tr(lang, "hide_drivers")}';
+                            btnAllDrivers.textContent = isExpanded ? '{_tr(lang, "all_drivers")}' : '{_tr(lang, "hide_drivers")}';
                             updateDriverLineup();
                             window.dispatchEvent(new Event('resize'));
                             setTimeout(resizeIframe, 50);
@@ -1484,11 +1777,11 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                         setTimeout(resizeIframe, 50);
                     }});
                     
-                    setupToggle('btn-full-standings',  'standings-extra',  'FULL STANDINGS',  'HIDE STANDINGS',  'block');
-                    setupToggle('btn-full-c-standings','c-standings-extra','FULL STANDINGS',  'HIDE STANDINGS',  'block');
-                    setupToggle('btn-full-team-chart', 'team-chart-extra', 'FULL LIST',       'HIDE LIST',       'block');
-                    setupToggle('btn-full-results',    'race-extra',       'FULL RESULTS',    'HIDE RESULTS',    'block');
-                    setupToggle('btn-full-calendar',   'cal-extra',        'FULL CALENDAR',   'HIDE CALENDAR',   'block');
+                    setupToggle('btn-full-standings',  'standings-extra',  '{_tr(lang, "full_standings")}',  '{_tr(lang, "hide_standings")}',  'block');
+                    setupToggle('btn-full-c-standings','c-standings-extra','{_tr(lang, "full_standings")}',  '{_tr(lang, "hide_standings")}',  'block');
+                    setupToggle('btn-full-team-chart', 'team-chart-extra', '{_tr(lang, "full_list")}',       '{_tr(lang, "hide_list")}',       'block');
+                    setupToggle('btn-full-results',    'race-extra',       '{_tr(lang, "full_results")}',    '{_tr(lang, "hide_results")}',    'block');
+                    setupToggle('btn-full-calendar',   'cal-extra',        '{_tr(lang, "full_calendar")}',   '{_tr(lang, "hide_calendar")}',   'block');
                     
                     // Initial resize
                     updateDriverLineup();
@@ -1542,9 +1835,9 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                                 if (hoursEl) hoursEl.textContent = "00";
                                 if (minutesEl) minutesEl.textContent = "00";
                                 if (secondsEl) secondsEl.textContent = "00";
-                                if (textEl) textEl.textContent = "RACE IN PROGRESS / COMPLETED";
+                                if (textEl) textEl.textContent = "{_tr(lang, "race_in_progress")}";
                                 return;
-                            }}
+                             }}
                             
                             var d = Math.floor(diff / (1000 * 60 * 60 * 24));
                             var h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -1566,12 +1859,12 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
         <!-- ROW 4: HOF -->
         <div class="p-hof">
-            <div class="p-card-title">🏆 HALL OF FAME</div>
+            <div class="p-card-title">{_tr(lang, "hall_of_fame")}</div>
             <div class="p-hof-grid">
-                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">MOST CHAMPIONSHIPS</div>{champ_name}</div>
-                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">MOST DOMINANT SEASON</div>{dom_name}</div>
-                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">ALL-TIME WINS</div>{best_race}</div>
-                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">ALL-TIME PODIUMS</div>{funny_crash}</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "most_championships")}</div>{champ_name}</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "most_dominant_season")}</div>{dom_name}</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "all_time_wins")}</div>{best_race}</div>
+                <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "all_time_podiums")}</div>{funny_crash}</div>
             </div>
         </div>
     </div>
