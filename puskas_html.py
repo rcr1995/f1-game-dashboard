@@ -199,6 +199,29 @@ def _tr(lang: str, key: str) -> str:
     return _T.get(lang, _T["en"]).get(key, key)
 
 
+def _js_escape(s: str) -> str:
+    if not isinstance(s, str):
+        s = str(s)
+    return "".join(f"\\u{ord(c):04x}" if ord(c) > 127 else c for c in s)
+
+
+def get_calendar_for_league(calendar_df: pd.DataFrame, meta: dict) -> pd.DataFrame:
+    if calendar_df is None or calendar_df.empty or not isinstance(meta, dict):
+        return pd.DataFrame()
+    league_name = meta.get("League Name", "")
+    season_label = meta.get("SeasonLabel", "")
+    # 1. Exact match on League Name
+    cal = calendar_df[calendar_df["League Name"].astype(str).str.strip().str.lower() == str(league_name).strip().lower()]
+    if not cal.empty:
+        return cal
+    # 2. Try substring match (e.g. "2026" is in "2026-T02")
+    for cal_league in calendar_df["League Name"].dropna().unique():
+        cal_league_str = str(cal_league).strip().lower()
+        if cal_league_str and (cal_league_str in str(season_label).lower() or cal_league_str in str(league_name).lower()):
+            return calendar_df[calendar_df["League Name"] == cal_league]
+    return pd.DataFrame()
+
+
 def _tr_gp(lang: str, gp_name: str) -> str:
     if lang == "pt":
         gp_map = {
@@ -275,6 +298,7 @@ TEAM_HELMET_FILE = {
     "Williams": "williams", "Racing Bulls": "racingbulls",
     "Kick Sauber": "kicksauber", "Haas": "haas",
     "Renault": "alpine", "Alfa Romeo": "kicksauber", "Racing Point": "astonmartin",
+    "Audi": "kicksauber", "Cadillac": "haas",
 }
 
 # Custom driver overrides (league-specific players with bespoke helmets)
@@ -325,6 +349,8 @@ TEAM_COLORS = {
     "Renault":       "#FFD800",
     "Alfa Romeo":    "#C92D4B",
     "Racing Point":  "#F596C8",
+    "Audi":          "#F5002C",
+    "Cadillac":      "#B59A57",
 }
 
 TEAM_SHORT = {
@@ -529,7 +555,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
     next_race_name = ""
     next_race_target_iso = ""
     if calendar_raw is not None and not calendar_raw.empty:
-        cal = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")]
+        cal = get_calendar_for_league(calendar_raw, meta)
         if not cal.empty:
             upcoming = cal[cal["Status"].astype(str).str.lower() == "upcoming"]
             if not upcoming.empty:
@@ -590,18 +616,10 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@400;600;700&family=Inter:wght@400;600;800&display=swap');
     
-    .puskas-container {
-        font-family: 'Inter', sans-serif;
-        background-color: #0b0b0f;
-        color: #ffffff;
-        padding: 0;
-        margin: -1rem -2rem; /* negate streamlit padding */
-    }
-    
     .p-hero {
-        background: linear-gradient(to right, #000000 20%, transparent 100%), 
+        background: linear-gradient(to right, #0b0b0f 15%, rgba(11,11,15,0.3) 70%, transparent 100%), 
                     url('""" + _HERO_B64 + """');
-        background-color: #1a1a20; /* fallback */
+        background-color: #0b0b0f; /* fallback */
         background-size: cover;
         background-position: center;
         padding: 4rem 2rem 2.5rem 2rem;
@@ -733,7 +751,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
 def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None, lang: str = "en") -> str:
     next_race_target_iso = ""
     if calendar_raw is not None and not calendar_raw.empty:
-        cal = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")]
+        cal = get_calendar_for_league(calendar_raw, meta)
         if not cal.empty:
             upcoming = cal[cal["Status"].astype(str).str.lower() == "upcoming"]
             if not upcoming.empty:
@@ -767,8 +785,72 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     if not latest_gp.empty:
         for _, row in latest_gp.drop_duplicates(subset=["Driver"]).iterrows():
             driver_team[str(row["Driver"])] = str(row.get("Team", ""))
+    if base_all is not None and not base_all.empty:
+        for _, row in base_all.drop_duplicates(subset=["Driver"]).iterrows():
+            d = str(row["Driver"])
+            if d not in driver_team:
+                driver_team[d] = str(row.get("Team", ""))
 
-    # 1. CHAMPIONSHIP STANDINGS – top 6 visible, rest toggled
+    reigning_champ = ""
+    if base_all is not None and not base_all.empty:
+        try:
+            # 1. Identify ongoing seasons to exclude them
+            ongoing_seasons = set()
+            if calendar_raw is not None and not calendar_raw.empty:
+                upcoming_leagues = calendar_raw[calendar_raw['Status'].astype(str).str.lower() == 'upcoming']['League Name'].dropna().unique().tolist()
+                if upcoming_leagues:
+                    standings_seasons = base_all[['SeasonLabel', 'League Name']].drop_duplicates().values.tolist()
+                    for label, league in standings_seasons:
+                        st_gps = set(base_all[(base_all['SeasonLabel'] == label) & (base_all['League Name'] == league) & (~base_all['IsSeasonFinal'])]['GP Name'].dropna().unique())
+                        for ul in upcoming_leagues:
+                            if str(ul).strip().lower() == str(league).strip().lower():
+                                ongoing_seasons.add(label)
+                                break
+                            cal_gps = set(calendar_raw[calendar_raw['League Name'] == ul]['GP Name'].dropna().unique())
+                            if cal_gps and st_gps and st_gps.issubset(cal_gps):
+                                ongoing_seasons.add(label)
+                                break
+
+            # 2. Filter out ongoing seasons
+            df_finished = base_all[~base_all["SeasonLabel"].isin(ongoing_seasons)].copy()
+            if not df_finished.empty:
+                # 3. Find the champions of each finished season
+                d = df_finished.groupby(["SeasonLabel", "Driver"], as_index=False)["Points"].sum()
+                d = d.sort_values(["SeasonLabel", "Points"], ascending=[True, False])
+                champs = d.groupby("SeasonLabel").head(1)
+                
+                # 4. Sort seasons and get the champion of the latest one
+                def _season_sort_key(label):
+                    import re
+                    if pd.isna(label):
+                        return (0, 0, "")
+                    s = str(label).strip()
+                    m = re.match(r"(\d{4})[-/]T(\d{2})", s)
+                    if m:
+                        return (1, int(m.group(1)), f"T{m.group(2)}")
+                    m2 = re.match(r"(\d{4})", s)
+                    if m2:
+                        return (2, int(m2.group(1)), "")
+                    return (3, 0, s)
+
+                champs_list = champs.to_dict('records')
+                if champs_list:
+                    champs_list.sort(key=lambda x: _season_sort_key(x["SeasonLabel"]))
+                    reigning_champ = champs_list[-1]["Driver"]
+        except Exception:
+            pass
+
+    # Check if latest GP has a Sprint Race to dynamically adjust standings card length
+    has_sprint = False
+    if not latest_gp.empty:
+        last_r = int(latest_gp["Round"].max())
+        d0_temp = latest_gp[(latest_gp["Round"] == last_r) & (~latest_gp["IsSeasonFinal"])]
+        if "Type" in d0_temp.columns and (d0_temp["Type"] == "SR").any():
+            has_sprint = True
+            
+    standings_limit = 8 if has_sprint else 6
+
+    # 1. CHAMPIONSHIP STANDINGS
     standings_top_html = ""
     standings_extra_html = ""
     all_standings = list(st_tbl_latest.iterrows())
@@ -788,58 +870,212 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         team = driver_team.get(driver, "")
         badge = _team_badge_html(team, 18)
         
+        disp_driver = f"{driver} ⭐" if driver == reigning_champ else driver
         row_html = f"""
         <div class="p-row">
             <div class="p-col p-pos"><span class="{color_class}">{pos}</span></div>
-            <div class="p-col p-driver">{badge}{driver}</div>
+            <div class="p-col p-driver">{badge}{disp_driver}</div>
             <div class="p-col p-pts">{points}</div>
             <div class="p-col p-wins">{wins}</div>
             <div class="p-col p-gap">{gap}</div>
         </div>
         """
-        if i < 6:
+        if i < standings_limit:
             standings_top_html += row_html
         else:
             standings_extra_html += row_html
 
-    # 2. LATEST RACE – top 6 visible, rest toggled
-    race_top_html = ""
-    race_extra_html = ""
+    # 2. LATEST RACE
     latest_race_name = "TBD"
     latest_round = "-"
     latest_flag_img = ""
+    latest_race_card_content = ""
     if not latest_gp.empty:
         last_r = int(latest_gp["Round"].max())
-        d0 = latest_gp[(latest_gp["Round"] == last_r) & (~latest_gp["IsSeasonFinal"])]
+        d0 = latest_gp[(latest_gp["Round"] == last_r) & (~latest_gp["IsSeasonFinal"])].copy()
+        if "Type" not in d0.columns:
+            d0["Type"] = "R"
+            
         if not d0.empty:
             latest_race_name = d0.iloc[0]["GP Name"]
             latest_round = last_r
             latest_flag_img = _flag_img(latest_race_name, 20)
-            d_sort = d0.sort_values(["Finish Pos", "Driver"])
-            for i, (idx, row) in enumerate(d_sort.iterrows()):
-                fpos = int(row["Finish Pos"]) if pd.notna(row["Finish Pos"]) else "-"
-                drv = str(row["Driver"])
-                pts = int(row["Points"]) if pd.notna(row["Points"]) else 0
-                team = str(row.get("Team", ""))
-                badge = _team_badge_html(team, 18)
-                
-                # Format Time and Fastest Lap
-                time_val = _format_time(row.get("Time", "-"), mode="time")
-                fl_val = _format_time(row.get("Fastest Lap", "-"), mode="fl")
+            
+            d0_race = d0[d0["Type"] == "R"].copy()
+            d0_sprint = d0[d0["Type"] == "SR"].copy()
+            
+            def _build_results_html(df_sub, view_id, show_headers=True):
+                top_html = ""
+                extra_html = ""
+                df_sort = df_sub.sort_values(["Finish Pos", "Driver"])
+                for idx, (index_val, row) in enumerate(df_sort.iterrows()):
+                    fpos = int(row["Finish Pos"]) if pd.notna(row["Finish Pos"]) else "-"
+                    drv = str(row["Driver"])
+                    disp_drv = f"{drv} ⭐" if drv == reigning_champ else drv
+                    pts = int(row["Points"]) if pd.notna(row["Points"]) else 0
+                    team = str(row.get("Team", ""))
+                    badge = _team_badge_html(team, 18)
+                    
+                    time_val = _format_time(row.get("Time", "-"), mode="time")
+                    fl_val = _format_time(row.get("Fastest Lap", "-"), mode="fl")
 
-                r_html = f"""
-                <div class="p-row">
-                    <div class="p-col p-pos">{fpos}</div>
-                    <div class="p-col p-driver">{badge}{drv}</div>
-                    <div class="p-time">{time_val}</div>
-                    <div class="p-fl">{fl_val}</div>
-                    <div class="p-col p-pts">{pts}</div>
+                    r_html = f"""
+                    <div class="p-row">
+                        <div class="p-col p-pos">{fpos}</div>
+                        <div class="p-col p-driver">{badge}{disp_drv}</div>
+                        <div class="p-time">{time_val}</div>
+                        <div class="p-fl">{fl_val}</div>
+                        <div class="p-col p-pts">{pts}</div>
+                    </div>
+                    """
+                    if idx < 6:
+                        top_html += r_html
+                    else:
+                        extra_html += r_html
+                
+                headers = ""
+                if show_headers:
+                    headers = f"""
+                    <div class="p-row" style="color:#555; font-size:0.65rem; font-weight:800;">
+                        <div class="p-col p-pos">{_tr(lang, "pos")}</div>
+                        <div class="p-col p-driver">{_tr(lang, "driver")}</div>
+                        <div class="p-time">{_tr(lang, "time")}</div>
+                        <div class="p-fl">{_tr(lang, "fastest_lap")}</div>
+                        <div class="p-col p-pts">{_tr(lang, "points")}</div>
+                    </div>
+                    """
+                
+                extra_btn = ""
+                if len(df_sort) > 6:
+                    btn_id = f"btn-full-{view_id}"
+                    extra_id = f"extra-{view_id}"
+                    extra_btn = f"""
+                    <div id="{extra_id}" style="display:none;">
+                        {extra_html}
+                    </div>
+                    <div class="p-btn-outline" id="{btn_id}">{_tr(lang, "full_results")}</div>
+                    <script>
+                    document.getElementById('{btn_id}').addEventListener('click', function() {{
+                        var ex = document.getElementById('{extra_id}');
+                        if (ex.style.display === 'none') {{
+                            ex.style.display = 'block';
+                            this.textContent = '{_tr(lang, "show_less") if lang == "en" else "MOSTRAR MENOS"}';
+                        }} else {{
+                            ex.style.display = 'none';
+                            this.textContent = '{_tr(lang, "full_results")}';
+                        }}
+                    }});
+                    </script>
+                    """
+                
+                return f"""
+                <div id="{view_id}">
+                    {headers}
+                    {top_html}
+                    {extra_btn}
                 </div>
                 """
-                if i < 6:
-                    race_top_html += r_html
-                else:
-                    race_extra_html += r_html
+
+            def _build_weekend_score_html(df_r, df_sr):
+                drivers = pd.concat([df_r["Driver"], df_sr["Driver"]]).unique()
+                wk_rows = []
+                for d in drivers:
+                    sr_pts = df_sr[df_sr["Driver"] == d]["Points"].sum()
+                    r_pts = df_r[df_r["Driver"] == d]["Points"].sum()
+                    t_sub = df_r[df_r["Driver"] == d]
+                    if t_sub.empty:
+                        t_sub = df_sr[df_sr["Driver"] == d]
+                    team = str(t_sub.iloc[0]["Team"]) if not t_sub.empty else ""
+                    wk_rows.append({
+                        "Driver": d,
+                        "Team": team,
+                        "SR": int(sr_pts),
+                        "Race": int(r_pts),
+                        "Total": int(sr_pts + r_pts)
+                    })
+                df_wk = pd.DataFrame(wk_rows).sort_values(by=["Total", "Race"], ascending=[False, False])
+                
+                headers = f"""
+                <div class="p-row" style="color:#555; font-size:0.65rem; font-weight:800;">
+                    <div class="p-col p-pos">{_tr(lang, "pos")}</div>
+                    <div class="p-col p-driver">{_tr(lang, "driver")}</div>
+                    <div style="width: 50px; text-align: right;">SR</div>
+                    <div style="width: 50px; text-align: right;">RACE</div>
+                    <div class="p-col p-pts" style="width: 60px; text-align: right; font-weight: 900; color: #fff;">TOTAL</div>
+                </div>
+                """
+                
+                top_html = ""
+                extra_html = ""
+                for idx, r in enumerate(df_wk.iterrows(), start=1):
+                    _, row = r
+                    drv = str(row["Driver"])
+                    disp_drv = f"{drv} ⭐" if drv == reigning_champ else drv
+                    team = str(row["Team"])
+                    badge = _team_badge_html(team, 18)
+                    sr_pts = int(row["SR"])
+                    r_pts = int(row["Race"])
+                    tot_pts = int(row["Total"])
+                    
+                    r_html = f"""
+                    <div class="p-row" style="align-items: center;">
+                        <div class="p-col p-pos">{idx}</div>
+                        <div class="p-col p-driver">{badge}{disp_drv}</div>
+                        <div style="width: 50px; text-align: right; color: #aaa;">{sr_pts}</div>
+                        <div style="width: 50px; text-align: right; color: #aaa;">{r_pts}</div>
+                        <div class="p-col p-pts" style="width: 60px; text-align: right; font-weight: 800; color: #e10600;">{tot_pts}</div>
+                    </div>
+                    """
+                    if idx <= 6:
+                        top_html += r_html
+                    else:
+                        extra_html += r_html
+                        
+                extra_btn = ""
+                if len(df_wk) > 6:
+                    btn_id = "btn-full-weekend"
+                    extra_id = "extra-weekend"
+                    extra_btn = f"""
+                    <div id="{extra_id}" style="display:none;">
+                        {extra_html}
+                    </div>
+                    <div class="p-btn-outline" id="{btn_id}">{_tr(lang, "full_results")}</div>
+                    <script>
+                    document.getElementById('{btn_id}').addEventListener('click', function() {{
+                        var ex = document.getElementById('{extra_id}');
+                        if (ex.style.display === 'none') {{
+                            ex.style.display = 'block';
+                            this.textContent = '{_tr(lang, "show_less") if lang == "en" else "MOSTRAR MENOS"}';
+                        }} else {{
+                            ex.style.display = 'none';
+                            this.textContent = '{_tr(lang, "full_results")}';
+                        }}
+                    }});
+                    </script>
+                    """
+                return f"""
+                <div id="latest-race-view-weekend" style="display:none;">
+                    {headers}
+                    {top_html}
+                    {extra_btn}
+                </div>
+                """
+
+            if not d0_sprint.empty:
+                latest_race_card_content = f"""
+                <div class="p-card-tabs" style="display:flex; gap:6px; margin-bottom:1rem; border-bottom:1px solid #222; padding-bottom:0.6rem;">
+                    <div class="p-card-tab active" id="tab-btn-race" onclick="switchLatestRaceView('race')" style="cursor:pointer; font-size:0.7rem; font-weight:800; padding:0.3rem 0.6rem; border-radius:3px; background:#e10600; color:#fff;">{_tr(lang, "grand_prix").upper()}</div>
+                    <div class="p-card-tab" id="tab-btn-sprint" onclick="switchLatestRaceView('sprint')" style="cursor:pointer; font-size:0.7rem; font-weight:800; padding:0.3rem 0.6rem; border-radius:3px; background:#222; color:#aaa;">SPRINT</div>
+                    <div class="p-card-tab" id="tab-btn-weekend" onclick="switchLatestRaceView('weekend')" style="cursor:pointer; font-size:0.7rem; font-weight:800; padding:0.3rem 0.6rem; border-radius:3px; background:#222; color:#aaa;">{_tr(lang, "weekend").upper() if lang == "en" else "FIM DE SEMANA"}</div>
+                </div>
+                {_build_results_html(d0_race, "latest-race-view-race")}
+                <div id="latest-race-view-sprint" style="display:none;">
+                    {_build_results_html(d0_sprint, "latest-race-view-sprint-internal", show_headers=True)}
+                </div>
+                {_build_weekend_score_html(d0_race, d0_sprint)}
+                """
+            else:
+                latest_race_card_content = _build_results_html(d0_race, "latest-race-view-race")
 
     # 1.5 CONSTRUCTORS STANDINGS
     c_standings_top_html = ""
@@ -887,7 +1123,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     next_race_flag_img = ""
     next_race_circuit_svg = ""
     if not calendar_raw.empty:
-        cal = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")]
+        cal = get_calendar_for_league(calendar_raw, meta)
         if not cal.empty:
             upcoming = cal[cal["Status"].astype(str).str.lower() == "upcoming"]
             if not upcoming.empty:
@@ -977,9 +1213,12 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         p1_name = str(df.iloc[0]["Team"] if is_team else df.iloc[0]["Driver"])
         p2_pts = int(df.iloc[1]["Points"])
         p2_name = str(df.iloc[1]["Team"] if is_team else df.iloc[1]["Driver"])
+        if not is_team:
+            p1_name = f"{p1_name} ⭐" if p1_name == reigning_champ else p1_name
+            p2_name = f"{p2_name} ⭐" if p2_name == reigning_champ else p2_name
         gap = p1_pts - p2_pts
         
-        cal_league = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")].copy() if not calendar_raw.empty else pd.DataFrame()
+        cal_league = get_calendar_for_league(calendar_raw, meta)
         total_races = int(cal_league["Round"].nunique()) if not cal_league.empty and "Round" in cal_league.columns else None
         rounds_done = int(latest_gp["Round"].nunique()) if not latest_gp.empty else 0
         races_left = (total_races - rounds_done) if (total_races and total_races > rounds_done) else 0
@@ -1076,17 +1315,22 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     
     target_drivers = ["TomasRodri21", "Polingua", "Fatacuida"]
     target_teams = [driver_team.get(d) for d in target_drivers if d in driver_team]
+    target_teams = [t for t in target_teams if t]
     
     duel_rows = []
     for _, row in st_tbl_latest.iterrows():
         drv = str(row.get("Driver", ""))
+        disp_drv = f"{drv} ⭐" if drv == reigning_champ else drv
         tm = driver_team.get(drv, "")
         pts = int(row.get("Points", 0))
         if tm:
-            duel_rows.append({"Driver": drv, "Team": tm, "Points": pts})
+            duel_rows.append({"Driver": disp_drv, "Team": tm, "Points": pts})
             
     if duel_rows:
         duel_df = pd.DataFrame(duel_rows)
+        if not target_teams and not duel_df.empty:
+            top_teams = duel_df.groupby("Team")["Points"].sum().sort_values(ascending=False).head(3).index.tolist()
+            target_teams = top_teams
         teams_with_2 = duel_df.groupby("Team").filter(lambda x: len(x) >= 2)["Team"].unique()
         plot_duel = duel_df[duel_df["Team"].isin(teams_with_2)].copy()
         
@@ -1132,7 +1376,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             h = '<div style="margin-top: 0.8rem; font-size: 0.7rem; color: #aaa; text-align: left; padding-top: 0.5rem; border-top: 1px solid #222;">'
             for idx, r in enumerate(rows[1:], start=2):
                 v = f"{int(r[col])}" if fmt=="int" else f"{float(r[col]):.1f}"
-                h += f'<div style="display: flex; justify-content: space-between; padding: 0.15rem 0;"><span>{idx}. {r["Driver"]}</span><span style="color:#fff;font-weight:600;">{v}</span></div>'
+                disp_d = f"{r['Driver']} ⭐" if r['Driver'] == reigning_champ else r['Driver']
+                h += f'<div style="display: flex; justify-content: space-between; padding: 0.15rem 0;"><span>{idx}. {disp_d}</span><span style="color:#fff;font-weight:600;">{v}</span></div>'
             h += '</div>'
             return h
 
@@ -1141,25 +1386,29 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             most_podiums = pod_df[0]
             best_avg = avg_df[0]
             
+            w_drv = f"{most_wins['Driver']} ⭐" if most_wins['Driver'] == reigning_champ else most_wins['Driver']
+            p_drv = f"{most_podiums['Driver']} ⭐" if most_podiums['Driver'] == reigning_champ else most_podiums['Driver']
+            a_drv = f"{best_avg['Driver']} ⭐" if best_avg['Driver'] == reigning_champ else best_avg['Driver']
+            
             stats_html += f"""
             <div class="p-stat-box">
                 <div class="p-stat-icon">🏆</div>
                 <div class="p-stat-label">{_tr(lang, 'most_wins')}</div>
-                <div class="p-stat-driver">{most_wins['Driver']}</div>
+                <div class="p-stat-driver">{w_drv}</div>
                 <div class="p-stat-val">{int(most_wins['Wins'])}</div>
                 {_sub_html(wins_df, 'Wins', 'int')}
             </div>
             <div class="p-stat-box">
                 <div class="p-stat-icon">🥈</div>
                 <div class="p-stat-label">{_tr(lang, 'most_podiums')}</div>
-                <div class="p-stat-driver">{most_podiums['Driver']}</div>
+                <div class="p-stat-driver">{p_drv}</div>
                 <div class="p-stat-val">{int(most_podiums['Podiums'])}</div>
                 {_sub_html(pod_df, 'Podiums', 'int')}
             </div>
             <div class="p-stat-box">
                 <div class="p-stat-icon">🎯</div>
                 <div class="p-stat-label">{_tr(lang, 'best_avg_finish')}</div>
-                <div class="p-stat-driver">{best_avg['Driver']}</div>
+                <div class="p-stat-driver">{a_drv}</div>
                 <div class="p-stat-val">{float(best_avg['AvgFinish']):.1f}</div>
                 {_sub_html(avg_df, 'AvgFinish', 'float')}
             </div>
@@ -1169,7 +1418,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     cal_top_html = ""
     cal_extra_html = ""
     if not calendar_raw.empty:
-        cal = calendar_raw[calendar_raw["League Name"] == meta.get("League Name", "")]
+        cal = get_calendar_for_league(calendar_raw, meta)
         for i, (idx, row) in enumerate(cal.iterrows()):
             rnd = row.get("Round", "-")
             gp_name = str(row.get("GP Name", "-"))
@@ -1183,13 +1432,14 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 if not r_gp.empty:
                     winner = r_gp.iloc[0]["Driver"]
 
+            disp_winner = f"{winner} ⭐" if winner == reigning_champ else winner
             status_cls = "status-done" if status == "done" else "status-up"
             status_txt = _tr(lang, "completed") if status == "done" else _tr(lang, "upcoming")
             row_html = f"""
             <div class="p-cal-row">
                 <div class="p-cal-rnd">{rnd}</div>
                 <div class="p-cal-track">{flag_icon} {short_trk}</div>
-                <div class="p-cal-winner">{winner}</div>
+                <div class="p-cal-winner">{disp_winner}</div>
                 <div class="p-cal-status {status_cls}">{status_txt}</div>
             </div>
             """
@@ -1199,7 +1449,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 cal_extra_html += row_html
 
     # 6. DRIVER LINEUP
-    drivers_html = ""
+    drivers_top_html = ""
+    drivers_extra_html = ""
     if not st_tbl_latest.empty:
         all_drivers = list(st_tbl_latest.head(20).iterrows())
         for i, (_, drow) in enumerate(all_drivers):
@@ -1223,12 +1474,13 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             helmet_b64 = _get_helmet_b64(driver, team)
             helmet_html = f'<img src="{helmet_b64}" class="p-helmet-img" />' if helmet_b64 else '<div class="p-helmet-icon">🪖</div>'
 
+            disp_driver = f"{driver} ⭐" if driver == reigning_champ else driver
             card = f"""
             <div class="p-driver-card-v2">
                 <div class="p-helmet-area" style="background: linear-gradient(135deg, {color}33 0%, #0a0a0f 60%);">
                     {helmet_html}
                 </div>
-                <div class="p-drv-name">{driver}</div>
+                <div class="p-drv-name">{disp_driver}</div>
                 <div class="p-drv-num">#{pos}</div>
                 <div class="p-drv-team">{badge} {team}</div>
                 <div class="p-drv-stats">
@@ -1239,18 +1491,28 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 </div>
             </div>
             """
-            drivers_html += card
+            if i < 4:
+                drivers_top_html += card
+            else:
+                drivers_extra_html += card
 
     css = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Teko:wght@400;600;700&family=Inter:wght@400;600;800&display=swap');
+    
+    html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #0b0b0f;
+        overflow-x: hidden;
+    }
     
     .puskas-container {
         font-family: 'Inter', sans-serif;
         background-color: #0b0b0f;
         color: #ffffff;
         padding: 0;
-        margin: -1rem -2rem; /* negate streamlit padding */
+        margin: 0;
     }
 
     .p-grid {
@@ -1534,9 +1796,31 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     
     if base_all is not None and not base_all.empty:
         df_hof = base_all.dropna(subset=['Driver', 'Finish Pos', 'Points']).copy()
-        if not df_hof.empty:
+        
+        # Exclude ongoing seasons for championships
+        try:
+            ongoing_seasons = set()
+            if calendar_raw is not None and not calendar_raw.empty:
+                upcoming_leagues = calendar_raw[calendar_raw['Status'].astype(str).str.lower() == 'upcoming']['League Name'].dropna().unique().tolist()
+                if upcoming_leagues:
+                    standings_seasons = base_all[['SeasonLabel', 'League Name']].drop_duplicates().values.tolist()
+                    for label, league in standings_seasons:
+                        st_gps = set(base_all[(base_all['SeasonLabel'] == label) & (base_all['League Name'] == league) & (~base_all['IsSeasonFinal'])]['GP Name'].dropna().unique())
+                        for ul in upcoming_leagues:
+                            if str(ul).strip().lower() == str(league).strip().lower():
+                                ongoing_seasons.add(label)
+                                break
+                            cal_gps = set(calendar_raw[calendar_raw['League Name'] == ul]['GP Name'].dropna().unique())
+                            if cal_gps and st_gps and st_gps.issubset(cal_gps):
+                                ongoing_seasons.add(label)
+                                break
+            df_hof_finished = df_hof[~df_hof["SeasonLabel"].isin(ongoing_seasons)].copy()
+        except Exception:
+            df_hof_finished = df_hof.copy()
+
+        if not df_hof_finished.empty:
             # Match All-time titles calculation (group by SeasonLabel)
-            d_champs = df_hof.groupby(['SeasonLabel', 'Driver'], as_index=False)['Points'].sum()
+            d_champs = df_hof_finished.groupby(['SeasonLabel', 'Driver'], as_index=False)['Points'].sum()
             d_champs = d_champs.sort_values(['SeasonLabel', 'Points'], ascending=[True, False])
             champs = d_champs.groupby('SeasonLabel').head(1)
             most_champs = champs.groupby('Driver').size().sort_values(ascending=False)
@@ -1591,9 +1875,18 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     funny_crash = f"<span style='color:#fff;font-weight:800;font-size:1.1rem;'>{pod_items[0][0]}</span><br><span style='font-size:0.75rem;color:#E10600;font-weight:700;'>{pod_items[0][1]} {pods_lbl}</span>{_hof_sub_list(pod_items)}"
 
 
-    html = f"""
+    hero_html = render_puskas_hero(meta, calendar_raw, lang=lang)
+
+    html = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>F1 Dashboard</title>
+    </head>
+    <body>
     {css}
     <div class="puskas-container">
+        {hero_html}
         <!-- ROW 1 -->
         <div class="p-grid">
             <!-- STANDINGS -->
@@ -1618,18 +1911,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             <div class="p-card">
                 <div class="p-card-title">{_tr(lang, "latest_race")}<span style="float:right;color:#555;">{_tr(lang, "round_label")} {latest_round}</span></div>
                 <h3 style="margin:0 0 0.8rem 0;font-size:1.1rem;letter-spacing:1px;">{f"{_tr(lang, 'grand_prix').upper()} - {latest_race_name.upper().replace(' GP','')}" if lang != "en" else latest_race_name.upper().replace(' GP',' GRAND PRIX')} {latest_flag_img}</h3>
-                <div class="p-row" style="color:#555; font-size:0.65rem; font-weight:800;">
-                    <div class="p-col p-pos">{_tr(lang, "pos")}</div>
-                    <div class="p-col p-driver">{_tr(lang, "driver")}</div>
-                    <div class="p-time">{_tr(lang, "time")}</div>
-                    <div class="p-fl">{_tr(lang, "fastest_lap")}</div>
-                    <div class="p-col p-pts">{_tr(lang, "points")}</div>
-                </div>
-                {race_top_html}
-                <div id="race-extra" style="display:none;">
-                    {race_extra_html}
-                </div>
-                <div class="p-btn-outline" id="btn-full-results">{_tr(lang, "full_results")}</div>
+                {latest_race_card_content}
             </div>
 
             <!-- NEXT RACE -->
@@ -1707,28 +1989,66 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             <div class="p-card">
                 <div class="p-card-title">{_tr(lang, "driver_lineup")}</div>
                 <div class="p-drivers-flex">
-                    {drivers_html}
+                    {drivers_top_html}
+                </div>
+                <div class="p-drivers-flex" id="drivers-extra" style="display:none;">
+                    {drivers_extra_html}
                 </div>
                 <div class="p-btn-outline" id="btn-all-drivers">{_tr(lang, "all_drivers")}</div>
                 <script>
                 (function() {{
                     function resizeIframe() {{
-                        if (window.frameElement) {{
-                            var container = document.querySelector('.puskas-container');
-                            var h = container ? container.scrollHeight : document.documentElement.scrollHeight;
-                            window.frameElement.style.height = (h + 50) + 'px';
-                        }}
+                        var h = document.documentElement.scrollHeight;
+                        var container = document.querySelector('.puskas-container');
+                        if (container) h = container.scrollHeight;
+                        try {{
+                            window.parent.postMessage({{
+                                isStreamlitMessage: true,
+                                type: 'streamlit:setFrameHeight',
+                                height: h + 50
+                            }}, '*');
+                        }} catch(e) {{}}
+                        try {{
+                            if (window.frameElement) {{
+                                window.frameElement.style.height = (h + 50) + 'px';
+                            }}
+                        }} catch(e) {{}}
                     }}
+                    
+                    function switchLatestRaceView(view) {{
+                        var views = ['race', 'sprint', 'weekend'];
+                        views.forEach(function(v) {{
+                            var el = document.getElementById('latest-race-view-' + v);
+                            var tab = document.getElementById('tab-btn-' + v);
+                            if (el) {{
+                                if (v === view) {{
+                                    el.style.display = 'block';
+                                    if (tab) {{
+                                        tab.style.background = '#e10600';
+                                        tab.style.color = '#fff';
+                                    }}
+                                }} else {{
+                                    el.style.display = 'none';
+                                    if (tab) {{
+                                        tab.style.background = '#222';
+                                        tab.style.color = '#aaa';
+                                    }}
+                                }}
+                            }}
+                        }});
+                        setTimeout(resizeIframe, 50);
+                    }}
+                    window.switchLatestRaceView = switchLatestRaceView;
                     
                     function setupToggle(btnId, elId, showText, hideText, displayStyle) {{
                         var btn = document.getElementById(btnId);
                         var el  = document.getElementById(elId);
                         if (btn && el) {{
-                            btn.addEventListener('click', function() {{
-                                  if (el.style.display === 'none') {{
+                            btn.addEventListener('click', function(e) {{
+                                e.preventDefault();
+                                if (el.style.display === 'none' || el.style.display === '') {{
                                     el.style.display = displayStyle || 'block';
                                     btn.textContent = hideText;
-                                    window.dispatchEvent(new Event('resize'));
                                 }} else {{
                                     el.style.display = 'none';
                                     btn.textContent = showText;
@@ -1738,81 +2058,50 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                         }}
                     }}
                     
-                    function updateDriverLineup() {{
-                        var container = document.querySelector('.p-drivers-flex');
-                        if (!container) return;
-                        var cards = container.querySelectorAll('.p-driver-card-v2');
-                        if (cards.length === 0) return;
-                        
-                        var btn = document.getElementById('btn-all-drivers');
-                        var isExpanded = btn && btn.textContent === '{_tr(lang, "hide_drivers")}';
-                        
-                        for (var i = 0; i < cards.length; i++) {{
-                            cards[i].style.display = 'block';
-                        }}
-                        
-                        if (!isExpanded) {{
-                            var firstTop = cards[0].offsetTop;
-                            for (var i = 1; i < cards.length; i++) {{
-                                if (cards[i].offsetTop > firstTop + 15) {{
-                                    cards[i].style.display = 'none';
-                                }}
-                            }}
-                        }}
-                    }}
-                    
-                    var btnAllDrivers = document.getElementById('btn-all-drivers');
-                    if (btnAllDrivers) {{
-                        btnAllDrivers.addEventListener('click', function() {{
-                            var isExpanded = btnAllDrivers.textContent === '{_tr(lang, "hide_drivers")}';
-                            btnAllDrivers.textContent = isExpanded ? '{_tr(lang, "all_drivers")}' : '{_tr(lang, "hide_drivers")}';
-                            updateDriverLineup();
-                            window.dispatchEvent(new Event('resize'));
-                            setTimeout(resizeIframe, 50);
-                        }});
-                    }}
-                    
-                    window.addEventListener('resize', function() {{
-                        updateDriverLineup();
-                        setTimeout(resizeIframe, 50);
-                    }});
-                    
-                    setupToggle('btn-full-standings',  'standings-extra',  '{_tr(lang, "full_standings")}',  '{_tr(lang, "hide_standings")}',  'block');
-                    setupToggle('btn-full-c-standings','c-standings-extra','{_tr(lang, "full_standings")}',  '{_tr(lang, "hide_standings")}',  'block');
-                    setupToggle('btn-full-team-chart', 'team-chart-extra', '{_tr(lang, "full_list")}',       '{_tr(lang, "hide_list")}',       'block');
-                    setupToggle('btn-full-results',    'race-extra',       '{_tr(lang, "full_results")}',    '{_tr(lang, "hide_results")}',    'block');
-                    setupToggle('btn-full-calendar',   'cal-extra',        '{_tr(lang, "full_calendar")}',   '{_tr(lang, "hide_calendar")}',   'block');
+                    setupToggle('btn-full-standings',  'standings-extra',  '{_js_escape(_tr(lang, "full_standings"))}',  '{_js_escape(_tr(lang, "hide_standings"))}',  'block');
+                    setupToggle('btn-full-c-standings','c-standings-extra','{_js_escape(_tr(lang, "full_standings"))}',  '{_js_escape(_tr(lang, "hide_standings"))}',  'block');
+                    setupToggle('btn-full-team-chart', 'team-chart-extra', '{_js_escape(_tr(lang, "full_list"))}',       '{_js_escape(_tr(lang, "hide_list"))}',       'block');
+                    setupToggle('btn-full-results',    'race-extra',       '{_js_escape(_tr(lang, "full_results"))}',    '{_js_escape(_tr(lang, "hide_results"))}',    'block');
+                    setupToggle('btn-full-calendar',   'cal-extra',        '{_js_escape(_tr(lang, "full_calendar"))}',   '{_js_escape(_tr(lang, "hide_calendar"))}',   'block');
+                    setupToggle('btn-all-drivers',     'drivers-extra',    '{_js_escape(_tr(lang, "all_drivers"))}',     '{_js_escape(_tr(lang, "hide_drivers"))}',    'flex');
                     
                     // Initial resize
-                    updateDriverLineup();
                     setTimeout(resizeIframe, 500);
                     
                     // Use ResizeObserver for accurate and safe resizing without infinite loops
-                    var container = document.querySelector('.puskas-container');
-                    if (container && window.ResizeObserver) {{
-                        new ResizeObserver(function() {{
-                            resizeIframe();
-                        }}).observe(container);
-                    }} else {{
-                        window.addEventListener('resize', function() {{ setTimeout(resizeIframe, 500); }});
-                    }}
+                    try {{
+                        var container = document.querySelector('.puskas-container');
+                        if (container && window.ResizeObserver) {{
+                            new ResizeObserver(function() {{
+                                resizeIframe();
+                            }}).observe(container);
+                        }} else {{
+                            window.addEventListener('resize', function() {{ setTimeout(resizeIframe, 500); }});
+                        }}
+                    }} catch(e) {{}}
 
                     // Attach event listeners to hero buttons (which live in the parent window)
                     setTimeout(function() {{
-                        var btn1 = window.parent.document.getElementById('btn-hero-circuits');
-                        if (btn1) {{
-                            btn1.addEventListener('click', function() {{
-                                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                                if (tabs.length > 2) tabs[2].click();
-                            }});
-                        }}
-                        var btn2 = window.parent.document.getElementById('btn-hero-gpstats');
-                        if (btn2) {{
-                            btn2.addEventListener('click', function() {{
-                                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                                if (tabs.length > 1) tabs[1].click();
-                            }});
-                        }}
+                        try {{
+                            var btn1 = document.getElementById('btn-hero-circuits');
+                            if (btn1) {{
+                                btn1.addEventListener('click', function() {{
+                                    try {{
+                                        var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                                        if (tabs.length > 2) tabs[2].click();
+                                    }} catch(e) {{}}
+                                }});
+                            }}
+                            var btn2 = document.getElementById('btn-hero-gpstats');
+                            if (btn2) {{
+                                btn2.addEventListener('click', function() {{
+                                    try {{
+                                        var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                                        if (tabs.length > 1) tabs[1].click();
+                                    }} catch(e) {{}}
+                                }});
+                            }}
+                        }} catch(e) {{}}
                     }}, 200);
 
                     // Dynamic Countdown Timer (targets Lisbon 7 AM time)
@@ -1820,34 +2109,36 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     if (targetIso) {{
                         var targetDate = new Date(targetIso).getTime();
                         function updateCountdown() {{
-                            var pDoc = window.parent.document;
-                            var daysEl = pDoc.getElementById("cd-days");
-                            var hoursEl = pDoc.getElementById("cd-hours");
-                            var minutesEl = pDoc.getElementById("cd-minutes");
-                            var secondsEl = pDoc.getElementById("cd-seconds");
-                            var textEl = pDoc.getElementById("cd-text");
-                            
-                            var now = new Date().getTime();
-                            var diff = targetDate - now;
-                            
-                            if (diff <= 0) {{
-                                if (daysEl) daysEl.textContent = "00";
-                                if (hoursEl) hoursEl.textContent = "00";
-                                if (minutesEl) minutesEl.textContent = "00";
-                                if (secondsEl) secondsEl.textContent = "00";
-                                if (textEl) textEl.textContent = "{_tr(lang, "race_in_progress")}";
-                                return;
-                             }}
-                            
-                            var d = Math.floor(diff / (1000 * 60 * 60 * 24));
-                            var h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                            var m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                            var s = Math.floor((diff % (1000 * 60)) / 1000);
-                            
-                            if (daysEl) daysEl.textContent = String(d).padStart(2, '0');
-                            if (hoursEl) hoursEl.textContent = String(h).padStart(2, '0');
-                            if (minutesEl) minutesEl.textContent = String(m).padStart(2, '0');
-                            if (secondsEl) secondsEl.textContent = String(s).padStart(2, '0');
+                            try {{
+                                var pDoc = document;
+                                var daysEl = pDoc.getElementById("cd-days");
+                                var hoursEl = pDoc.getElementById("cd-hours");
+                                var minutesEl = pDoc.getElementById("cd-minutes");
+                                var secondsEl = pDoc.getElementById("cd-seconds");
+                                var textEl = pDoc.getElementById("cd-text");
+                                
+                                var now = new Date().getTime();
+                                var diff = targetDate - now;
+                                
+                                if (diff <= 0) {{
+                                    if (daysEl) daysEl.textContent = "00";
+                                    if (hoursEl) hoursEl.textContent = "00";
+                                    if (minutesEl) minutesEl.textContent = "00";
+                                    if (secondsEl) secondsEl.textContent = "00";
+                                    if (textEl) textEl.textContent = "{_js_escape(_tr(lang, "race_in_progress"))}";
+                                    return;
+                                }}
+                                
+                                var d = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                var h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                                var m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                                var s = Math.floor((diff % (1000 * 60)) / 1000);
+                                
+                                if (daysEl) daysEl.textContent = String(d).padStart(2, '0');
+                                if (hoursEl) hoursEl.textContent = String(h).padStart(2, '0');
+                                if (minutesEl) minutesEl.textContent = String(m).padStart(2, '0');
+                                if (secondsEl) secondsEl.textContent = String(s).padStart(2, '0');
+                            }} catch(e) {{}}
                         }}
                         updateCountdown();
                         setInterval(updateCountdown, 1000);
@@ -1868,5 +2159,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             </div>
         </div>
     </div>
+    </body>
+    </html>
     """
     return "\n".join(line.lstrip() for line in html.split("\n"))
