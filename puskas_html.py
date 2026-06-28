@@ -553,6 +553,36 @@ def _parse_lisbon_time(time_val):
 
 
 def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str = "en") -> str:
+    import json
+    slogans_pt = [
+        "A nossa liga de F1 na PlayStation<br>Uma corrida.<br>Muitas desculpas.",
+        "A nossa liga de F1 na PlayStation<br>Muito ego.<br>Pouca aderência.",
+        "A nossa liga de F1 na PlayStation<br>Onde todos têm ritmo.<br>Até começar a corrida.",
+        "A nossa liga de F1 na PlayStation<br>Amigos antes da corrida.<br>Inimigos na primeira curva.",
+        "A nossa liga de F1 na PlayStation<br>Estratégia duvidosa.<br>Acidentes garantidos.",
+        "A nossa liga de F1 na PlayStation<br>A pista é virtual.<br>A azia é real.",
+        "A nossa liga de F1 na PlayStation<br>Travagens tardias.<br>Desculpas imediatas.",
+        "A nossa liga de F1 na PlayStation<br>Estás à frente?<br>Só se eu não puder!",
+        "A nossa liga de F1 na PlayStation<br>Onde o setup é ciência.<br>E o acidente é tradição.",
+        "A nossa liga de F1 na PlayStation<br>Fair play no grupo.<br>Dive bombs na pista.",
+        "A nossa liga de F1 na PlayStation<br>Mais drama que Mónaco.<br>Menos glamour."
+    ]
+
+    slogans_en = [
+        "Our F1 league on PlayStation<br>One race.<br>Many excuses.",
+        "Our F1 league on PlayStation<br>Big ego.<br>Little grip.",
+        "Our F1 league on PlayStation<br>Where everyone has pace.<br>Until the race starts.",
+        "Our F1 league on PlayStation<br>Friends before the race.<br>Enemies in the first corner.",
+        "Our F1 league on PlayStation<br>Doubtful strategy.<br>Guaranteed crashes.",
+        "Our F1 league on PlayStation<br>The track is virtual.<br>The frustration is real.",
+        "Our F1 league on PlayStation<br>Late braking.<br>Immediate excuses.",
+        "Our F1 league on PlayStation<br>Are you in front?<br>Only if I can't help it!",
+        "Our F1 league on PlayStation<br>Where the setup is science.<br>And the crash is tradition.",
+        "Our F1 league on PlayStation<br>Fair play in the group.<br>Dive bombs on the track.",
+        "Our F1 league on PlayStation<br>More drama than Monaco.<br>Less glamour."
+    ]
+
+    slogans = slogans_pt if lang == "pt" else slogans_en
     next_race_name = ""
     next_race_target_iso = ""
     if calendar_raw is not None and not calendar_raw.empty:
@@ -645,6 +675,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
         margin-top: 1rem;
         max-width: 300px;
         line-height: 1.4;
+        transition: opacity 0.3s ease-in-out;
     }
     .p-hero-season {
         color: #e10600;
@@ -736,7 +767,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
         <div class="p-hero" style="position: relative;">
             <div class="p-hero-main">
                 <div class="p-hero-title">F1 PUSKAS<br><span class="red">LEAGUE</span></div>
-                <div class="p-hero-sub">{_tr(lang, "our_league")}</div>
+                <div class="p-hero-sub" style="opacity: 1;">{slogans[0]}</div>
                 <div class="p-hero-season">{_tr(lang, "season_label")}: {meta.get("SeasonLabel", "2025")} - {meta.get("League Name", "")}</div>
                 <div style="margin-top: 1rem;">
                     <div class="p-btn" id="btn-hero-circuits" style="cursor: pointer;">{_tr(lang, "circuits")}</div>
@@ -746,6 +777,23 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
             {countdown_html}
         </div>
     </div>
+    <script>
+    (function() {{
+        var slogans = {json.dumps(slogans)};
+        var currentIdx = 0;
+        var subEl = document.querySelector('.p-hero-sub');
+        if (subEl && slogans.length > 1) {{
+            setInterval(function() {{
+                currentIdx = (currentIdx + 1) % slogans.length;
+                subEl.style.opacity = 0;
+                setTimeout(function() {{
+                    subEl.innerHTML = slogans[currentIdx];
+                    subEl.style.opacity = 1;
+                }}, 300);
+            }}, 10000);
+        }}
+    }})();
+    </script>
     """
     return "\n".join(line.lstrip() for line in html.split("\n"))
 
