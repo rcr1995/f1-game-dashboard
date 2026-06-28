@@ -14,7 +14,7 @@ _T = {
         "circuits": "CIRCUITS 🛣️",
         "gp_stats": "GP STATISTICS 🏁",
         "our_league": "Our PS5 F1 league.<br>One competition.<br>No mercy.",
-        "season_label": "SEASON",
+        "season_label": "Season",
         "drivers_championship_standings": "🏆 DRIVERS CHAMPIONSHIP STANDINGS",
         "pos": "POS",
         "driver": "DRIVER",
@@ -108,7 +108,7 @@ _T = {
         "circuits": "CIRCUITOS 🛣️",
         "gp_stats": "ESTATÍSTICAS GP 🏁",
         "our_league": "A nossa liga de F1 na PS5.<br>Uma competição.<br>Sem misericórdia.",
-        "season_label": "ÉPOCA",
+        "season_label": "Época",
         "drivers_championship_standings": "🏆 CLASSIFICAÇÃO DE PILOTOS",
         "pos": "POS",
         "driver": "PILOTO",
@@ -737,7 +737,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
             <div class="p-hero-main">
                 <div class="p-hero-title">F1 PUSKAS<br><span class="red">LEAGUE</span></div>
                 <div class="p-hero-sub">{_tr(lang, "our_league")}</div>
-                <div class="p-hero-season">{_tr(lang, "season_label")} 1 • {meta.get("SeasonLabel", "2025")}</div>
+                <div class="p-hero-season">{_tr(lang, "season_label")}: {meta.get("SeasonLabel", "2025")} - {meta.get("League Name", "")}</div>
                 <div style="margin-top: 1rem;">
                     <div class="p-btn" id="btn-hero-circuits" style="cursor: pointer;">{_tr(lang, "circuits")}</div>
                     <div class="p-btn dark" id="btn-hero-gpstats" style="cursor: pointer;">{_tr(lang, "gp_stats")}</div>
