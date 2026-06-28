@@ -266,8 +266,8 @@ def _tr_gp(lang: str, gp_name: str) -> str:
     return gp_name.replace(" GP", "").strip()
 
 
-def _tr_track(lang: str, gp_name: str) -> str:
-    short_trk = GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
+def _tr_track(lang: str, gp_name: str, circuit: str = None) -> str:
+    short_trk = circuit if (circuit and pd.notna(circuit)) else GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
     if lang == "pt" and short_trk == "Mexico City":
         return "Cidade do México"
     return short_trk
@@ -451,6 +451,7 @@ GP_COUNTRY_CODES = {
     "French GP": "fr", "Portuguese GP": "pt",
     "Brazil GP": "br", "Mexico GP": "mx",
     "Brazilian GP": "br", "Mexican GP": "mx",
+    "Madrid GP": "es",
 }
 
 def _flag_img(gp_name: str, height: int = 18) -> str:
@@ -1423,18 +1424,30 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             rnd = row.get("Round", "-")
             gp_name = str(row.get("GP Name", "-"))
             flag_icon = _flag_img(gp_name, 14)
-            short_trk = _tr_track(lang, gp_name)
+            short_trk = _tr_track(lang, gp_name, row.get("Circuit"))
             status = str(row.get("Status", "")).lower()
 
             winner = "–"
             if status == "done" and not latest_gp.empty:
-                r_gp = latest_gp[(latest_gp["Round"] == rnd) & (latest_gp["Finish Pos"] == 1)]
+                type_mask = (latest_gp["Type"] == "R") if "Type" in latest_gp.columns else True
+                r_gp = latest_gp[(latest_gp["Round"] == rnd) & (latest_gp["Finish Pos"] == 1) & type_mask]
                 if not r_gp.empty:
                     winner = r_gp.iloc[0]["Driver"]
 
             disp_winner = f"{winner} ⭐" if winner == reigning_champ else winner
             status_cls = "status-done" if status == "done" else "status-up"
-            status_txt = _tr(lang, "completed") if status == "done" else _tr(lang, "upcoming")
+            if status == "done":
+                status_txt = _tr(lang, "completed")
+            else:
+                date_val = row.get("Date")
+                if pd.notna(date_val):
+                    try:
+                        dt = pd.to_datetime(date_val)
+                        status_txt = dt.strftime("%d/%m/%Y")
+                    except:
+                        status_txt = str(date_val)
+                else:
+                    status_txt = _tr(lang, "upcoming")
             row_html = f"""
             <div class="p-cal-row">
                 <div class="p-cal-rnd">{rnd}</div>
