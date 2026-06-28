@@ -1,4 +1,7 @@
 import streamlit as st
+import importlib
+import puskas_html
+importlib.reload(puskas_html)
 
 import pandas as pd
 
