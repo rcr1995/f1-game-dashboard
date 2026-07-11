@@ -1,22 +1,15 @@
 import streamlit as st
-import importlib
-import puskas_html
-importlib.reload(puskas_html)
 
 import pandas as pd
 
 import numpy as np
-
-import json
 
 import re
 
 from pathlib import Path
 from puskas_html import (
     render_puskas_dashboard,
-    render_puskas_hero,
     CIRCUIT_SVG_MAP,
-    GP_FLAGS,
     GP_SHORT_TRACK,
     _flag_img,
     _team_badge_html
@@ -1461,7 +1454,7 @@ def render_movers_chart(df: pd.DataFrame, entity_col: str, top_n: int = 6):
         xaxis_title=tr(lang, "points_delta_vs_prev"),
         yaxis_title="",
     )
-    st.plotly_chart(fig_m, use_container_width=True)
+    st.plotly_chart(fig_m, width="stretch")
 
 if "theme_mode" not in st.session_state:
     st.session_state["theme_mode"] = "Dark"
@@ -1551,11 +1544,8 @@ tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(tr(lang, "tabs"))
 
 with tab_dash:
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
-    import time
-    html_dashboard += f"\n<!-- cache_buster: {time.time()} -->"
-    import streamlit.components.v1 as stc
     with st.container(key=f"puskas-dash-container-{lang}-{latest_meta.get('SeasonLabel', 'default')}"):
-        stc.html(html_dashboard, height=2150, scrolling=True)
+        st.iframe(html_dashboard, height=2150)
 
 
 
@@ -1665,7 +1655,7 @@ with tab_gp:
                     marker=dict(size=7),
                     hovertemplate="%{y} pts"
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             else:
                 st.line_chart(wide[keep].ffill().fillna(0), height=550)
 
@@ -1720,7 +1710,7 @@ with tab_gp:
             fig_tension.update_traces(
                 marker=dict(size=6)
             )
-            st.plotly_chart(fig_tension, use_container_width=True)
+            st.plotly_chart(fig_tension, width="stretch")
 
         elif not gp_tension_df.empty:
 
@@ -1943,7 +1933,7 @@ with tab_all:
                 hovertemplate="%{y} pts"
             )
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         st.subheader(tr(lang, "all_time_standings"))
 
@@ -1974,4 +1964,4 @@ with tab_all:
         table_show[entity] = table_show.apply(format_alltime_standings_row, axis=1)
 
         render_st_dataframe(localized_table(table_show, lang))
-
+

@@ -1,0 +1,3 @@
+# app.py is committed with CRLF line endings. Preserve that established format
+# so Git autocrlf does not turn small edits into a whole-file rewrite.
+app.py -text

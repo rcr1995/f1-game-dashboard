@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+
+# Local development environments and logs
+.codex-tmp/
+.venv/
+venv/
+*.log
+
+# Generated dashboard exports
+debug_*.html
+en.html
+en_dash.html
+pt.html
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
