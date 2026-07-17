@@ -284,7 +284,7 @@ def get_base64_image(path: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 # Cache hero image at module load so we don't re-encode every render
-_HERO_IMG_PATH = Path(__file__).parent / "assets" / "hero_banner.png"
+_HERO_IMG_PATH = Path(__file__).parent / "assets" / "hero_banner.webp"
 _HERO_B64 = get_base64_image(str(_HERO_IMG_PATH)) # Reload image with explicit numbers v2
 
 # ── Helmet images ──
@@ -313,7 +313,7 @@ def _get_helmet_b64(driver: str, team: str) -> str:
     fname = DRIVER_HELMET_FILE.get(driver, TEAM_HELMET_FILE.get(team, ""))
     if not fname:
         return ""
-    p = _HELMETS_DIR / f"{fname}.png"
+    p = _HELMETS_DIR / f"{fname}.webp"
     return get_base64_image(str(p))
 
 _TRACKS_DIR = Path(__file__).parent / "assets" / "tracks"
@@ -322,13 +322,16 @@ _TRACKS_DIR = Path(__file__).parent / "assets" / "tracks"
 def _get_track_bg_b64(gp_name: str) -> str:
     """Return base64 data URI for a track background image."""
     short_name = GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
+    p_webp = _TRACKS_DIR / f"{short_name}.webp"
     p_jpg = _TRACKS_DIR / f"{short_name}.jpg"
     p_png = _TRACKS_DIR / f"{short_name}.png"
+    if p_webp.exists():
+        return get_base64_image(str(p_webp))
     if p_jpg.exists():
         return get_base64_image(str(p_jpg))
     if p_png.exists():
         return get_base64_image(str(p_png))
-    p_default = _TRACKS_DIR / "default.jpg"
+    p_default = _TRACKS_DIR / "default.webp"
     if p_default.exists():
         return get_base64_image(str(p_default))
     return ""

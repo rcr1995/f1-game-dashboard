@@ -2,11 +2,8 @@ import streamlit as st
 
 import pandas as pd
 
-import numpy as np
-
-import re
-
 from pathlib import Path
+import dashboard_core as core
 from puskas_html import (
     render_puskas_dashboard,
     CIRCUIT_SVG_MAP,
@@ -45,7 +42,7 @@ st.set_page_config(
 
 # -----------------------------
 
-APP_VERSION = "v35"
+APP_VERSION = "v36"
 
 # -----------------------------
 
@@ -614,346 +611,6 @@ def tr_track(lang: str, gp_name: str) -> str:
         return "Cidade do México"
     return short_name
 
-def effective_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Avoid double-counting when both GP-level rows and season-total rows exist.
-
-    Rule per (Game, Season, League):
-    - if any GP-level rows exist: keep ONLY GP-level rows
-    - else: keep season-final rows (one or more)
-    """
-    if df.empty:
-        return df
-    d = df.copy()
-
-    group_cols = [c for c in ["Game", "Season", "League Name"] if c in d.columns]
-    if not group_cols:
-        group_cols = ["Season"]
-
-    def _pick(g: pd.DataFrame) -> pd.DataFrame:
-        has_gp = (~g["IsSeasonFinal"]).any()
-        return g[~g["IsSeasonFinal"]] if has_gp else g
-
-    return d.groupby(group_cols, group_keys=False).apply(_pick)
-
-@st.cache_data(show_spinner=False)
-def load_data_from_excel(file, mtime: float = 0.0) -> pd.DataFrame:
-    """Load Excel and support mixed granularities.
-
-    - Per-GP rows (normal): GP Name not in season-total markers and Round is numeric
-    - Season-total rows ("Season Final"): GP Name in {'All','Season Total','Final','Season Final'}
-      OR Round equals 'All' (common in your historical data)
-
-    Season can be numeric (2024) or text ('2019-T1', '2014/15', '2014-2015').
-
-    Adds:
-      SeasonLabel (string) for filtering/display
-      SeasonNum (numeric) for ordering when available
-      IsSeasonFinal (bool)
-    """
-    try:
-        df = pd.read_excel(file, sheet_name="Leagues")
-    except Exception:
-        df = pd.read_excel(file, sheet_name=0)  # requires openpyxl
-    df.columns = [str(c).strip() for c in df.columns]
-    # Trigger cache invalidation for new Time columns
-
-    required = {"Game","Season","League Name","Round","GP Name","Driver","Team","Finish Pos","Points"}
-    missing = required - set(df.columns)
-    if missing:
-        raise ValueError(f"Missing columns in Excel: {sorted(missing)}")
-
-    # Clean strings
-    for c in ["Game","Season","League Name","Round","GP Name","Driver","Team"]:
-        df[c] = df[c].astype(str).str.strip()
-
-    if "Type" not in df.columns:
-        df["Type"] = "R"
-    else:
-        df["Type"] = df["Type"].fillna("R").astype(str).str.strip().str.upper()
-        df.loc[~df["Type"].isin(["R", "SR"]), "Type"] = "R"
-
-    df["SeasonLabel"] = df["Season"].astype(str).str.strip()
-
-    # Derive numeric season for sorting (first 4-digit year)
-    season_num = df["SeasonLabel"].str.extract(r"(\d{4})", expand=False)
-    df["SeasonNum"] = pd.to_numeric(season_num, errors="coerce")
-
-    season_direct = pd.to_numeric(df["SeasonLabel"], errors="coerce")
-    df.loc[season_direct.notna(), "SeasonNum"] = season_direct[season_direct.notna()]
-
-    season_total_markers = {"all","season total","final","season final"}
-    round_raw = df["Round"].astype(str).str.strip()
-    gp_raw = df["GP Name"].astype(str).str.strip()
-
-    df["IsSeasonFinal"] = gp_raw.str.lower().isin(season_total_markers) | round_raw.str.lower().isin({"all"})
-
-    # Numeric conversions
-    df["Round"] = pd.to_numeric(df["Round"], errors="coerce")
-    # Put season-finals at the end of a season timeline
-    df.loc[df["IsSeasonFinal"] & df["Round"].isna(), "Round"] = 999
-    df["Round"] = df["Round"].astype("Int64")
-
-    df["Finish Pos"] = pd.to_numeric(df["Finish Pos"], errors="coerce").astype("Int64")
-    df["Points"] = pd.to_numeric(df["Points"], errors="coerce").fillna(0.0)
-
-    # Drop rows that are truly unusable (no round)
-    df = df.dropna(subset=["Round"]).copy()
-
-    # Normalize GP Name / label Season Final
-    df["GP Name"] = df["GP Name"].fillna("").astype(str).str.strip()
-    df.loc[df["IsSeasonFinal"], "GP Name"] = "Season Final"
-
-    return df
-
-@st.cache_data(show_spinner=False)
-def load_calendar_from_excel(file, mtime: float = 0.0) -> pd.DataFrame:
-    try:
-        df = pd.read_excel(file, sheet_name="Calendar")
-    except Exception:
-        return pd.DataFrame(columns=["League Name", "Round", "Date", "GP Name", "Status"])
-
-    df.columns = [str(c).strip() for c in df.columns]
-    if df.empty:
-        return pd.DataFrame(columns=["League Name", "Round", "Date", "GP Name", "Status", "Time (Lisbon)"])
-
-    keep = [c for c in ["League Name", "Round", "Date", "GP Name", "Circuit", "Status", "Time (Lisbon)"] if c in df.columns]
-    d = df[keep].copy()
-
-    if "League Name" not in d.columns:
-        d["League Name"] = ""
-    if "Round" not in d.columns:
-        d["Round"] = pd.NA
-    if "Date" not in d.columns:
-        d["Date"] = pd.NaT
-    if "GP Name" not in d.columns:
-        d["GP Name"] = ""
-    if "Status" not in d.columns:
-        d["Status"] = ""
-    if "Time (Lisbon)" not in d.columns:
-        d["Time (Lisbon)"] = pd.NA
-
-    d["League Name"] = d["League Name"].astype(str).str.strip()
-    d["Round"] = pd.to_numeric(d["Round"], errors="coerce").astype("Int64")
-    d["Date"] = pd.to_datetime(d["Date"], errors="coerce")
-    d["GP Name"] = d["GP Name"].astype(str).str.strip()
-    d["Status"] = d["Status"].astype(str).str.strip()
-
-    d = d[~(d["GP Name"].eq("") & d["Date"].isna())].copy()
-    d = d.sort_values(["Round", "Date", "GP Name"], na_position="last").reset_index(drop=True)
-    return d
-
-@st.cache_data(show_spinner=False)
-def find_bundled_excel() -> str | None:
-    candidates = [
-        "F1_Standings.xlsx",
-        "data/F1_Standings.xlsx",
-        "Data/F1_Standings.xlsx",
-        "assets/F1_Standings.xlsx",
-        "excel/F1_Standings.xlsx",
-    ]
-    for c in candidates:
-        if Path(c).exists():
-            return c
-    import os
-    for root, dirs, files in os.walk("."):
-        dirs[:] = [d for d in dirs if d not in {".venv", ".git", "__pycache__", "venv"}]
-        for file in files:
-            if file.lower().endswith(".xlsx") and not file.startswith("~$"):
-                return os.path.join(root, file)
-    return None
-
-
-def latest_league_slice(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Return df filtered to the latest SeasonLabel and its linked League/Game."""
-    if df.empty:
-        return df.copy(), {"Game":"-", "SeasonLabel":"-", "League Name":"-"}
-    d = df.copy()
-    labels = d["SeasonLabel"].dropna().unique().tolist()
-    labels.sort(key=_season_sort_key)
-    latest_label = labels[-1] if labels else str(d["SeasonLabel"].dropna().iloc[0])
-    d2 = d[d["SeasonLabel"] == latest_label].copy()
-    league = d2["League Name"].mode().iloc[0] if not d2.empty else "-"
-    game = d2["Game"].mode().iloc[0] if not d2.empty else "-"
-    d2 = d2[(d2["League Name"] == league) & (d2["Game"] == game)].copy()
-    return d2, {"Game": game, "SeasonLabel": latest_label, "League Name": league}
-
-
-def standings_table(df: pd.DataFrame, entity: str) -> pd.DataFrame:
-    """
-    Standings stats computed on GP-level rows only (exclude Season Final rows).
-    Races = number of distinct races per entity, using (Game, SeasonLabel, League Name, Round, GP Name).
-    """
-    col = "Driver" if entity == "Drivers" else "Team"
-    if df.empty:
-        return pd.DataFrame(columns=["Pos", col, "Points", "Races", "Wins", "Podiums", "Top5", "AvgFinish", "Consistency", "Pts/Race"])
-
-    d = df[~df["IsSeasonFinal"]].copy()
-    if d.empty:
-        return pd.DataFrame(columns=["Pos", col, "Points", "Races", "Wins", "Podiums", "Top5", "AvgFinish", "Consistency", "Pts/Race"])
-
-    d["_RaceID"] = (
-        d["Game"].astype(str) + "|" +
-        d["SeasonLabel"].astype(str) + "|" +
-        d["League Name"].astype(str) + "|" +
-        d["Round"].astype(str) + "|" +
-        d["GP Name"].astype(str)
-    )
-
-    # Sum points from all rows (Sprint + Race)
-    tot_pts = d.groupby(col, as_index=False)["Points"].sum()
-
-    # Calculate GP-level statistics from main races only (Type == "R")
-    d_race = d[d["Type"] == "R"].copy()
-    if d_race.empty:
-        d_race = d.copy()
-
-    g_race = d_race.groupby(col, as_index=False).agg(
-        Races=("_RaceID", "nunique"),
-        Wins=("Finish Pos", lambda s: int((s==1).sum())),
-        Podiums=("Finish Pos", lambda s: int((s<=3).sum())),
-        Top5=("Finish Pos", lambda s: int((s<=5).sum())),
-        AvgFinish=("Finish Pos", lambda s: float(np.nanmean(s.astype("float")))),
-        Consistency=("Finish Pos", lambda s: float(np.nanstd(s.astype("float")))),
-    )
-
-    g = pd.merge(tot_pts, g_race, on=col, how="left")
-    g["Races"] = g["Races"].fillna(0).astype(int)
-    g["Wins"] = g["Wins"].fillna(0).astype(int)
-    g["Podiums"] = g["Podiums"].fillna(0).astype(int)
-    g["Top5"] = g["Top5"].fillna(0).astype(int)
-
-    g["AvgFinish"] = g["AvgFinish"].round(1)
-    g["Consistency"] = g["Consistency"].round(2)
-    g["Pts/Race"] = (g["Points"] / g["Races"].replace(0, np.nan)).fillna(0).round(2)
-    g = g.sort_values(["Points","Wins","Podiums","AvgFinish",col], ascending=[False,False,False,True,True])
-    g.insert(0, "Pos", range(1, len(g)+1))
-    return g
-
-def _season_sort_key(season_label: str) -> int:
-    """
-    Build a sortable numeric key from SeasonLabel strings like:
-    - '2019-T01' -> 201901
-    - '2019-T1'  -> 201901
-    - '2026'     -> 202600
-    - 'S3'       -> 0 (falls back)
-    """
-    s = str(season_label).strip()
-    year_m = re.search(r"(\d{4})", s)
-    year = int(year_m.group(1)) if year_m else 0
-    t_m = re.search(r"[Tt]\s*-?\s*(\d+)", s)
-    t = int(t_m.group(1)) if t_m else 0
-    return year * 100 + t
-
-def event_sort_cols(df: pd.DataFrame, all_time: bool) -> pd.DataFrame:
-    d = df.copy()
-    if all_time:
-        # SeasonLabel is the timeline anchor (league-as-timeline: 2019-T01, 2019-T02, ...)
-        d["_SeasonKey"] = d["SeasonLabel"].map(_season_sort_key).astype(int)
-        d["EventIdx"] = d["_SeasonKey"] * 1000 + d["Round"].astype(int)
-        # Make the label more intentional for season totals
-        d["EventLabel"] = d["SeasonLabel"].astype(str) + " • R" + d["Round"].astype(str) + " • " + d["GP Name"].astype(str)
-        d = d.drop(columns=["_SeasonKey"], errors="ignore")
-    else:
-        d["EventIdx"] = d["Round"].astype(int)
-        d["EventLabel"] = "R" + d["Round"].astype(str) + " • " + d["GP Name"].astype(str)
-    return d
-
-def cumulative_points_wide(df: pd.DataFrame, entity_col: str, all_time: bool):
-    d = event_sort_cols(df, all_time=all_time)
-    d_grouped = d.groupby([entity_col, "EventIdx", "EventLabel"], as_index=False)["Points"].sum()
-    d_grouped = d_grouped.sort_values(["EventIdx", entity_col])
-    d_grouped["CumPoints"] = d_grouped.groupby(entity_col)["Points"].cumsum()
-    long = d_grouped[[entity_col, "EventIdx", "EventLabel", "CumPoints"]].copy()
-    wide = long.pivot_table(index="EventIdx", columns=entity_col, values="CumPoints", aggfunc="max").sort_index()
-    return wide, long
-
-def per_round_positions(df: pd.DataFrame, entity_col: str) -> pd.DataFrame:
-    d = event_sort_cols(df, all_time=False)
-    d_grouped = d.groupby([entity_col, "EventIdx", "EventLabel"], as_index=False)["Points"].sum()
-    d_grouped = d_grouped.sort_values(["EventIdx", entity_col])
-    d_grouped["CumPoints"] = d_grouped.groupby(entity_col)["Points"].cumsum()
-    rr = d_grouped[[entity_col, "EventIdx", "EventLabel", "CumPoints"]].copy()
-    rr["Position"] = rr.groupby("EventIdx")["CumPoints"].rank(method="min", ascending=False).astype(int)
-    rr = rr.sort_values([entity_col, "EventIdx"])
-    rr["PrevPos"] = rr.groupby(entity_col)["Position"].shift(1)
-    rr["PosChange"] = rr["PrevPos"] - rr["Position"]
-    return rr
-
-def lead_swaps_count(leaders_series: pd.Series) -> int:
-    if leaders_series.empty:
-        return 0
-    changes = (leaders_series != leaders_series.shift(1)).sum()
-    return int(max(changes - 1, 0))
-
-
-
-def form_table(df: pd.DataFrame, entity_col: str, n_list=(3,5)) -> pd.DataFrame:
-    if df.empty:
-        return pd.DataFrame()
-    d = df.copy()
-    last_round = int(d["Round"].max())
-    rr = per_round_positions(d, entity_col=entity_col)
-    last_pos = rr[rr["EventIdx"] == last_round][[entity_col,"Position","PosChange"]].copy()
-    last_pos["PosChange"] = last_pos["PosChange"].fillna(0).astype(int)
-    rows = []
-    for ent, sub in d.groupby(entity_col):
-        if "Type" not in sub.columns:
-            sub["Type"] = "R"
-        sub = sub.sort_values(["Round","GP Name"])
-        for n in n_list:
-            sub_n = sub[sub["Round"] > last_round - n]
-            sub_n_race = sub_n[sub_n["Type"] == "R"]
-            rows.append({
-                entity_col: ent,
-                f"Pts L{n}": float(sub_n["Points"].sum()),
-                f"AvgFin L{n}": float(np.nanmean(sub_n_race["Finish Pos"].astype("float"))) if len(sub_n_race) else np.nan
-            })
-    out = pd.DataFrame(rows)
-    if out.empty:
-        return out
-    agg = {c:"first" for c in out.columns if c != entity_col}
-    out = out.groupby(entity_col, as_index=False).agg(agg)
-    out = out.merge(last_pos, on=entity_col, how="left")
-    out["Position"] = out["Position"].fillna(np.nan).astype("Int64")
-    sort_col = "Position" if "Position" in out.columns else f"Pts L{max(n_list)}"
-    out = out.sort_values([sort_col, entity_col], ascending=[True, True])
-    return out
-
-
-
-def season_champions(df: pd.DataFrame, entity_col: str, calendar_df: pd.DataFrame = None) -> pd.DataFrame:
-    if calendar_df is None:
-        calendar_df = globals().get("calendar_raw", pd.DataFrame())
-
-    ongoing_seasons = set()
-    if calendar_df is not None and not calendar_df.empty:
-        upcoming_leagues = calendar_df[calendar_df['Status'].astype(str).str.lower() == 'upcoming']['League Name'].dropna().unique().tolist()
-        if upcoming_leagues:
-            standings_seasons = df[['SeasonLabel', 'League Name']].drop_duplicates().values.tolist()
-            for label, league in standings_seasons:
-                st_gps = set(df[(df['SeasonLabel'] == label) & (df['League Name'] == league) & (~df['IsSeasonFinal'])]['GP Name'].dropna().unique())
-                for ul in upcoming_leagues:
-                    if str(ul).strip().lower() == str(league).strip().lower():
-                        ongoing_seasons.add(label)
-                        break
-                    cal_gps = set(calendar_df[calendar_df['League Name'] == ul]['GP Name'].dropna().unique())
-                    if cal_gps and st_gps and st_gps.issubset(cal_gps):
-                        ongoing_seasons.add(label)
-                        break
-
-    df_finished = df[~df["SeasonLabel"].isin(ongoing_seasons)].copy()
-    d = df_finished.groupby(["SeasonLabel", entity_col], as_index=False)["Points"].sum()
-    d = d.sort_values(["SeasonLabel","Points"], ascending=[True,False])
-    champs = d.groupby("SeasonLabel").head(1).rename(columns={entity_col:"Champion"})
-    return champs[["SeasonLabel","Champion","Points"]].rename(columns={"SeasonLabel":"Season"}).sort_values("Season")
-
-def titles_count(df: pd.DataFrame, entity_col: str):
-    champs = season_champions(df, entity_col)
-    t = champs.groupby("Champion", as_index=False).agg(Titles=("Season","nunique"))
-    t = t.sort_values(["Titles","Champion"], ascending=[False,True]).reset_index(drop=True)
-    t.insert(0, "Rank", range(1, len(t)+1))
-    return t, champs
-
 def make_pill_html(val) -> str:
     try:
         v = int(val)
@@ -1016,20 +673,6 @@ def localized_table(df: pd.DataFrame, lang: str) -> pd.DataFrame:
     }
     out = df.copy()
     return out.rename(columns={c: rename_map[c] for c in out.columns if c in rename_map})
-
-def circuits_top3(df: pd.DataFrame) -> pd.DataFrame:
-    d = df[(~df["IsSeasonFinal"]) & (df["Finish Pos"] == 1)].copy()
-    if d.empty:
-        return pd.DataFrame(columns=["GP Name", "Top 1", "Top 2", "Top 3"])
-
-    wins = d.groupby(["GP Name", "Driver"], as_index=False).size().rename(columns={"size": "Wins"})
-    wins = wins.sort_values(["GP Name", "Wins", "Driver"], ascending=[True, False, True])
-    top = wins.groupby("GP Name").head(3).copy()
-    top["Label"] = top["Driver"] + " (" + top["Wins"].astype(int).astype(str) + ")"
-    top["Rank"] = top.groupby("GP Name").cumcount() + 1
-    out = top.pivot(index="GP Name", columns="Rank", values="Label").reset_index()
-    out = out.rename(columns={1: "Top 1", 2: "Top 2", 3: "Top 3"}).fillna("-")
-    return out.sort_values("GP Name")
 
 def theme_palette(theme_mode: str) -> dict:
     if theme_mode == "Light":
@@ -1110,53 +753,6 @@ def theme_palette(theme_mode: str) -> dict:
 
 def apply_theme_css(theme_cfg: dict):
     st.html(theme_cfg["css"])
-
-def championship_tension(df: pd.DataFrame, entity_col: str) -> tuple[dict, pd.DataFrame, pd.Series]:
-    if df.empty:
-        return {"lead_swaps": 0, "last_gap": np.nan, "last_top3_spread": np.nan}, pd.DataFrame(), pd.Series(dtype="object")
-    rr = per_round_positions(df, entity_col=entity_col)
-    if rr.empty:
-        return {"lead_swaps": 0, "last_gap": np.nan, "last_top3_spread": np.nan}, pd.DataFrame(), pd.Series(dtype="object")
-
-    leaders = (
-        rr.sort_values(["EventIdx", "Position", entity_col])
-        .groupby("EventIdx", as_index=False)
-        .first()
-        .set_index("EventIdx")[entity_col]
-    )
-
-    by_round = []
-    for evt, sub in rr.groupby("EventIdx"):
-        top = sub.sort_values("Position").head(3)
-        p1 = top[top["Position"] == 1]["CumPoints"]
-        p2 = top[top["Position"] == 2]["CumPoints"]
-        gap = float(p1.iloc[0] - p2.iloc[0]) if len(p1) and len(p2) else np.nan
-        spread = float(top["CumPoints"].max() - top["CumPoints"].min()) if len(top) >= 3 else np.nan
-        by_round.append({"EventIdx": evt, "GapP1P2": gap, "Top3Spread": spread})
-    tension_df = pd.DataFrame(by_round).sort_values("EventIdx") if by_round else pd.DataFrame(columns=["EventIdx", "GapP1P2", "Top3Spread"])
-
-    metrics = {
-        "lead_swaps": lead_swaps_count(leaders),
-        "last_gap": float(tension_df["GapP1P2"].dropna().iloc[-1]) if not tension_df["GapP1P2"].dropna().empty else np.nan,
-        "last_top3_spread": float(tension_df["Top3Spread"].dropna().iloc[-1]) if not tension_df["Top3Spread"].dropna().empty else np.nan,
-    }
-    return metrics, tension_df, leaders
-
-def position_delta_table(df: pd.DataFrame, entity_col: str, n_momentum: int = 3) -> pd.DataFrame:
-    rr = per_round_positions(df, entity_col=entity_col)
-    if rr.empty:
-        return pd.DataFrame()
-    last_evt = rr["EventIdx"].max()
-    last = rr[rr["EventIdx"] == last_evt][[entity_col, "Position", "PrevPos", "PosChange"]].copy()
-    last["PosChange"] = last["PosChange"].fillna(0).astype(int)
-
-    recent = rr.sort_values("EventIdx").groupby(entity_col).tail(n_momentum)
-    mom = recent.groupby(entity_col, as_index=False)["PosChange"].sum().rename(columns={"PosChange": f"MomentumL{n_momentum}"})
-
-    out = last.merge(mom, on=entity_col, how="left")
-    out[f"MomentumL{n_momentum}"] = out[f"MomentumL{n_momentum}"].fillna(0).astype(int)
-    out = out.rename(columns={"Position": "CurrentPos", "PrevPos": "PrevPos", "PosChange": "Delta"})
-    return out.sort_values(["Delta", f"MomentumL{n_momentum}", "CurrentPos"], ascending=[False, False, True]).reset_index(drop=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global CSS & UI helpers
@@ -1381,7 +977,7 @@ def render_st_dataframe(df_or_styler):
         is_light = st.session_state.get("theme_mode", "Dark") == "Light"
         text_color = "#333" if is_light else "#eee"
         border_color = "#ccc" if is_light else "#333"
-        
+
         table_css = f"""
         <style>
         .st-table-fallback {{ width:100%; border-collapse:collapse; color:{text_color}; font-size:0.85rem; text-align:left; margin-bottom:1rem; }}
@@ -1390,14 +986,14 @@ def render_st_dataframe(df_or_styler):
         .st-table-fallback tr:hover td {{ background: rgba(225,6,0,0.05); }}
         </style>
         """
-        
+
         if hasattr(df_or_styler, 'hide'):
             html = df_or_styler.hide(axis="index").to_html()
             html = html.replace('<table id="', '<table class="st-table-fallback" id="')
         else:
             html = df_or_styler.to_html(index=False, escape=False)
             html = html.replace('<table border="1" class="dataframe">', '<table class="st-table-fallback">')
-            
+
         st.html(f"{table_css}<div style='overflow-x:auto;'>{html}</div>")
     except Exception as e:
         st.error(f"Could not render table: {e}")
@@ -1409,7 +1005,7 @@ def style_pos_column(df: pd.DataFrame, pos_col: str = "Pos", is_light: bool = Fa
             p = int(row[pos_col])
         except Exception:
             return [""] * len(row)
-        
+
         if p == 1:
             css = "background:#fef3c7;color:#b45309;font-weight:700;" if is_light else "background:#2a1f00;color:#f5c518;font-weight:700;"
         elif p == 2:
@@ -1418,7 +1014,7 @@ def style_pos_column(df: pd.DataFrame, pos_col: str = "Pos", is_light: bool = Fa
             css = "background:#ffedd5;color:#9a3412;font-weight:700;" if is_light else "background:#1c1008;color:#cd7f32;font-weight:700;"
         else:
             css = ""
-            
+
         return [css if row.index[i] == pos_col else "" for i in range(len(row))]
     return df.style.apply(_row, axis=1)
 
@@ -1456,9 +1052,17 @@ def render_movers_chart(df: pd.DataFrame, entity_col: str, top_n: int = 6):
     )
     st.plotly_chart(fig_m, width="stretch")
 
+@st.cache_data(show_spinner=False)
+def load_dashboard_data(workbook_path: str, mtime: float):
+    """Validate and load the workbook once per file revision."""
+    warnings = core.validate_workbook(workbook_path)
+    standings = core.load_standings_data(workbook_path)
+    calendar = core.load_calendar_data(workbook_path)
+    return warnings, standings, calendar
+
+
 if "theme_mode" not in st.session_state:
     st.session_state["theme_mode"] = "Dark"
-st.session_state["theme_mode"] = "Dark"
 if "app_lang" not in st.session_state:
     st.session_state["app_lang"] = "Português (Portugal)"
 
@@ -1471,11 +1075,21 @@ with st.sidebar:
         key="app_lang_selector"
     )
     st.divider()
-    
+
     lang_name = st.session_state.get("app_lang", "English")
     lang_name = lang_name if lang_name in LANGS else "English"
     lang = LANGS[lang_name]
-    
+
+    theme_options = ["Dark", "Light"]
+    st.session_state["theme_mode"] = st.radio(
+        tr(lang, "theme"),
+        options=theme_options,
+        index=theme_options.index(st.session_state.get("theme_mode", "Dark")),
+        horizontal=True,
+        key="theme_mode_selector",
+    )
+    st.divider()
+
     st.caption(tr(lang, "version"))
 
 THEME_CFG = theme_palette(st.session_state.get("theme_mode", "Dark"))
@@ -1483,18 +1097,19 @@ apply_theme_css(THEME_CFG)
 st.html(GLOBAL_CSS)
 
 # Load data silently in background
-bundled = find_bundled_excel()
+bundled = core.find_bundled_excel()
 if bundled is None:
     st.warning(tr(lang, "no_bundled"))
     st.stop()
-import os
 try:
-    mtime = os.path.getmtime(bundled)
-except Exception:
-    mtime = 0.0
+    workbook_mtime = Path(bundled).stat().st_mtime
+    workbook_warnings, raw, calendar_raw = load_dashboard_data(bundled, workbook_mtime)
+except core.WorkbookValidationError as exc:
+    st.error(f"Workbook validation failed: {exc}")
+    st.stop()
 
-raw = load_data_from_excel(bundled, mtime=mtime)
-calendar_raw = load_calendar_from_excel(bundled, mtime=mtime)
+for warning in workbook_warnings:
+    st.warning(warning)
 
 base_all = raw.copy()
 
@@ -1534,11 +1149,11 @@ if season_sel != "All":
     df_filtered = df_filtered[df_filtered["SeasonLabel"] == season_sel]
 if league_sel != "All":
     df_filtered = df_filtered[df_filtered["League Name"] == league_sel]
-df_filtered = effective_rows(df_filtered)
+df_filtered = core.effective_rows(df_filtered)
 
-latest_df, latest_meta = latest_league_slice(base_all)
+latest_df, latest_meta = core.latest_league_slice(base_all)
 latest_gp = latest_df[~latest_df["IsSeasonFinal"]].copy()
-st_tbl_latest = standings_table(latest_gp, entity="Drivers") if not latest_gp.empty else pd.DataFrame()
+st_tbl_latest = core.standings_table(latest_gp, entity="Drivers") if not latest_gp.empty else pd.DataFrame()
 
 tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(tr(lang, "tabs"))
 
@@ -1559,7 +1174,7 @@ with tab_gp:
         .copy()
     )
     gp_pairs["SeasonLeague"] = gp_pairs["SeasonLabel"].astype(str) + " ||| " + gp_pairs["League Name"].astype(str)
-    gp_pairs["_SortKey"] = gp_pairs["SeasonNum"].fillna(gp_pairs["SeasonLabel"].map(_season_sort_key))
+    gp_pairs["_SortKey"] = gp_pairs["SeasonNum"].fillna(gp_pairs["SeasonLabel"].map(core.season_sort_key))
     gp_pairs = gp_pairs.sort_values(["_SortKey", "SeasonLabel", "League Name"], ascending=[False, False, True])
 
     seasonleague_options = gp_pairs["SeasonLeague"].unique().tolist()
@@ -1585,11 +1200,11 @@ with tab_gp:
         view_canon = {tr(lang, "drivers"): "Drivers", tr(lang, "constructors"): "Constructors"}[view]
         entity_col = "Driver" if view_canon == "Drivers" else "Team"
 
-        st_table = standings_table(df_gp, entity=view_canon)
+        st_table = core.standings_table(df_gp, entity=view_canon)
         st.subheader(tr(lang, "standings"))
         show_form_cols = st.toggle(tr(lang, "show_form_cols"), value=False)
         if show_form_cols:
-            form = form_table(df_gp, entity_col=entity_col)
+            form = core.form_table(df_gp, entity_col=entity_col)
             st_table = st_table.merge(form, on=entity_col, how="left") if not form.empty else st_table
         loc_st = localized_table(st_table, lang)
         if "Pos" in loc_st.columns:
@@ -1606,7 +1221,7 @@ with tab_gp:
         else:
             top_n = st.slider(tr(lang, "top_n_lines"), 5, 30, 10, key="gp_topn")
 
-        wide, long = cumulative_points_wide(df_gp, entity_col=entity_col, all_time=gp_all_time)
+        wide, long = core.cumulative_points_wide(df_gp, entity_col=entity_col, all_time=gp_all_time)
         if not wide.empty and not long.empty:
             last_idx = wide.index.max()
             final = wide.tail(1).T.sort_values(by=last_idx, ascending=False)
@@ -1660,7 +1275,7 @@ with tab_gp:
                 st.line_chart(wide[keep].ffill().fillna(0), height=550)
 
         st.markdown(f"### {tr(lang, 'tension')}")
-        _, gp_tension_df, _ = championship_tension(df_gp, entity_col=entity_col)
+        _, gp_tension_df, _ = core.championship_tension(df_gp, entity_col=entity_col)
         if not gp_tension_df.empty and PLOTLY_OK:
             tdf = gp_tension_df.copy()
             tdf["EventLabel"] = "R" + tdf["EventIdx"].astype(int).astype(str)
@@ -1722,7 +1337,7 @@ with tab_gp:
 
         st.markdown(f"### {tr(lang, 'position_delta')}")
 
-        delta_tbl = position_delta_table(df_gp, entity_col=entity_col, n_momentum=3)
+        delta_tbl = core.position_delta_table(df_gp, entity_col=entity_col, n_momentum=3)
 
         if delta_tbl.empty:
 
@@ -1745,7 +1360,7 @@ with tab_gp:
 
 with tab_circuits:
 
-    circuits = circuits_top3(base_all)
+    circuits = core.circuits_top3(base_all)
 
     if circuits.empty:
 
@@ -1755,16 +1370,16 @@ with tab_circuits:
 
         # ── Circuit SVG Map Gallery ──
         st.markdown("### " + ("Circuit Layouts" if lang == "en" else "Layouts dos Circuitos"))
-        
+
         d_cir = base_all[(~base_all["IsSeasonFinal"]) & (base_all["Finish Pos"] == 1)].copy()
         gps = sorted([g for g in base_all[~base_all["IsSeasonFinal"]]["GP Name"].unique() if g and g != "Season Final"])
-        
+
         cards_html = '<div class="p-tracks-grid">'
         for gp in gps:
             svg_url = CIRCUIT_SVG_MAP.get(gp, "")
             flag_html = _flag_img(gp, height=14)
             short_name = tr_track(lang, gp)
-            
+
             # Wins calculation
             gp_wins = d_cir[d_cir["GP Name"] == gp].groupby("Driver").size().reset_index(name="Wins")
             t1_text = "-"
@@ -1772,23 +1387,23 @@ with tab_circuits:
             t3_text = ""
             if not gp_wins.empty:
                 gp_wins = gp_wins.sort_values(["Wins", "Driver"], ascending=[False, True])
-                
+
                 t1_driver = gp_wins.iloc[0]["Driver"]
                 t1_wins = gp_wins.iloc[0]["Wins"]
                 t1_text = f"🥇 {t1_driver} ({t1_wins} 🏆)"
-                
+
                 if len(gp_wins) > 1:
                     t2_driver = gp_wins.iloc[1]["Driver"]
                     t2_wins = gp_wins.iloc[1]["Wins"]
                     t2_text = f"🥈 {t2_driver} ({t2_wins} 🏆)"
-                    
+
                 if len(gp_wins) > 2:
                     t3_driver = gp_wins.iloc[2]["Driver"]
                     t3_wins = gp_wins.iloc[2]["Wins"]
                     t3_text = f"🥉 {t3_driver} ({t3_wins} 🏆)"
-            
+
             svg_img_tag = f'<img class="p-track-image" src="{svg_url}" alt="{gp}" />' if svg_url else f'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#666;border:1px dashed #333;border-radius:6px;margin:0.8rem 0;font-size:0.8rem;">{tr(lang, "no_layout_outline")}</div>'
-            
+
             cards_html += f"""
             <div class="p-track-card">
                 <div class="p-track-title">{tr_gp(lang, gp).upper()}</div>
@@ -1834,7 +1449,7 @@ with tab_all:
 
         # ── Title cards row ──
 
-        tc_df, champs_df = titles_count(base, entity_col=entity)
+        tc_df, champs_df = core.titles_count(base, entity_col=entity, calendar_df=calendar_raw)
 
         if not tc_df.empty:
 
@@ -1863,7 +1478,7 @@ with tab_all:
 
         totals = base.groupby(["SeasonLabel", entity], as_index=False).agg(Points=("Points", "sum"))
 
-        season_order = sorted(totals["SeasonLabel"].unique().tolist(), key=_season_sort_key)
+        season_order = sorted(totals["SeasonLabel"].unique().tolist(), key=core.season_sort_key)
 
         totals["SeasonLabel"] = pd.Categorical(totals["SeasonLabel"], categories=season_order, ordered=True)
 
@@ -1921,12 +1536,12 @@ with tab_all:
                 showgrid=True,
                 gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
             )
-            
+
             fig.update_yaxes(
                 showgrid=True,
                 gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
             )
-            
+
             fig.update_traces(
                 line=dict(width=3),
                 marker=dict(size=7),
@@ -1942,15 +1557,15 @@ with tab_all:
             ["SeasonLabel", "Points"], ascending=[True, False],
 
         )
-        
+
         # Format standings table rows to highlight champions and add team badges
         gp_rows = base_all[~base_all["IsSeasonFinal"]]
         driver_team = {}
         if not gp_rows.empty:
             driver_team = gp_rows.drop_duplicates(subset=["Driver"], keep="last").set_index("Driver")["Team"].to_dict()
-            
+
         champs_map = set(champs_df.apply(lambda r: (r["Season"], r["Champion"]), axis=1)) if not champs_df.empty else set()
-            
+
         def format_alltime_standings_row(r):
             val = r[entity]
             sl = r["SeasonLabel"]
@@ -1959,7 +1574,7 @@ with tab_all:
             if is_champ:
                 return f'<span style="white-space:nowrap;">{badge}<b style="color:#ffd700;">{val} 🏆</b></span>'
             return f'<span style="white-space:nowrap;">{badge}{val}</span>'
-            
+
         table_show = table_df.copy()
         table_show[entity] = table_show.apply(format_alltime_standings_row, axis=1)
 
