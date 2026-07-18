@@ -752,13 +752,18 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
     }
     
     @media (max-width: 768px) {
-        .puskas-container { margin: -1rem; }
-        .p-hero { padding: 3rem 1rem 1.5rem 1rem; }
-        .p-hero-title { font-size: 3rem; }
+        .puskas-container { margin: 0; width: 100%; }
+        .p-hero { padding: 2rem 1rem 1.5rem; background-position: 60% center; }
+        .p-hero-title {
+            font-size: clamp(2.65rem, 14vw, 3rem);
+            line-height: 0.92;
+            letter-spacing: 1px;
+        }
+        .p-hero-sub, .p-hero-season { max-width: 100%; overflow-wrap: anywhere; }
         .p-countdown-value { font-size: 2.5rem; }
         .p-countdown-text { font-size: 1.2rem; }
-        .p-countdown-timer { gap: 1rem; }
-        .p-countdown-segment { min-width: 45px; }
+        .p-countdown-timer { gap: clamp(0.35rem, 2.5vw, 1rem); width: 100%; }
+        .p-countdown-segment { min-width: 0; flex: 1; }
     }
     </style>
     """
@@ -1828,7 +1833,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     }
     
     @media (max-width: 900px) {
-        .puskas-container { margin: -1rem; }
+        .puskas-container { margin: 0; width: 100%; }
         .p-grid, .p-grid-2, .p-grid-half, .p-grid-3 { grid-template-columns: 1fr; padding: 1rem; }
         .p-hof-grid { flex-direction: column; }
         .p-hof { padding: 0 1rem 1rem 1rem; }
