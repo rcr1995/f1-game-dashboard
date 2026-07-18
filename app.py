@@ -42,7 +42,36 @@ st.set_page_config(
 
 # -----------------------------
 
-APP_VERSION = "v37"
+APP_VERSION = "v38"
+
+MOBILE_DASHBOARD_CSS = """
+<style>
+@media (max-width: 900px) {
+    html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+    .puskas-container {
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    .p-hero {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 2rem 1rem 1.5rem !important;
+        background-position: 60% center !important;
+    }
+    .p-hero-title {
+        font-size: clamp(2.65rem, 14vw, 3rem) !important;
+        line-height: 0.92 !important;
+        letter-spacing: 1px !important;
+    }
+    .p-hero-sub, .p-hero-season { max-width: 100% !important; overflow-wrap: anywhere; }
+    .p-countdown-timer { gap: clamp(0.35rem, 2.5vw, 1rem) !important; width: 100%; }
+    .p-countdown-segment { min-width: 0 !important; flex: 1; }
+}
+</style>
+"""
 
 # -----------------------------
 
@@ -1159,6 +1188,7 @@ tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(tr(lang, "tabs"))
 
 with tab_dash:
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
+    html_dashboard = html_dashboard.replace("</body>", f"{MOBILE_DASHBOARD_CSS}</body>")
     with st.container(key=f"puskas-dash-container-{lang}-{latest_meta.get('SeasonLabel', 'default')}"):
         st.iframe(html_dashboard, height=2150)
 
