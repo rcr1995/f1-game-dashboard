@@ -3,7 +3,9 @@ import streamlit as st
 import pandas as pd
 
 from pathlib import Path
+import importlib
 import dashboard_core as core
+core = importlib.reload(core)
 from puskas_html import (
     render_puskas_dashboard,
     CIRCUIT_SVG_MAP,
@@ -42,7 +44,7 @@ st.set_page_config(
 
 # -----------------------------
 
-APP_VERSION = "v38"
+APP_VERSION = "v39"
 
 MOBILE_DASHBOARD_CSS = """
 <style>
