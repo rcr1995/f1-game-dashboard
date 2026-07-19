@@ -95,6 +95,26 @@ class DashboardCoreTests(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
         self.assertIn("Calendar", warnings[0])
 
+    def test_workbook_validation_ignores_rows_from_adjacent_reference_table(self):
+        leagues = pd.DataFrame(
+            {
+                "Game": ["F1 25", None],
+                "Season": ["2026-T01", None],
+                "League Name": ["League", None],
+                "Round": [1, None],
+                "GP Name": ["Bahrain GP", None],
+                "Driver": ["Alice", None],
+                "Team": ["Red", None],
+                "Finish Pos": [1, None],
+                "Points": [25, None],
+                "Reference Driver": [None, "Bob"],
+                "Reference Team": [None, "Blue"],
+            }
+        )
+        warnings = core.validate_workbook(self.workbook_bytes(leagues))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Calendar", warnings[0])
+
     def test_loader_normalizes_season_final_and_event_type(self):
         leagues = pd.DataFrame(
             [["F1 25", "2026-T01", "League", "All", "X", "All", "Alice", "Red", 1, 100]],

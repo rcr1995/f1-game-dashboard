@@ -74,6 +74,10 @@ def validate_workbook(source: str | Path | BinaryIO) -> list[str]:
     missing = sorted(REQUIRED_STANDINGS_COLUMNS - set(standings.columns))
     if missing:
         raise WorkbookValidationError(f"Sheet 'Leagues' is missing columns: {', '.join(missing)}")
+    # Ignore rows that only belong to auxiliary tables placed beside the
+    # standings grid. Partially populated standings rows are still validated.
+    result_columns = list(REQUIRED_STANDINGS_COLUMNS)
+    standings = standings.loc[standings[result_columns].notna().any(axis=1)].copy()
     if standings.empty:
         raise WorkbookValidationError("Sheet 'Leagues' contains no standings rows.")
 
