@@ -26,6 +26,22 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
+### Import a race from two PlayStation screenshots
+
+The race importer is deliberately local-only, so a hosted dashboard never exposes a control that can write to its workbook. Install the optional local OCR dependencies and enable the importer before starting Streamlit:
+
+```powershell
+python -m pip install -r requirements-import.txt
+$env:F1_ENABLE_RACE_IMPORT="1"
+python -m streamlit run app.py
+```
+
+Open **Import race**, choose the championship and event, upload exactly two screenshots, and select **Extract standings**. The app matches names only against the active championship roster, calculates points from reviewed finishing positions, and requires explicit approval before it updates `F1_Standings.xlsx`. Uncertain OCR rows stay unresolved for correction.
+
+OCR runs on the local machine. RapidOCR may download its small recognition models the first time extraction is used; later extraction uses those cached local models.
+
+On approval, the app creates a recovery copy under `.codex-tmp/race-import-backups`, validates a temporary workbook, blocks duplicate events or stale reviews, and only then replaces the local workbook. Editing `F1_Standings.xlsx` directly remains fully supported.
+
 The app automatically loads `F1_Standings.xlsx` from the repository root. It also searches the `data`, `Data`, `assets`, and `excel` directories when the default file is absent.
 
 ## Workbook format
@@ -81,6 +97,10 @@ The GitHub Actions workflow runs these checks and performs a minimal Streamlit s
 
 - `app.py` — Streamlit interface and visual presentation
 - `dashboard_core.py` — workbook validation, normalization, and standings calculations
+- `race_import.py` — controlled roster matching, screenshot reconciliation, and scoring validation
+- `race_ocr.py` — optional offline screenshot OCR adapter
+- `race_workbook.py` — approval-gated, preservation-oriented Excel transaction
+- `race_import_ui.py` — local Streamlit review and approval workflow
 - `puskas_html.py` — custom dashboard HTML rendering
 - `tests/` — calculation and workbook regression tests
 - `assets/` — optimized WebP dashboard imagery
