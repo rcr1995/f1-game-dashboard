@@ -6,6 +6,7 @@ from pathlib import Path
 import importlib
 import dashboard_core as core
 core = importlib.reload(core)
+import race_import_ui
 from puskas_html import (
     render_puskas_dashboard,
     CIRCUIT_SVG_MAP,
@@ -44,7 +45,7 @@ st.set_page_config(
 
 # -----------------------------
 
-APP_VERSION = "v39"
+APP_VERSION = "v40"
 
 MOBILE_DASHBOARD_CSS = """
 <style>
@@ -1186,7 +1187,12 @@ latest_df, latest_meta = core.latest_league_slice(base_all)
 latest_gp = latest_df[~latest_df["IsSeasonFinal"]].copy()
 st_tbl_latest = core.standings_table(latest_gp, entity="Drivers") if not latest_gp.empty else pd.DataFrame()
 
-tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(tr(lang, "tabs"))
+tab_labels = list(tr(lang, "tabs"))
+if race_import_ui.race_import_enabled():
+    tab_labels.append(race_import_ui.import_tab_label(lang))
+tabs = st.tabs(tab_labels)
+tab_dash, tab_gp, tab_circuits, tab_all = tabs[:4]
+tab_import = tabs[4] if len(tabs) > 4 else None
 
 with tab_dash:
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
@@ -1611,4 +1617,15 @@ with tab_all:
         table_show[entity] = table_show.apply(format_alltime_standings_row, axis=1)
 
         render_st_dataframe(localized_table(table_show, lang))
+
+
+if tab_import is not None:
+    with tab_import:
+        race_import_ui.render_race_import(
+            bundled,
+            base_all,
+            calendar_raw,
+            lang=lang,
+            clear_data_cache=load_dashboard_data.clear,
+        )
 

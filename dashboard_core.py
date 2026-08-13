@@ -62,15 +62,17 @@ def validate_workbook(source: str | Path | BinaryIO) -> list[str]:
         workbook = pd.ExcelFile(source)
     except Exception as exc:
         raise WorkbookValidationError(f"Could not open the Excel workbook: {exc}") from exc
+    try:
+        if "Leagues" not in workbook.sheet_names:
+            raise WorkbookValidationError("Required sheet 'Leagues' was not found.")
 
-    if "Leagues" not in workbook.sheet_names:
-        raise WorkbookValidationError("Required sheet 'Leagues' was not found.")
+        warnings: list[str] = []
+        if "Calendar" not in workbook.sheet_names:
+            warnings.append("Optional sheet 'Calendar' is missing; schedule features will be unavailable.")
 
-    warnings: list[str] = []
-    if "Calendar" not in workbook.sheet_names:
-        warnings.append("Optional sheet 'Calendar' is missing; schedule features will be unavailable.")
-
-    standings = _clean_columns(pd.read_excel(workbook, sheet_name="Leagues"))
+        standings = _clean_columns(pd.read_excel(workbook, sheet_name="Leagues"))
+    finally:
+        workbook.close()
     missing = sorted(REQUIRED_STANDINGS_COLUMNS - set(standings.columns))
     if missing:
         raise WorkbookValidationError(f"Sheet 'Leagues' is missing columns: {', '.join(missing)}")
