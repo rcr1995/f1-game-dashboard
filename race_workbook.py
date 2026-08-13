@@ -9,19 +9,28 @@ the original only after explicit approval.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import errno
 import hashlib
 import os
 from pathlib import Path
 import re
 import shutil
 import tempfile
-from typing import Iterable, Mapping
+import threading
+import time
+from typing import BinaryIO, Iterable, Iterator, Mapping
 from uuid import uuid4
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape as xml_escape
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 import pandas as pd
 
@@ -43,6 +52,102 @@ class StaleWorkbookError(WorkbookUpdateError):
 
 class DuplicateEventError(WorkbookUpdateError):
     """Raised when an event is already present in the workbook."""
+
+
+_WORKBOOK_LOCK_TIMEOUT_SECONDS = 30.0
+_WORKBOOK_LOCK_POLL_SECONDS = 0.05
+_LOCK_FILE_INITIALIZATION_GUARD = threading.Lock()
+_PIVOT_SOURCE_PART = "xl/pivotCache/pivotCacheDefinition1.xml"
+_PIVOT_SOURCE_PATTERN = re.compile(
+    rb'(<worksheetSource\b[^>]*\bref=")([A-Z]+\d+):([A-Z]+)(\d+)("[^>]*\bsheet="Leagues"[^>]*/>)'
+)
+
+
+def _workbook_lock_path(path: Path) -> Path:
+    return path.with_name(f".{path.name}.race-import.lock")
+
+
+def _open_workbook_lock_file(lock_path: Path) -> BinaryIO:
+    with _LOCK_FILE_INITIALIZATION_GUARD:
+        handle = lock_path.open("a+b")
+        try:
+            # ``msvcrt.locking`` locks a byte range, so the file must own at
+            # least one byte. Serialize first-use initialization within this
+            # process; the stable sidecar avoids a later inode race.
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            return handle
+        except BaseException:
+            handle.close()
+            raise
+
+
+def _try_acquire_workbook_lock(handle: BinaryIO) -> None:
+    handle.seek(0)
+    if os.name == "nt":
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _release_workbook_lock(handle: BinaryIO) -> None:
+    handle.seek(0)
+    if os.name == "nt":
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _lock_is_busy(exc: OSError) -> bool:
+    return (
+        isinstance(exc, BlockingIOError)
+        or exc.errno in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}
+        or getattr(exc, "winerror", None) in {33, 36}
+    )
+
+
+@contextmanager
+def _workbook_lock(path: Path, *, timeout_seconds: float | None = None) -> Iterator[None]:
+    timeout = _WORKBOOK_LOCK_TIMEOUT_SECONDS if timeout_seconds is None else max(0.0, timeout_seconds)
+    try:
+        handle = _open_workbook_lock_file(_workbook_lock_path(path))
+    except OSError as exc:
+        raise WorkbookUpdateError("Could not open the workbook update lock; the workbook was not changed.") from exc
+
+    acquired = False
+    deadline = time.monotonic() + timeout
+    try:
+        while not acquired:
+            try:
+                _try_acquire_workbook_lock(handle)
+                acquired = True
+            except OSError as exc:
+                if exc.errno == errno.EINTR:
+                    continue
+                if not _lock_is_busy(exc):
+                    raise WorkbookUpdateError(
+                        "Could not acquire the workbook update lock; the workbook was not changed."
+                    ) from exc
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise WorkbookUpdateError(
+                        "Another race import is already updating this workbook. Try again after it finishes; "
+                        "the workbook was not changed."
+                    ) from exc
+                time.sleep(min(_WORKBOOK_LOCK_POLL_SECONDS, remaining))
+        yield
+    finally:
+        if acquired:
+            try:
+                _release_workbook_lock(handle)
+            except OSError:
+                # Closing the descriptor also releases an advisory lock. Do
+                # not report a failed import after an atomic replace succeeded.
+                pass
+        handle.close()
 
 
 @dataclass(frozen=True)
@@ -82,7 +187,6 @@ def _event_mask(data: pd.DataFrame, metadata: RaceMetadata) -> pd.Series:
         & data["League Name"].astype(str).eq(metadata.league)
         & pd.to_numeric(data["Round"], errors="coerce").eq(metadata.round_number)
         & event_types.fillna("R").astype(str).str.upper().eq(metadata.event_type.upper())
-        & data["GP Name"].astype(str).eq(metadata.gp_name)
     )
 
 
@@ -204,6 +308,44 @@ def _calendar_excel_row(path: Path, metadata: RaceMetadata) -> int | None:
     return int(indexes[0]) + 2 if indexes else None
 
 
+def _calendar_identity_is_unambiguous(standings: pd.DataFrame, metadata: RaceMetadata) -> bool:
+    """A Calendar row without Game/Season columns must map to one championship."""
+    season_column = "SeasonLabel" if "SeasonLabel" in standings.columns else "Season"
+    league_rows = standings[standings["League Name"].astype(str).eq(metadata.league)]
+    championships = league_rows[["Game", season_column]].astype(str).drop_duplicates()
+    expected = (metadata.game, metadata.season)
+    return len(championships) == 1 and tuple(championships.iloc[0]) == expected
+
+
+def _extend_pivot_source_if_needed(
+    archive: ZipFile,
+    replacements: dict[str, bytes],
+    *,
+    last_excel_row: int,
+) -> None:
+    """Extend the cached Leagues pivot source so imported rows remain visible."""
+    if _PIVOT_SOURCE_PART not in archive.namelist():
+        raise WorkbookUpdateError("Workbook is missing the Leagues pivot-cache definition.")
+    payload = archive.read(_PIVOT_SOURCE_PART)
+    match = _PIVOT_SOURCE_PATTERN.search(payload)
+    if match is None:
+        raise WorkbookUpdateError("Could not verify the Leagues pivot-cache source range.")
+    current_last_row = int(match.group(4))
+    if last_excel_row <= current_last_row:
+        return
+    updated = (
+        payload[: match.start()]
+        + match.group(1)
+        + re.sub(rb"\d+$", b"", match.group(2))
+        + b"1:"
+        + match.group(3)
+        + str(last_excel_row).encode("ascii")
+        + match.group(5)
+        + payload[match.end() :]
+    )
+    replacements[_PIVOT_SOURCE_PART] = updated
+
+
 def _copy_archive_with_replacements(source: Path, destination: Path, replacements: Mapping[str, bytes]) -> None:
     try:
         with ZipFile(source, "r") as source_zip, ZipFile(destination, "w", compression=ZIP_DEFLATED, allowZip64=True) as target_zip:
@@ -269,7 +411,7 @@ def _workbook_row(metadata: RaceMetadata, row: Mapping[str, object]) -> dict[str
     }
 
 
-def commit_race_import(
+def _commit_race_import_locked(
     workbook_path: str | Path,
     *,
     metadata: RaceMetadata,
@@ -279,7 +421,7 @@ def commit_race_import(
     approved: bool,
     backup_directory: str | Path | None = None,
 ) -> CommitResult:
-    """Validate, stage, back up, and atomically commit one complete event."""
+    """Run a complete import while the caller holds the workbook lock."""
     if not approved:
         raise ApprovalRequiredError("Workbook update requires explicit approval from the review screen.")
 
@@ -293,6 +435,15 @@ def commit_race_import(
     before = core.load_standings_data(path)
     if event_already_exists(before, metadata):
         raise DuplicateEventError("This race or sprint is already present in the workbook.")
+    calendar_row = _calendar_excel_row(path, metadata)
+    if calendar_row is None:
+        raise WorkbookUpdateError(
+            "The event does not exactly match one Calendar row for this league, round, and Grand Prix."
+        )
+    if not _calendar_identity_is_unambiguous(before, metadata):
+        raise WorkbookUpdateError(
+            "The Calendar league does not identify exactly this championship; use the manual Excel workflow."
+        )
     try:
         roster = race.derive_championship_roster(
             before,
@@ -343,10 +494,14 @@ def commit_race_import(
                 tuple("ABCDEFGHIJKL"),
             )
         replacements: dict[str, bytes] = {leagues_part: leagues_xml}
+        _extend_pivot_source_if_needed(
+            archive,
+            replacements,
+            last_excel_row=last_row,
+        )
 
-        calendar_row = _calendar_excel_row(path, metadata) if metadata.event_type.upper() == "R" else None
         calendar_part = sheet_paths.get("Calendar")
-        calendar_updated = bool(calendar_row and calendar_part)
+        calendar_updated = bool(metadata.event_type.upper() == "R" and calendar_row and calendar_part)
         if calendar_updated and calendar_part:
             calendar_xml = archive.read(calendar_part)
             replacements[calendar_part] = _replace_row_cells(
@@ -371,9 +526,18 @@ def commit_race_import(
         actual = imported[["Finish Pos", "Driver", "Team", "Points"]].rename(columns={"Finish Pos": "Position"}).reset_index(drop=True)
         actual["Position"] = actual["Position"].astype(int)
         actual["Points"] = actual["Points"].astype(float)
-        if not actual.equals(expected[["Position", "Driver", "Team", "Points"]]):
+        expected_values = expected[["Position", "Driver", "Team", "Points"]].copy()
+        expected_values["Position"] = expected_values["Position"].astype(int)
+        expected_values["Points"] = expected_values["Points"].astype(float)
+        if not actual.equals(expected_values):
             raise WorkbookUpdateError("Staged workbook values do not match the approved review.")
 
+        # The advisory lock serializes importer sessions. This final hash also
+        # detects a non-cooperating Excel/manual writer before replacement.
+        if workbook_fingerprint(path) != current_sha:
+            raise StaleWorkbookError(
+                "The workbook changed while this update was staged. Review the current workbook and try again."
+            )
         backup_root = Path(backup_directory) if backup_directory else path.parent / ".codex-tmp" / "race-import-backups"
         backup_root.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -381,6 +545,15 @@ def commit_race_import(
         if backup_path.exists():
             backup_path = backup_root / f"{path.stem}.before-{timestamp}-{current_sha[:8]}-{uuid4().hex[:6]}.xlsx"
         shutil.copy2(path, backup_path)
+        if workbook_fingerprint(backup_path) != current_sha:
+            raise StaleWorkbookError("The recovery copy did not match the reviewed workbook; nothing was replaced.")
+        # Preserve the original file's basic metadata and POSIX mode rather
+        # than replacing it with mkstemp's restrictive defaults.
+        shutil.copystat(path, temporary_path)
+        if workbook_fingerprint(path) != current_sha:
+            raise StaleWorkbookError(
+                "The workbook changed after its recovery copy was verified. Nothing was replaced."
+            )
         try:
             os.replace(temporary_path, path)
         except PermissionError as exc:
@@ -398,3 +571,36 @@ def commit_race_import(
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
+
+
+def commit_race_import(
+    workbook_path: str | Path,
+    *,
+    metadata: RaceMetadata,
+    rows: Iterable[Mapping[str, object]],
+    scoring_profile: Mapping[int, float],
+    expected_sha256: str,
+    approved: bool,
+    backup_directory: str | Path | None = None,
+) -> CommitResult:
+    """Validate, stage, back up, and atomically commit one complete event."""
+    if not approved:
+        raise ApprovalRequiredError("Workbook update requires explicit approval from the review screen.")
+
+    path = Path(workbook_path).resolve()
+    if not path.is_file():
+        raise WorkbookUpdateError(f"Workbook was not found: {path}")
+
+    # The stale-review check is deliberately performed inside this lock by
+    # ``_commit_race_import_locked``. The lock remains held through staging,
+    # backup creation, atomic replacement, and the final fingerprint.
+    with _workbook_lock(path):
+        return _commit_race_import_locked(
+            path,
+            metadata=metadata,
+            rows=rows,
+            scoring_profile=scoring_profile,
+            expected_sha256=expected_sha256,
+            approved=approved,
+            backup_directory=backup_directory,
+        )

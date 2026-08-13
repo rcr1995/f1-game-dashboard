@@ -11,6 +11,8 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import race_import_ui
+import race_ocr
+import admin_auth
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -29,22 +31,22 @@ class ScreenshotValidationTests(unittest.TestCase):
     def test_accepts_valid_png_and_jpeg(self):
         for image_format in ("PNG", "JPEG"):
             with self.subTest(image_format=image_format):
-                race_import_ui.validate_screenshot_bytes(encoded_image(image_format))
+                race_ocr.validate_image_upload(encoded_image(image_format))
 
     @unittest.skipUnless(features.check("webp"), "Pillow was built without WebP support")
     def test_accepts_valid_webp_when_supported(self):
-        race_import_ui.validate_screenshot_bytes(encoded_image("WEBP"))
+        race_ocr.validate_image_upload(encoded_image("WEBP"))
 
     def test_rejects_malformed_image(self):
-        with self.assertRaisesRegex(ValueError, "invalid screenshot image"):
-            race_import_ui.validate_screenshot_bytes(b"not actually an image")
+        with self.assertRaisesRegex(race_ocr.InvalidScreenshotError, "not a valid"):
+            race_ocr.validate_image_upload(b"not actually an image")
 
     def test_rejects_oversized_upload_before_image_decoding(self):
-        oversized = b"x" * (race_import_ui.MAX_SCREENSHOT_BYTES + 1)
+        oversized = b"x" * (race_ocr.MAX_IMAGE_BYTES + 1)
 
-        with mock.patch.object(race_import_ui.Image, "open") as image_open:
-            with self.assertRaisesRegex(ValueError, "invalid screenshot size"):
-                race_import_ui.validate_screenshot_bytes(oversized)
+        with mock.patch("PIL.Image.open") as image_open:
+            with self.assertRaisesRegex(race_ocr.InvalidScreenshotError, "12 MB"):
+                race_ocr.validate_image_upload(oversized)
 
         image_open.assert_not_called()
 
@@ -53,19 +55,19 @@ class ScreenshotValidationTests(unittest.TestCase):
         height = 5_000
         self.assertGreater(
             width * height,
-            race_import_ui.MAX_SCREENSHOT_PIXELS,
+            race_ocr.MAX_IMAGE_PIXELS,
         )
         # A one-bit PNG keeps this real over-limit fixture small and fast.
         with io.BytesIO() as output:
             Image.new("1", (width, height), 0).save(output, format="PNG")
             over_pixel_limit = output.getvalue()
 
-        with self.assertRaisesRegex(ValueError, "invalid screenshot dimensions"):
-            race_import_ui.validate_screenshot_bytes(over_pixel_limit)
+        with self.assertRaisesRegex(race_ocr.InvalidScreenshotError, "25-megapixel"):
+            race_ocr.validate_image_upload(over_pixel_limit)
 
 
 class HostedStreamlitSafetyTests(unittest.TestCase):
-    def test_admin_app_fails_closed_without_secrets(self):
+    def test_admin_app_direct_route_fails_closed_without_auth(self):
         admin = AppTest.from_file(
             str(PROJECT_ROOT / "admin_app.py"),
             default_timeout=60,
@@ -76,45 +78,64 @@ class HostedStreamlitSafetyTests(unittest.TestCase):
             admin.run()
 
         self.assertFalse(admin.exception)
+        fetch_remote.assert_not_called()
+        self.assertFalse(admin.get("file_uploader"))
+        self.assertNotIn(
+            "Publicar resultados",
+            [str(button.label) for button in admin.button],
+        )
+
+    def test_authorized_admin_fails_closed_without_github_secrets(self):
+        admin = AppTest.from_file(
+            str(PROJECT_ROOT / "admin_app.py"),
+            default_timeout=60,
+        )
+        admin.secrets = {}
+
+        with (
+            mock.patch(
+                "admin_auth.current_admin_state",
+                return_value=admin_auth.AdminState.AUTHORIZED,
+            ),
+            mock.patch("admin_auth.current_claims", return_value={"email": "admin@example.com"}),
+            mock.patch("admin_auth.is_current_admin", return_value=True),
+            mock.patch("race_github.fetch_remote_workbook") as fetch_remote,
+        ):
+            admin.run()
+
+        self.assertFalse(admin.exception)
         self.assertTrue(admin.error)
         self.assertIn(
             "Nenhum dado pode ser alterado",
             "\n".join(str(item.value) for item in admin.error),
         )
         fetch_remote.assert_not_called()
-        self.assertNotIn(
-            "Publicar resultados",
-            [str(button.label) for button in admin.button],
-        )
+        self.assertFalse(admin.get("file_uploader"))
 
-    def test_public_app_points_to_the_private_hosted_updater(self):
+    def test_public_router_points_to_the_protected_admin_route(self):
         source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
 
-        self.assertIn(
-            'PRIVATE_UPDATER_URL = "https://f1-game-dashboard-update.streamlit.app/"',
-            source,
-        )
-        # One prominent shortcut plus the fifth-tab call to action must use it.
-        self.assertGreaterEqual(source.count("PRIVATE_UPDATER_URL"), 3)
+        self.assertIn('title="Admin"', source)
+        self.assertIn('url_path="admin"', source)
+        self.assertNotIn("PRIVATE_UPDATER_URL", source)
 
     @unittest.skipUnless(
         hasattr(st, "iframe"),
         "Public dashboard AppTest requires the project's pinned Streamlit 1.59 runtime",
     )
-    def test_public_app_renders_private_updater_without_local_write_controls(self):
+    def test_public_app_has_no_importer_or_local_write_controls(self):
         dashboard = AppTest.from_file(
             str(PROJECT_ROOT / "app.py"),
             default_timeout=60,
         )
 
-        with mock.patch.dict(os.environ, {"F1_ENABLE_RACE_IMPORT": ""}):
+        with mock.patch.dict(os.environ, {"F1_ENABLE_RACE_IMPORT": "1"}):
             dashboard.run()
 
         self.assertFalse(dashboard.exception)
         labels = [tab.label for tab in dashboard.tabs]
-        self.assertEqual(len(labels), 5)
-        self.assertIn("Import", labels[-1])
-        self.assertTrue(dashboard.info, "The hosted updater safety notice was not rendered")
+        self.assertEqual(len(labels), 4)
+        self.assertFalse(dashboard.get("file_uploader"))
         button_labels = [str(button.label) for button in dashboard.button]
         self.assertNotIn("Extract standings", button_labels)
         self.assertNotIn("Update workbook", button_labels)
