@@ -1,18 +1,36 @@
-"""Streamlit review workflow for local two-screenshot race imports."""
+"""Streamlit review workflow for local and securely hosted race imports."""
 
 from __future__ import annotations
 
 import hashlib
+from io import BytesIO
 import os
-from typing import Callable
+from typing import Callable, Protocol
 
 import pandas as pd
 import streamlit as st
+from PIL import Image, UnidentifiedImageError
 
 import dashboard_core as core
+import race_github as ghstore
 import race_import as ri
 import race_ocr
 import race_workbook as rw
+
+
+MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024
+MAX_SCREENSHOT_PIXELS = 25_000_000
+
+
+class HostedPublisher(Protocol):
+    def __call__(
+        self,
+        metadata: rw.RaceMetadata,
+        rows: list[dict],
+        scoring_profile: dict[int, float],
+        expected_source_version: str,
+        approved: bool,
+    ) -> object: ...
 
 
 _TEXT = {
@@ -35,6 +53,23 @@ _TEXT = {
         "stale": "Race details or screenshots changed. Extract again to create a matching review.",
         "existing": "This race or sprint already exists in the workbook.", "safety": "What happens on approval",
         "success": "Race imported safely", "ocr_none": "OCR found no standings rows. Use the blank review or try clearer screenshots.",
+        "hosted_intro": "Upload the two PlayStation result screenshots, review every position, then publish one verified race.",
+        "hosted_safety": "You are in the private updater. Screenshots are processed for this review and are never saved to GitHub.",
+        "hosted_approve": "I reviewed every row and approve publishing these race results.",
+        "hosted_commit": "Publish race results",
+        "hosted_ready": "All positions and roster drivers are valid. Nothing has been published yet.",
+        "hosted_success": "Saved to GitHub. The public dashboard is refreshing now.",
+        "open_dashboard": "Open public dashboard",
+        "commit_link": "View GitHub commit",
+        "github_auth": "Publishing credentials need attention. No data was changed.",
+        "github_conflict": "The workbook changed while you reviewed. Reload it and review this race again.",
+        "github_unavailable": "GitHub could not confirm the update. No automatic retry was made.",
+        "image_invalid": "Each upload must be a valid PNG, JPEG, or WebP image under 10 MB and 25 megapixels.",
+        "ocr_details": "OCR details and warnings",
+        "view_screenshots": "View screenshots (2)",
+        "publishing": "Publishing the approved race…",
+        "publish_validate": "Validating the latest workbook and the complete review",
+        "publish_commit": "Saving one protected GitHub commit",
     },
     "pt": {
         "tab": "📥 Importar corrida", "title": "Importar uma corrida",
@@ -55,6 +90,23 @@ _TEXT = {
         "stale": "Os dados da corrida ou as capturas mudaram. Faz uma nova extração.",
         "existing": "Esta corrida ou sprint já existe no Excel.", "safety": "O que acontece ao aprovar",
         "success": "Corrida importada com segurança", "ocr_none": "O OCR não encontrou linhas de classificação. Usa a revisão vazia ou capturas mais nítidas.",
+        "hosted_intro": "Carrega as duas capturas dos resultados da PlayStation, revê todas as posições e publica uma corrida verificada.",
+        "hosted_safety": "Estás no atualizador privado. As capturas são processadas nesta revisão e nunca são guardadas no GitHub.",
+        "hosted_approve": "Revisei todas as linhas e aprovo a publicação destes resultados.",
+        "hosted_commit": "Publicar resultados",
+        "hosted_ready": "Todas as posições e todos os pilotos são válidos. Ainda nada foi publicado.",
+        "hosted_success": "Guardado no GitHub. O dashboard público está agora a atualizar.",
+        "open_dashboard": "Abrir dashboard público",
+        "commit_link": "Ver commit no GitHub",
+        "github_auth": "As credenciais de publicação precisam de atenção. Nenhum dado foi alterado.",
+        "github_conflict": "O Excel mudou durante a revisão. Atualiza a página e revê novamente esta corrida.",
+        "github_unavailable": "O GitHub não confirmou a atualização. Não foi feita nenhuma repetição automática.",
+        "image_invalid": "Cada ficheiro deve ser uma imagem PNG, JPEG ou WebP válida, com menos de 10 MB e 25 megapíxeis.",
+        "ocr_details": "Detalhes e avisos do OCR",
+        "view_screenshots": "Ver capturas (2)",
+        "publishing": "A publicar a corrida aprovada…",
+        "publish_validate": "A validar o Excel mais recente e a revisão completa",
+        "publish_commit": "A guardar um único commit protegido no GitHub",
     },
 }
 
@@ -136,17 +188,46 @@ def _draft_from_ocr(upload_bytes: list[bytes], roster: list[ri.DriverEntry]) -> 
     return ri.build_review_rows(ri.merge_screenshot_results(result_sets), len(roster)), token_count
 
 
-def _render_safety_note(lang: str) -> None:
+def validate_screenshot_bytes(image_bytes: bytes) -> None:
+    """Reject oversized or malformed uploads before any OCR model sees them."""
+    if not image_bytes or len(image_bytes) > MAX_SCREENSHOT_BYTES:
+        raise ValueError("invalid screenshot size")
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            if (image.format or "").upper() not in {"PNG", "JPEG", "WEBP"}:
+                raise ValueError("unsupported screenshot format")
+            width, height = image.size
+            if width <= 0 or height <= 0 or width * height > MAX_SCREENSHOT_PIXELS:
+                raise ValueError("invalid screenshot dimensions")
+            image.verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("invalid screenshot image") from exc
+
+
+def _render_safety_note(lang: str, *, hosted: bool = False) -> None:
     with st.expander(text(lang, "safety")):
-        copy = (
-            "1. O resultado revisto é validado novamente.\n2. É criada uma cópia de recuperação local.\n"
-            "3. Só as células desta corrida e o estado correspondente do calendário são alterados.\n"
-            "4. Uma cópia temporária é validada antes de substituir o ficheiro original."
-            if lang == "pt"
-            else "1. The reviewed result is validated again.\n2. A local recovery copy is created.\n"
-            "3. Only this race's cells and its matching calendar status are changed.\n"
-            "4. A temporary candidate is validated before it replaces the original workbook."
-        )
+        if hosted:
+            copy = (
+                "1. O resultado revisto é novamente validado com o Excel mais recente.\n"
+                "2. O ficheiro é atualizado apenas se a versão do GitHub continuar igual.\n"
+                "3. Só esta corrida e o respetivo estado no calendário são alterados.\n"
+                "4. As capturas não são guardadas; o histórico do GitHub permite recuperar o Excel anterior."
+                if lang == "pt"
+                else "1. The reviewed result is checked again against the latest workbook.\n"
+                "2. Publication proceeds only if the GitHub version is still unchanged.\n"
+                "3. Only this race and its matching calendar status are changed.\n"
+                "4. Screenshots are not stored; Git history preserves the prior workbook."
+            )
+        else:
+            copy = (
+                "1. O resultado revisto é validado novamente.\n2. É criada uma cópia de recuperação local.\n"
+                "3. Só as células desta corrida e o estado correspondente do calendário são alterados.\n"
+                "4. Uma cópia temporária é validada antes de substituir o ficheiro original."
+                if lang == "pt"
+                else "1. The reviewed result is validated again.\n2. A local recovery copy is created.\n"
+                "3. Only this race's cells and its matching calendar status are changed.\n"
+                "4. A temporary candidate is validated before it replaces the original workbook."
+            )
         st.markdown(copy)
 
 
@@ -157,13 +238,24 @@ def render_race_import(
     *,
     lang: str,
     clear_data_cache: Callable[[], None],
+    source_version: str | None = None,
+    hosted_publisher: HostedPublisher | None = None,
+    dashboard_url: str = "https://f1-game-dashboard.streamlit.app/",
 ) -> None:
-    """Render the local-only staged import and approval flow."""
+    """Render a write-free review followed by a local or hosted commit."""
+    hosted = hosted_publisher is not None
     if success := st.session_state.pop("race_import_success", None):
-        st.success(success)
+        if isinstance(success, dict):
+            st.success(str(success.get("message", text(lang, "hosted_success"))))
+            link_columns = st.columns(2)
+            if success.get("commit_url"):
+                link_columns[0].link_button(text(lang, "commit_link"), str(success["commit_url"]), use_container_width=True)
+            link_columns[1].link_button(text(lang, "open_dashboard"), dashboard_url, type="primary", use_container_width=True)
+        else:
+            st.success(success)
     st.header(text(lang, "title"))
-    st.write(text(lang, "intro"))
-    st.info(text(lang, "local"), icon="🔒")
+    st.write(text(lang, "hosted_intro" if hosted else "intro"))
+    st.info(text(lang, "hosted_safety" if hosted else "local"), icon="🔒")
 
     options = _championship_options(standings)
     if not options:
@@ -209,56 +301,90 @@ def render_race_import(
     info_columns[1].code(_display_points(scoring), language=None)
 
     workbook_sha = rw.workbook_fingerprint(workbook_path)
+    reviewed_source_version = source_version or workbook_sha
     metadata = rw.RaceMetadata(game, season, league, round_number, event_type, str(gp_name).strip())
-    uploads = st.file_uploader(
-        text(lang, "screenshots"), type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True,
-        help=text(lang, "screenshots_help"),
-        key=f"race_import_uploads_{context_key}_{round_number}_{event_type}_{hashlib.sha1(str(gp_name).encode()).hexdigest()[:6]}",
+    st.subheader(text(lang, "screenshots"))
+    st.caption(text(lang, "screenshots_help"))
+    upload_key = f"{context_key}_{round_number}_{event_type}_{hashlib.sha1(str(gp_name).encode()).hexdigest()[:6]}"
+    upload_columns = st.columns(2)
+    first_upload = upload_columns[0].file_uploader(
+        "Screenshot 1", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=False,
+        key=f"race_import_upload_1_{upload_key}",
     )
-    upload_bytes = [upload.getvalue() for upload in uploads] if uploads else []
-    if uploads:
-        preview_columns = st.columns(2)
-        for index, (column, upload) in enumerate(zip(preview_columns, uploads[:2]), start=1):
-            column.image(upload.getvalue(), caption=f"Screenshot {index} · {upload.name}", width="stretch")
+    second_upload = upload_columns[1].file_uploader(
+        "Screenshot 2", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=False,
+        key=f"race_import_upload_2_{upload_key}",
+    )
+    uploads = [upload for upload in (first_upload, second_upload) if upload is not None]
+    upload_bytes = [upload.getvalue() for upload in uploads]
+    uploads_valid = len(upload_bytes) == 2
+    if uploads_valid:
+        try:
+            for image_bytes in upload_bytes:
+                validate_screenshot_bytes(image_bytes)
+        except ValueError:
+            uploads_valid = False
+            st.error(text(lang, "image_invalid"))
+
+    existing_draft = st.session_state.get("race_import_draft")
+    if uploads_valid:
+        preview_container = st.expander(text(lang, "view_screenshots"), expanded=not bool(existing_draft))
+        with preview_container:
+            preview_columns = st.columns(2)
+            for index, (column, upload) in enumerate(zip(preview_columns, uploads[:2]), start=1):
+                column.image(upload.getvalue(), caption=f"Screenshot {index} · {upload.name}", width="stretch")
     if len(upload_bytes) != 2:
         st.caption(text(lang, "needs_two"))
 
     context = {
         "game": game, "season": season, "league": league, "round": round_number, "type": event_type,
         "gp": str(gp_name).strip(), "workbook_sha256": workbook_sha,
+        "source_version": reviewed_source_version,
         "screenshots": [_sha256_bytes(value) for value in upload_bytes],
     }
     current_context_digest = _context_digest(context)
-    action_columns = st.columns([1, 1, 3])
-    extract_clicked = action_columns[0].button(text(lang, "extract"), type="primary", disabled=len(upload_bytes) != 2 or not str(gp_name).strip(), key=f"race_import_extract_{current_context_digest[:12]}")
-    manual_clicked = action_columns[1].button(text(lang, "manual_review"), disabled=not str(gp_name).strip(), key=f"race_import_manual_{current_context_digest[:12]}")
-    action_columns[2].caption(text(lang, "manual_help"))
+    extract_clicked = st.button(
+        text(lang, "extract"), type="primary", use_container_width=True,
+        disabled=not uploads_valid or not str(gp_name).strip(), key=f"race_import_extract_{current_context_digest[:12]}",
+    )
+    manual_clicked = st.button(
+        text(lang, "manual_review"), use_container_width=True,
+        disabled=not str(gp_name).strip(), key=f"race_import_manual_{current_context_digest[:12]}",
+    )
+    st.caption(text(lang, "manual_help"))
     if extract_clicked:
         try:
             with st.spinner("Reading screenshots locally…" if lang == "en" else "A ler as capturas localmente…"):
                 review_rows, token_count = _draft_from_ocr(upload_bytes, roster)
             st.session_state["race_import_draft"] = {
-                "context_digest": current_context_digest, "workbook_sha256": workbook_sha, "rows": review_rows,
+                "context_digest": current_context_digest, "workbook_sha256": workbook_sha,
+                "source_version": reviewed_source_version, "rows": review_rows,
                 "token_count": token_count, "draft_id": hashlib.sha256((current_context_digest + str(token_count)).encode()).hexdigest()[:12],
             }
             if not any(row["OCR text"] for row in review_rows):
                 st.warning(text(lang, "ocr_none"))
         except (race_ocr.OcrUnavailableError, RuntimeError) as exc:
-            st.error(str(exc))
+            st.error(
+                ("OCR could not read these screenshots. Try clearer images or start a blank review."
+                 if lang == "en" else
+                 "O OCR não conseguiu ler estas capturas. Tenta imagens mais nítidas ou inicia uma revisão vazia.")
+                if hosted else str(exc)
+            )
     if manual_clicked:
         st.session_state["race_import_draft"] = {
             "context_digest": current_context_digest, "workbook_sha256": workbook_sha,
+            "source_version": reviewed_source_version,
             "rows": ri.build_review_rows([], len(roster)), "token_count": 0,
             "draft_id": hashlib.sha256((current_context_digest + "manual").encode()).hexdigest()[:12],
         }
 
     draft = st.session_state.get("race_import_draft")
     if not draft:
-        _render_safety_note(lang)
+        _render_safety_note(lang, hosted=hosted)
         return
     if draft["context_digest"] != current_context_digest:
         st.warning(text(lang, "stale"))
-        _render_safety_note(lang)
+        _render_safety_note(lang, hosted=hosted)
         return
 
     st.subheader(text(lang, "review"))
@@ -266,27 +392,33 @@ def render_race_import(
     unselected_driver = "— Selecionar piloto —" if lang == "pt" else "— Select driver —"
     editor_frame = pd.DataFrame(draft["rows"])
     editor_frame["Driver"] = editor_frame["Driver"].replace("", unselected_driver)
-    edited = st.data_editor(
-        editor_frame, width="stretch", hide_index=True, num_rows="dynamic",
-        column_order=["Position", "Driver", "Suggested driver", "Confidence", "Seen in", "OCR text", "OCR notes"],
+    compact_editor = editor_frame[["Position", "Driver"]].copy()
+    edited_compact = st.data_editor(
+        compact_editor, width="stretch", hide_index=True, num_rows="fixed",
+        column_order=["Position", "Driver"],
         column_config={
             "Position": st.column_config.NumberColumn("Pos.", min_value=1, max_value=len(roster), step=1, required=True, width="small"),
             "Driver": st.column_config.SelectboxColumn("Driver", options=[unselected_driver] + [entry.driver for entry in roster], required=True, width="medium"),
-            "Suggested driver": st.column_config.TextColumn("Suggested driver", disabled=True, width="medium"),
-            "Confidence": st.column_config.ProgressColumn("OCR confidence", min_value=0.0, max_value=1.0, format="%.0f%%", width="small"),
-            "Seen in": st.column_config.TextColumn("Seen in", disabled=True, width="small"),
-            "OCR text": st.column_config.TextColumn("OCR text", disabled=True, width="large"),
-            "OCR notes": st.column_config.TextColumn("OCR notes", disabled=True, width="large"),
         },
-        disabled=["Suggested driver", "Confidence", "Seen in", "OCR text", "OCR notes"], key=f"race_import_editor_{draft['draft_id']}",
+        key=f"race_import_editor_{draft['draft_id']}",
     )
-    edited_for_validation = edited.copy()
+    unresolved_count = int(edited_compact["Driver"].eq(unselected_driver).sum())
+    if unresolved_count:
+        st.warning(
+            f"{unresolved_count} rows need your driver choice."
+            if lang == "en" else f"{unresolved_count} linhas precisam da tua escolha de piloto."
+        )
+    with st.expander(text(lang, "ocr_details")):
+        detail_columns = ["Position", "Suggested driver", "Confidence", "Seen in", "OCR text", "OCR notes"]
+        st.dataframe(editor_frame[[column for column in detail_columns if column in editor_frame]], width="stretch", hide_index=True)
+    edited_for_validation = editor_frame.copy()
+    edited_for_validation[["Position", "Driver"]] = edited_compact[["Position", "Driver"]]
     edited_for_validation["Driver"] = edited_for_validation["Driver"].replace(unselected_driver, "")
     validation = ri.validate_review_rows(edited_for_validation.to_dict("records"), roster, scoring)
     blockers = list(validation.blockers)
     if rw.event_already_exists(standings, metadata):
         blockers.append(text(lang, "existing"))
-    if rw.workbook_fingerprint(workbook_path) != draft["workbook_sha256"]:
+    if not hosted and rw.workbook_fingerprint(workbook_path) != draft["workbook_sha256"]:
         blockers.append(text(lang, "changed"))
 
     st.subheader(text(lang, "final"))
@@ -300,26 +432,55 @@ def render_race_import(
         for blocker in blockers:
             st.markdown(f"- {blocker}")
     else:
-        st.success(text(lang, "ready"))
+        st.success(text(lang, "hosted_ready" if hosted else "ready"))
 
     reviewed_digest = ri.review_digest(validation.rows, context)
-    approved = st.checkbox(text(lang, "approve"), key=f"race_import_approval_{reviewed_digest[:16]}")
-    commit_clicked = st.button(text(lang, "commit"), type="primary", disabled=bool(blockers) or not approved, key=f"race_import_commit_{reviewed_digest[:16]}")
+    approved = st.checkbox(text(lang, "hosted_approve" if hosted else "approve"), key=f"race_import_approval_{reviewed_digest[:16]}")
+    commit_clicked = st.button(
+        text(lang, "hosted_commit" if hosted else "commit"), type="primary", use_container_width=True,
+        disabled=bool(blockers) or not approved, key=f"race_import_commit_{reviewed_digest[:16]}",
+    )
     if commit_clicked:
         try:
-            result = rw.commit_race_import(
-                workbook_path, metadata=metadata, rows=validation.rows, scoring_profile=scoring,
-                expected_sha256=draft["workbook_sha256"], approved=approved,
-            )
+            if hosted and hosted_publisher is not None:
+                with st.status(text(lang, "publishing"), expanded=True) as publication_status:
+                    st.write(text(lang, "publish_validate"))
+                    result = hosted_publisher(
+                        metadata,
+                        validation.rows,
+                        scoring,
+                        str(draft["source_version"]),
+                        approved,
+                    )
+                    st.write(text(lang, "publish_commit"))
+                    publication_status.update(label=text(lang, "hosted_success"), state="complete", expanded=False)
+            else:
+                result = rw.commit_race_import(
+                    workbook_path, metadata=metadata, rows=validation.rows, scoring_profile=scoring,
+                    expected_sha256=draft["workbook_sha256"], approved=approved,
+                )
+        except (ghstore.GitHubAuthError, ghstore.GitHubConfigurationError):
+            st.error(text(lang, "github_auth"))
+        except ghstore.GitHubConflictError:
+            st.error(text(lang, "github_conflict"))
+            st.session_state.pop("race_import_draft", None)
+        except (ghstore.GitHubNetworkError, ghstore.GitHubAPIError):
+            st.error(text(lang, "github_unavailable"))
         except rw.WorkbookUpdateError as exc:
-            st.error(str(exc))
+            st.error(str(exc) if not hosted else text(lang, "github_conflict"))
         else:
-            calendar_note = (" Calendar marked Done." if lang == "en" else " Calendário marcado como concluído.") if result.calendar_updated else ""
-            st.session_state["race_import_success"] = (
-                f"{text(lang, 'success')}: {result.rows_added} rows added (Excel {result.first_excel_row}–{result.last_excel_row})."
-                f"{calendar_note} Recovery copy: {result.backup_path}"
-            )
+            if hosted:
+                st.session_state["race_import_success"] = {
+                    "message": text(lang, "hosted_success"),
+                    "commit_url": getattr(result, "commit_url", ""),
+                }
+            else:
+                calendar_note = (" Calendar marked Done." if lang == "en" else " Calendário marcado como concluído.") if result.calendar_updated else ""
+                st.session_state["race_import_success"] = (
+                    f"{text(lang, 'success')}: {result.rows_added} rows added (Excel {result.first_excel_row}–{result.last_excel_row})."
+                    f"{calendar_note} Recovery copy: {result.backup_path}"
+                )
             st.session_state.pop("race_import_draft", None)
             clear_data_cache()
             st.rerun()
-    _render_safety_note(lang)
+    _render_safety_note(lang, hosted=hosted)
