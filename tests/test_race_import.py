@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
 
@@ -456,6 +457,67 @@ class RealWorkbookTransactionTests(unittest.TestCase):
             self.assertEqual(copied.read_bytes(), original_bytes)
             self.assertFalse(backup_directory.exists())
 
+    def test_mid_transaction_external_change_blocks_replace(self):
+        with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
+            directory = Path(temporary_directory)
+            copied = self.copy_real_workbook(directory)
+            expected_sha = workbook.workbook_fingerprint(copied)
+            external_bytes = copied.read_bytes() + b"external-save"
+            original_verify = workbook._verify_untouched_parts
+
+            def mutate_after_staging(source, candidate, changed_parts):
+                original_verify(source, candidate, changed_parts)
+                copied.write_bytes(external_bytes)
+
+            with (
+                mock.patch.object(workbook, "_verify_untouched_parts", side_effect=mutate_after_staging),
+                self.assertRaises(workbook.StaleWorkbookError),
+            ):
+                workbook.commit_race_import(
+                    copied,
+                    metadata=self.metadata,
+                    rows=self.approved_rows,
+                    scoring_profile=self.scoring,
+                    expected_sha256=expected_sha,
+                    approved=True,
+                    backup_directory=directory / "backups",
+                )
+
+            self.assertEqual(copied.read_bytes(), external_bytes)
+            self.assertFalse((directory / "backups").exists())
+
+    def test_external_change_after_recovery_copy_blocks_replace(self):
+        with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
+            directory = Path(temporary_directory)
+            copied = self.copy_real_workbook(directory)
+            expected_sha = workbook.workbook_fingerprint(copied)
+            external_bytes = copied.read_bytes() + b"late-external-save"
+            original_copystat = workbook.shutil.copystat
+
+            def mutate_after_candidate_metadata(source, destination, *args, **kwargs):
+                original_copystat(source, destination, *args, **kwargs)
+                if ".race-import-" in Path(destination).name:
+                    copied.write_bytes(external_bytes)
+
+            with (
+                mock.patch.object(workbook.shutil, "copystat", side_effect=mutate_after_candidate_metadata),
+                self.assertRaises(workbook.StaleWorkbookError),
+            ):
+                workbook.commit_race_import(
+                    copied,
+                    metadata=self.metadata,
+                    rows=self.approved_rows,
+                    scoring_profile=self.scoring,
+                    expected_sha256=expected_sha,
+                    approved=True,
+                    backup_directory=directory / "backups",
+                )
+
+            self.assertEqual(copied.read_bytes(), external_bytes)
+            backups = list((directory / "backups").iterdir())
+            self.assertEqual(1, len(backups))
+            self.assertEqual(expected_sha, workbook.workbook_fingerprint(backups[0]))
+
     def test_writer_rechecks_controlled_roster_without_mutation(self):
         with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
             directory = Path(temporary_directory)
@@ -479,6 +541,34 @@ class RealWorkbookTransactionTests(unittest.TestCase):
 
             self.assertEqual(copied.read_bytes(), original_bytes)
             self.assertFalse(backup_directory.exists())
+
+    def test_writer_rejects_invented_sprint_metadata_without_mutation(self):
+        with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
+            directory = Path(temporary_directory)
+            copied = self.copy_real_workbook(directory)
+            original_bytes = copied.read_bytes()
+            invented = workbook.RaceMetadata(
+                game=self.metadata.game,
+                season=self.metadata.season,
+                league=self.metadata.league,
+                round_number=self.metadata.round_number,
+                event_type="SR",
+                gp_name="Invented Grand Prix",
+            )
+
+            with self.assertRaisesRegex(workbook.WorkbookUpdateError, "Calendar row"):
+                workbook.commit_race_import(
+                    copied,
+                    metadata=invented,
+                    rows=(),
+                    scoring_profile={},
+                    expected_sha256=workbook.workbook_fingerprint(copied),
+                    approved=True,
+                    backup_directory=directory / "backups",
+                )
+
+            self.assertEqual(copied.read_bytes(), original_bytes)
+            self.assertFalse((directory / "backups").exists())
 
     def test_successful_append_preserves_package_helpers_and_blocks_repeat_import(self):
         with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
@@ -622,6 +712,39 @@ class RealWorkbookTransactionTests(unittest.TestCase):
             self.assertEqual(
                 after_calendar.loc[calendar_mask, "Status"].iloc[0],
                 original_status,
+            )
+
+    def test_pivot_source_extends_when_append_crosses_existing_range(self):
+        with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
+            directory = Path(temporary_directory)
+            copied = self.copy_real_workbook(directory)
+            before_parts = archive_payloads(copied)
+            definition = before_parts[workbook._PIVOT_SOURCE_PART]
+            reduced_definition = re.sub(
+                rb'(<worksheetSource\b[^>]*\bref="[A-Z]+\d+:[A-Z]+)\d+("[^>]*\bsheet="Leagues"[^>]*/>)',
+                rb'\g<1>1750\g<2>',
+                definition,
+                count=1,
+            )
+            with ZipFile(copied, "w") as target:
+                for name, payload in before_parts.items():
+                    target.writestr(name, reduced_definition if name == workbook._PIVOT_SOURCE_PART else payload)
+
+            result = workbook.commit_race_import(
+                copied,
+                metadata=self.metadata,
+                rows=self.approved_rows,
+                scoring_profile=self.scoring,
+                expected_sha256=workbook.workbook_fingerprint(copied),
+                approved=True,
+                backup_directory=directory / "backups",
+            )
+
+            with ZipFile(copied) as archive:
+                updated_definition = archive.read(workbook._PIVOT_SOURCE_PART)
+            self.assertIn(
+                f'A1:J{result.last_excel_row}'.encode("ascii"),
+                updated_definition,
             )
 
 

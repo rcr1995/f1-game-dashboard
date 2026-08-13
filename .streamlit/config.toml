@@ -6,4 +6,8 @@ textColor="#FAFAFA"
 font="sans serif"
 
 [server]
-maxUploadSize=10
+# Streamlit 1.59 has no per-widget upload limit. OCR applies a stricter
+# 12 MiB/image and 25-megapixel validation before decoding.
+maxUploadSize=20
+enableXsrfProtection=true
+enableCORS=true

@@ -9,6 +9,9 @@ venv/
 .streamlit/secrets.toml
 *.pem
 
+# Local/deployment secrets must never be committed
+.*.race-import.lock
+
 # Generated dashboard exports
 debug_*.html
 en.html
