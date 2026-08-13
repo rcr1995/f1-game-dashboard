@@ -26,19 +26,35 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-### Import a race from two PlayStation screenshots
+### Update a race from two PlayStation screenshots
 
-The race importer is deliberately local-only, so a hosted dashboard never exposes a control that can write to its workbook. Install the optional local OCR dependencies and enable the importer before starting Streamlit:
+The public dashboard links to a separate private Streamlit updater. From a phone or computer, an approved user can upload exactly two screenshots, correct the extracted positions, and explicitly approve publication. The private updater downloads the latest workbook from GitHub, validates an isolated candidate, and publishes only `F1_Standings.xlsx` with an optimistic version check. Screenshots are never committed.
+
+The hosted updater is `admin_app.py`. Deploy it as a **private** Streamlit Community Cloud app and keep its GitHub App credentials only in that app's Secrets settings:
+
+```toml
+[github]
+owner = "rcr1995"
+repository = "f1-game-dashboard"
+branch = "main"
+workbook_path = "F1_Standings.xlsx"
+app_id = "YOUR_GITHUB_APP_ID"
+installation_id = "YOUR_INSTALLATION_ID"
+private_key = """YOUR_PRIVATE_KEY"""
+```
+
+The GitHub App should be installed only on this repository, with webhooks disabled and the minimum repository permission needed to update the workbook. A successful commit triggers the normal public Streamlit refresh. Concurrent or duplicate updates are blocked and must be reviewed again.
+
+The original local Excel workflow remains available as a fallback. Enable the importer before starting Streamlit:
 
 ```powershell
-python -m pip install -r requirements-import.txt
 $env:F1_ENABLE_RACE_IMPORT="1"
 python -m streamlit run app.py
 ```
 
 Open **Import race**, choose the championship and event, upload exactly two screenshots, and select **Extract standings**. The app matches names only against the active championship roster, calculates points from reviewed finishing positions, and requires explicit approval before it updates `F1_Standings.xlsx`. Uncertain OCR rows stay unresolved for correction.
 
-OCR runs on the local machine. RapidOCR may download its small recognition models the first time extraction is used; later extraction uses those cached local models.
+RapidOCR may download its recognition models the first time extraction is used; later extraction uses cached models.
 
 On approval, the app creates a recovery copy under `.codex-tmp/race-import-backups`, validates a temporary workbook, blocks duplicate events or stale reviews, and only then replaces the local workbook. Editing `F1_Standings.xlsx` directly remains fully supported.
 
@@ -88,7 +104,7 @@ Run the automated checks with:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile app.py dashboard_core.py puskas_html.py
+python -m py_compile app.py admin_app.py dashboard_core.py puskas_html.py race_import.py race_ocr.py race_workbook.py race_github.py race_import_ui.py
 ```
 
 The GitHub Actions workflow runs these checks and performs a minimal Streamlit startup test for every push and pull request.
@@ -96,11 +112,13 @@ The GitHub Actions workflow runs these checks and performs a minimal Streamlit s
 ## Project structure
 
 - `app.py` — Streamlit interface and visual presentation
+- `admin_app.py` — private phone-friendly hosted updater
 - `dashboard_core.py` — workbook validation, normalization, and standings calculations
 - `race_import.py` — controlled roster matching, screenshot reconciliation, and scoring validation
 - `race_ocr.py` — optional offline screenshot OCR adapter
 - `race_workbook.py` — approval-gated, preservation-oriented Excel transaction
-- `race_import_ui.py` — local Streamlit review and approval workflow
+- `race_github.py` — short-lived GitHub App authentication and protected workbook publication
+- `race_import_ui.py` — local and hosted Streamlit review and approval workflow
 - `puskas_html.py` — custom dashboard HTML rendering
 - `tests/` — calculation and workbook regression tests
 - `assets/` — optimized WebP dashboard imagery

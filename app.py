@@ -45,7 +45,8 @@ st.set_page_config(
 
 # -----------------------------
 
-APP_VERSION = "v40"
+APP_VERSION = "v41"
+PRIVATE_UPDATER_URL = "https://f1-game-dashboard-update.streamlit.app/"
 
 MOBILE_DASHBOARD_CSS = """
 <style>
@@ -1187,9 +1188,14 @@ latest_df, latest_meta = core.latest_league_slice(base_all)
 latest_gp = latest_df[~latest_df["IsSeasonFinal"]].copy()
 st_tbl_latest = core.standings_table(latest_gp, entity="Drivers") if not latest_gp.empty else pd.DataFrame()
 
+st.link_button(
+    "📱 Atualizar resultados em privado" if lang == "pt" else "📱 Update race results privately",
+    PRIVATE_UPDATER_URL,
+    use_container_width=True,
+)
+
 tab_labels = list(tr(lang, "tabs"))
-if race_import_ui.race_import_enabled():
-    tab_labels.append(race_import_ui.import_tab_label(lang))
+tab_labels.append(race_import_ui.import_tab_label(lang))
 tabs = st.tabs(tab_labels)
 tab_dash, tab_gp, tab_circuits, tab_all = tabs[:4]
 tab_import = tabs[4] if len(tabs) > 4 else None
@@ -1621,11 +1627,26 @@ with tab_all:
 
 if tab_import is not None:
     with tab_import:
-        race_import_ui.render_race_import(
-            bundled,
-            base_all,
-            calendar_raw,
-            lang=lang,
-            clear_data_cache=load_dashboard_data.clear,
-        )
+        if race_import_ui.race_import_enabled():
+            race_import_ui.render_race_import(
+                bundled,
+                base_all,
+                calendar_raw,
+                lang=lang,
+                clear_data_cache=load_dashboard_data.clear,
+            )
+        else:
+            st.header("Atualizar resultados" if lang == "pt" else "Update race results")
+            st.info(
+                "As atualizações são feitas numa área privada com início de sessão. As duas capturas são revistas antes de qualquer alteração."
+                if lang == "pt"
+                else "Updates happen in a private signed-in area. Both screenshots are reviewed before anything changes.",
+                icon="🔒",
+            )
+            st.link_button(
+                "Abrir atualizador privado" if lang == "pt" else "Open private updater",
+                PRIVATE_UPDATER_URL,
+                type="primary",
+                use_container_width=True,
+            )
 
