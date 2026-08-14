@@ -121,14 +121,39 @@ for a separate Streamlit deployment. It routes to the same protected Admin page
 and does not bypass authentication. Give that deployment its own server-side
 secrets; in OIDC mode, register its own callback URL as well.
 
-### Import race screenshots
+### Import Race and Sprint screenshots
 
 After signing in as the configured admin, upload 2, 3, or 4 PNG/JPEG/WebP
-screenshots from one race. The app validates size and image content, extracts
-each image, reconciles overlaps, and matches names only against the controlled
-active roster. Low-confidence or ambiguous readings remain blocked for manual
+screenshots from that event only. Admin pre-selects the uniquely active
+championship and earliest unresolved `Upcoming` Calendar event; the editable
+event controls stay collapsed unless that identity is ambiguous. The selected
+red results tab then synchronizes **Race** or **Sprint** automatically when all
+screenshots agree. Use the selected `RESULTS (RACE)` or `RESULTS (SPRINT)`
+detail table, with repeated
+rows between adjacent images so the set can be reconciled. Do not combine Race and Sprint in one
+upload, and do not use `RESULTS (WEEKEND)`: the Weekend table is a points
+summary and does not contain the `BEST` and `TIME` detail needed for import.
+Detailed Sprint screens that use the same `GRID`/`STOPS`/`BEST`/`TIME`/`PTS`
+layout as Race are handled identically, including total duration, gaps, lap
+deficits, statuses, and fastest laps; the Sprint is still reviewed and
+published separately from the Race.
+
+After a Sprint is published, Admin resets to the same round's Race. After the
+Race is published, it reloads the workbook and advances to the next unresolved
+Calendar event. Missing, malformed, duplicated, or ambiguously mapped Calendar
+data never guesses an identity; the editable event controls open for review.
+
+The app validates size and image content, verifies the selected red results
+tab, extracts every image, reconciles overlaps, and matches names only against
+the controlled active roster. Position, driver, displayed result time/status,
+and fastest-lap values are reviewed in the Admin editor. Low-confidence,
+repaired, missing, or conflicting readings remain blocked for manual
 correction. Points are re-derived from the workbook's verified race/sprint
-scoring rules.
+scoring rules. Race and Sprint are approved and published separately, which
+creates distinct `R` and `SR` result rows for the same weekend.
+For a championship's first Sprint, the fixed project Sprint scale is available
+only when its completed Race history exactly matches the verified project Race
+scale; otherwise the import remains blocked for manual verification.
 
 Nothing is published during upload, OCR, or review. Admin downloads the latest
 GitHub workbook into an isolated temporary directory. Approval rechecks the
@@ -160,6 +185,8 @@ The workbook must contain a worksheet named `Leagues` with these columns:
 | `Team` | Constructor name |
 | `Finish Pos` | Numeric finishing position |
 | `Points` | Numeric points earned |
+| `Time` | Exact displayed total, gap, lap deficit, or status, such as `82:50.787`, `+0.946`, `+1 Lap`, or `DNF` |
+| `Fastest Lap` | Exact displayed `BEST` value, such as `1:33.122`, or `N/A` when confirmed absent |
 
 An optional `Type` column accepts `R` for a race and `SR` for a sprint. Unknown values are treated as races.
 

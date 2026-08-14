@@ -12,6 +12,7 @@ import race_github
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+IMPORT_TITLES = {"Import one event", "Importar um evento"}
 GITHUB_SECRETS = {
     "github": {
         "owner": "example-owner",
@@ -34,7 +35,7 @@ class AdminPageAccessTests(unittest.TestCase):
         app = self.render(state)
         self.assertFalse(app.exception)
         self.assertFalse(app.get("file_uploader"))
-        self.assertFalse(any("Import one race" in header.value for header in app.header))
+        self.assertFalse(any(header.value in IMPORT_TITLES for header in app.header))
         return app
 
     def test_disabled_direct_route_has_no_admin_capability(self):
@@ -145,7 +146,7 @@ class AdminPageAccessTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(
             any(
-                header.value in {"Import one race", "Importar uma corrida"}
+                header.value in IMPORT_TITLES
                 for header in app.header
             )
         )
@@ -195,7 +196,7 @@ class AdminPageAccessTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(
             any(
-                header.value in {"Import one race", "Importar uma corrida"}
+                header.value in IMPORT_TITLES
                 for header in app.header
             )
         )

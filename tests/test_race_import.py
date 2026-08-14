@@ -290,6 +290,59 @@ class ScoringAndReviewTests(unittest.TestCase):
         self.assertEqual(race.scoring_profile_from_project_rules("R", 12)[11], 0.0)
         self.assertEqual(race.scoring_profile_from_project_rules("SR", 10)[9], 0.0)
 
+    def test_first_sprint_uses_verified_project_scale_after_standard_race_history(self):
+        standings = scoring_history()
+        standings = standings[~standings["Type"].eq("SR")].copy()
+
+        sprint_profile = race.infer_scoring_profile(
+            standings,
+            game="F1 25",
+            season="2026-T01",
+            league="League",
+            event_type="SR",
+            grid_size=3,
+        )
+
+        self.assertEqual(sprint_profile, {1: 8.0, 2: 7.0, 3: 6.0})
+
+    def test_first_sprint_fallback_rejects_nonstandard_race_scoring(self):
+        standings = scoring_history()
+        standings = standings[~standings["Type"].eq("SR")].copy()
+        standings.loc[standings["Finish Pos"].eq(1), "Points"] = 24
+
+        with self.assertRaisesRegex(
+            race.ScoringProfileError,
+            "Race scoring does not match the verified project rules",
+        ):
+            race.infer_scoring_profile(
+                standings,
+                game="F1 25",
+                season="2026-T01",
+                league="League",
+                event_type="SR",
+                grid_size=3,
+            )
+
+    def test_partial_sprint_history_does_not_use_first_sprint_fallback(self):
+        standings = scoring_history()
+        standings = standings[
+            standings["Type"].eq("R")
+            | (standings["Type"].eq("SR") & standings["Finish Pos"].eq(1))
+        ].copy()
+
+        with self.assertRaisesRegex(
+            race.ScoringProfileError,
+            "does not contain enough results",
+        ):
+            race.infer_scoring_profile(
+                standings,
+                game="F1 25",
+                season="2026-T01",
+                league="League",
+                event_type="SR",
+                grid_size=3,
+            )
+
     def test_scoring_verification_rejects_inconsistent_points_for_a_position(self):
         standings = scoring_history()
         mask = (

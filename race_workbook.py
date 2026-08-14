@@ -61,6 +61,17 @@ _PIVOT_SOURCE_PART = "xl/pivotCache/pivotCacheDefinition1.xml"
 _PIVOT_SOURCE_PATTERN = re.compile(
     rb'(<worksheetSource\b[^>]*\bref=")([A-Z]+\d+):([A-Z]+)(\d+)("[^>]*\bsheet="Leagues"[^>]*/>)'
 )
+_MAIN_SPREADSHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_DURATION_PATTERN = re.compile(
+    r"^(?:(?P<hours>\d{1,3}):)?(?P<minutes>\d{1,3}):(?P<seconds>[0-5]\d)"
+    r"(?:[.,](?P<fraction>\d{1,3}))?$"
+)
+_TIME_GAP_PATTERNS = (
+    re.compile(r"^\+\d+(?:[.,]\d{1,3})?$"),
+    re.compile(r"^\+\d{1,3}:[0-5]\d(?:[.,]\d{1,3})?$"),
+    re.compile(r"^\+\d+\s+laps?$", re.IGNORECASE),
+)
+_TIMING_STATUSES = frozenset({"DNF", "DNS", "DSQ", "DQ", "RET", "NC", "DNQ", "N/A"})
 
 
 def _workbook_lock_path(path: Path) -> Path:
@@ -170,6 +181,13 @@ class CommitResult:
     workbook_sha256: str
 
 
+@dataclass(frozen=True)
+class _TimingValue:
+    """A validated, exact result-table timing value."""
+
+    text: str
+
+
 def workbook_fingerprint(path: str | Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
@@ -221,6 +239,53 @@ def _column_number(column: str) -> int:
     for character in column:
         number = number * 26 + ord(character) - ord("A") + 1
     return number
+
+
+def _normalize_timing_value(value: object, *, field_name: str) -> _TimingValue | None:
+    """Validate one approved timing cell without guessing its meaning.
+
+    All accepted values remain exact text. In particular, a displayed gap is
+    not converted into an invented total result time, and a duration-like value
+    is not reinterpreted as an Excel date/time serial. Historical native Excel
+    durations already in the workbook remain untouched.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        try:
+            missing = pd.isna(value)
+        except (TypeError, ValueError):
+            missing = False
+        if isinstance(missing, bool) and missing:
+            return None
+        raise WorkbookUpdateError(f"{field_name} must be supplied as reviewed text or left blank.")
+
+    text = value.strip()
+    if not text:
+        return None
+
+    duration_match = _DURATION_PATTERN.fullmatch(text)
+    if duration_match:
+        hours_text = duration_match.group("hours")
+        minutes = int(duration_match.group("minutes"))
+        if hours_text is not None and minutes >= 60:
+            raise WorkbookUpdateError(f"{field_name} contains an invalid duration: {text!r}.")
+        if not any(character != "0" for character in re.sub(r"\D", "", text)):
+            raise WorkbookUpdateError(f"{field_name} must be a positive duration when a time is supplied.")
+        return _TimingValue(text=text)
+
+    status_allowed = text.upper() in _TIMING_STATUSES
+    if field_name == "Time" and (
+        status_allowed or any(pattern.fullmatch(text) for pattern in _TIME_GAP_PATTERNS)
+    ):
+        return _TimingValue(text=text)
+    if field_name == "Fastest Lap" and status_allowed:
+        return _TimingValue(text=text)
+
+    allowed = "an absolute duration, a displayed gap/lap deficit, or a known status"
+    if field_name == "Fastest Lap":
+        allowed = "an absolute duration or a known status"
+    raise WorkbookUpdateError(f"{field_name} must be {allowed}; got {text!r}.")
 
 
 def _cell_xml(column: str, row_number: int, value: object) -> str:
@@ -368,7 +433,19 @@ def _verify_untouched_parts(source: Path, candidate: Path, changed_parts: set[st
                 raise WorkbookUpdateError(f"Workbook part '{name}' changed unexpectedly during staging.")
 
 
-def _validate_commit_rows(rows: Iterable[Mapping[str, object]], scoring_profile: Mapping[int, float]) -> list[dict]:
+def _validate_commit_rows(
+    rows: Iterable[Mapping[str, object]],
+    scoring_profile: Mapping[int, float],
+    *,
+    require_complete_timing: bool = False,
+) -> list[dict]:
+    """Normalize approved rows, including optional exact-text timing fields.
+
+    By default, ``Time`` and ``Fastest Lap`` may be omitted/blank. Strict
+    protected-Admin mode requires both and independently canonicalizes them
+    through ``race.normalize_race_time`` and ``race.normalize_fastest_lap``.
+    Numeric Excel serials are deliberately not accepted at this trust boundary.
+    """
     normalized: list[dict] = []
     for raw in rows:
         try:
@@ -383,7 +460,34 @@ def _validate_commit_rows(rows: Iterable[Mapping[str, object]], scoring_profile:
         provided_points = float(raw.get("Points", expected_points))
         if provided_points != expected_points:
             raise WorkbookUpdateError(f"Points for position {position} do not match the verified scoring profile.")
-        normalized.append({"Position": position, "Driver": driver, "Team": team, "Points": expected_points})
+        if require_complete_timing:
+            time_text = race.normalize_race_time(raw.get("Time"))
+            fastest_lap_text = race.normalize_fastest_lap(raw.get("Fastest Lap"))
+            if time_text is None:
+                raise WorkbookUpdateError(
+                    f"Position {position} needs a complete canonical Time before publication."
+                )
+            if fastest_lap_text is None:
+                raise WorkbookUpdateError(
+                    f"Position {position} needs a complete canonical Fastest Lap before publication."
+                )
+            time_value = _TimingValue(time_text)
+            fastest_lap_value = _TimingValue(fastest_lap_text)
+        else:
+            time_value = _normalize_timing_value(raw.get("Time"), field_name="Time")
+            fastest_lap_value = _normalize_timing_value(
+                raw.get("Fastest Lap"), field_name="Fastest Lap"
+            )
+        normalized.append(
+            {
+                "Position": position,
+                "Driver": driver,
+                "Team": team,
+                "Points": expected_points,
+                "Time": time_value,
+                "Fastest Lap": fastest_lap_value,
+            }
+        )
     positions = [row["Position"] for row in normalized]
     drivers = [row["Driver"] for row in normalized]
     expected_positions = set(scoring_profile)
@@ -395,6 +499,14 @@ def _validate_commit_rows(rows: Iterable[Mapping[str, object]], scoring_profile:
 
 
 def _workbook_row(metadata: RaceMetadata, row: Mapping[str, object]) -> dict[str, object]:
+    def timing_text(key: str) -> str | None:
+        value = row.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, _TimingValue):
+            raise WorkbookUpdateError("An approved timing value was not normalized before writing.")
+        return value.text
+
     return {
         "A": metadata.game,
         "B": metadata.season,
@@ -406,9 +518,50 @@ def _workbook_row(metadata: RaceMetadata, row: Mapping[str, object]) -> dict[str
         "H": row["Team"],
         "I": row["Position"],
         "J": row["Points"],
-        "K": row.get("Time"),
-        "L": row.get("Fastest Lap"),
+        "K": timing_text("Time"),
+        "L": timing_text("Fastest Lap"),
     }
+
+
+def _verify_timing_cells(
+    candidate: Path,
+    *,
+    worksheet_part: str,
+    first_excel_row: int,
+    rows: list[dict],
+) -> None:
+    """Reopen the staged package and compare K:L to the approved review."""
+    try:
+        with ZipFile(candidate, "r") as archive:
+            worksheet_root = ET.fromstring(archive.read(worksheet_part))
+    except (BadZipFile, KeyError, ET.ParseError) as exc:
+        raise WorkbookUpdateError("Could not reopen staged timing cells for verification.") from exc
+
+    namespace = {"m": _MAIN_SPREADSHEET_NS}
+    cells = {
+        cell.attrib.get("r", ""): cell
+        for cell in worksheet_root.findall(".//m:sheetData/m:row/m:c", namespace)
+    }
+    for offset, row in enumerate(rows):
+        excel_row = first_excel_row + offset
+        for column, key in (("K", "Time"), ("L", "Fastest Lap")):
+            expected = row.get(key)
+            cell = cells.get(f"{column}{excel_row}")
+            if expected is None:
+                if cell is not None:
+                    raise WorkbookUpdateError(f"Staged {key} cell should be blank.")
+                continue
+            if not isinstance(expected, _TimingValue):
+                raise WorkbookUpdateError(f"Approved {key} value was not normalized.")
+            if cell is None or cell.find("m:f", namespace) is not None:
+                raise WorkbookUpdateError(f"Staged {key} cell is missing or unsafe.")
+            if cell.attrib.get("t") != "inlineStr":
+                raise WorkbookUpdateError(f"Staged {key} value is not stored as safe text.")
+            actual_text = "".join(
+                text_node.text or "" for text_node in cell.findall(".//m:t", namespace)
+            )
+            if actual_text != expected.text:
+                raise WorkbookUpdateError(f"Staged {key} value does not match the approved review.")
 
 
 def _commit_race_import_locked(
@@ -419,6 +572,7 @@ def _commit_race_import_locked(
     scoring_profile: Mapping[int, float],
     expected_sha256: str,
     approved: bool,
+    require_complete_timing: bool = False,
     backup_directory: str | Path | None = None,
 ) -> CommitResult:
     """Run a complete import while the caller holds the workbook lock."""
@@ -465,7 +619,11 @@ def _commit_race_import_locked(
     supplied_scoring = {int(position): float(points) for position, points in scoring_profile.items()}
     if supplied_scoring != verified_scoring:
         raise WorkbookUpdateError("The approved scoring profile does not match the workbook's verified rules.")
-    normalized_rows = _validate_commit_rows(rows, verified_scoring)
+    normalized_rows = _validate_commit_rows(
+        rows,
+        verified_scoring,
+        require_complete_timing=require_complete_timing,
+    )
     roster_map = {entry.driver: entry.team for entry in roster}
     if {row["Driver"] for row in normalized_rows} != set(roster_map):
         raise WorkbookUpdateError("Approved rows must contain every controlled-roster driver exactly once.")
@@ -518,6 +676,12 @@ def _commit_race_import_locked(
         _copy_archive_with_replacements(path, temporary_path, replacements)
         _verify_untouched_parts(path, temporary_path, set(replacements))
         core.validate_workbook(temporary_path)
+        _verify_timing_cells(
+            temporary_path,
+            worksheet_part=leagues_part,
+            first_excel_row=first_row,
+            rows=normalized_rows,
+        )
         after = core.load_standings_data(temporary_path)
         imported = after[_event_mask(after, metadata)].sort_values("Finish Pos")
         if len(after) != len(before) + len(normalized_rows) or len(imported) != len(normalized_rows):
@@ -581,9 +745,18 @@ def commit_race_import(
     scoring_profile: Mapping[int, float],
     expected_sha256: str,
     approved: bool,
+    require_complete_timing: bool = False,
     backup_directory: str | Path | None = None,
 ) -> CommitResult:
-    """Validate, stage, back up, and atomically commit one complete event."""
+    """Validate, stage, back up, and atomically commit one complete event.
+
+    Approved row mappings may contain optional ``Time`` and ``Fastest Lap``
+    strings. Accepted values are stored exactly as reviewed text in columns K
+    and L; missing values leave those cells blank. Protected Admin callers set
+    ``require_complete_timing=True`` to require both fields on every row and
+    canonicalize them through the importer timing rules immediately before the
+    transaction is staged.
+    """
     if not approved:
         raise ApprovalRequiredError("Workbook update requires explicit approval from the review screen.")
 
@@ -602,5 +775,6 @@ def commit_race_import(
             scoring_profile=scoring_profile,
             expected_sha256=expected_sha256,
             approved=approved,
+            require_complete_timing=require_complete_timing,
             backup_directory=backup_directory,
         )
