@@ -20,6 +20,7 @@ import league_config as league_cfg
 import league_runtime
 import race_github as ghstore
 import race_import as ri
+import race_metadata
 import race_ocr
 import race_workbook as rw
 
@@ -80,6 +81,7 @@ _TEXT = {
         "github_auth": "Publishing credentials need attention. No data was changed.",
         "github_conflict": "The workbook changed while you reviewed. Reload it and review this event again.",
         "github_unavailable": "GitHub could not confirm the update. No automatic retry was made.",
+        "writer_unavailable": "The managed race writer could not be refreshed safely. No data was changed.",
         "ocr_details": "OCR details and warnings",
         "view_screenshots": "View screenshots ({count})",
         "publishing": "Publishing the approved event…",
@@ -139,6 +141,7 @@ _TEXT = {
         "github_auth": "As credenciais de publicação precisam de atenção. Nenhum dado foi alterado.",
         "github_conflict": "O Excel mudou durante a revisão. Atualiza a página e revê novamente este evento.",
         "github_unavailable": "O GitHub não confirmou a atualização. Não foi feita nenhuma repetição automática.",
+        "writer_unavailable": "Não foi possível atualizar com segurança o sistema de escrita das corridas. Nenhum dado foi alterado.",
         "ocr_details": "Detalhes e avisos do OCR",
         "view_screenshots": "Ver capturas ({count})",
         "publishing": "A publicar o evento aprovado…",
@@ -1351,15 +1354,19 @@ def render_race_import(
     if extraction_error := st.session_state.pop(EXTRACTION_ERROR_KEY, None):
         st.error(str(extraction_error))
     st.caption(text(lang, "one_event"))
-    metadata = rw.RaceMetadata(
-        game,
-        season,
-        league,
-        round_number,
-        event_type,
-        str(gp_name).strip(),
-        league_id,
-    )
+    try:
+        metadata = race_metadata.make_race_metadata(
+            game=game,
+            season=season,
+            league=league,
+            round_number=round_number,
+            event_type=event_type,
+            gp_name=gp_name,
+            league_id=league_id,
+        )
+    except race_metadata.RaceMetadataCompatibilityError:
+        st.error(text(lang, "writer_unavailable"))
+        return
     try:
         authority = league_runtime.resolve_event_authority(
             workbook_path,
@@ -1501,14 +1508,14 @@ def render_race_import(
             if session_changed:
                 event_type = str(detected_type)
                 st.session_state[filters.session_override_key] = event_type
-                metadata = rw.RaceMetadata(
-                    game,
-                    season,
-                    league,
-                    round_number,
-                    event_type,
-                    str(gp_name).strip(),
-                    league_id,
+                metadata = race_metadata.make_race_metadata(
+                    game=game,
+                    season=season,
+                    league=league,
+                    round_number=round_number,
+                    event_type=event_type,
+                    gp_name=gp_name,
+                    league_id=league_id,
                 )
                 authority = league_runtime.resolve_event_authority(
                     workbook_path,
@@ -1539,6 +1546,8 @@ def render_race_import(
                 ).format(
                     session=text(lang, "sprint" if event_type == "SR" else "race")
                 )
+        except race_metadata.RaceMetadataCompatibilityError:
+            extraction_error = text(lang, "writer_unavailable")
         except race_ocr.InvalidScreenshotError as exc:
             extraction_error = str(exc)
         except (ri.ScoringProfileError, league_runtime.LeagueAuthorityError) as exc:

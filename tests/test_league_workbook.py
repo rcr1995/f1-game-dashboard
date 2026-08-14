@@ -10,6 +10,7 @@ import pandas as pd
 
 import league_workbook as subject
 import race_workbook
+import workbook_simplify
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -173,6 +174,33 @@ class LeagueWorkbookTransactionTests(unittest.TestCase):
                 },
             )
             self.assertEqual(before_parts["xl/worksheets/sheet1.xml"], after_parts["xl/worksheets/sheet1.xml"])
+
+    def test_setup_accepts_simplified_workbook_without_pivot_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_TEMP_ROOT) as raw:
+            root = Path(raw)
+            legacy = self._copy(root)
+            target = root / "F1_Standings.simplified.xlsx"
+            workbook_simplify.stage_simplified_workbook(legacy, target)
+
+            result = subject.commit_league_workbook_update(
+                target,
+                mutation=_mutation(),
+                expected_sha256=race_workbook.workbook_fingerprint(target),
+                approved=True,
+                backup_directory=root / "backups",
+            )
+
+            self.assertTrue(result.workbook_sha256)
+            with ZipFile(target) as archive:
+                self.assertNotIn("Pivot", race_workbook._sheet_paths(archive))
+                self.assertFalse(
+                    any(
+                        part.startswith(("xl/pivotCache/", "xl/pivotTables/"))
+                        for part in archive.namelist()
+                    )
+                )
+            with pd.ExcelFile(target) as workbook_file:
+                self.assertIn("League Config", workbook_file.sheet_names)
 
     def test_second_snapshot_appends_without_recreating_or_rewriting_prior_rows(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_TEMP_ROOT) as raw:

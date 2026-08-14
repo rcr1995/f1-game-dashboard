@@ -3,7 +3,7 @@
 Corrections deliberately operate in place.  Replacements rewrite only A:L of
 the exact rows already owned by the selected event; undos clear those cells
 without deleting worksheet rows.  Later results, helper columns, formulas,
-pivot ranges, comments, and every unrelated OOXML package part therefore keep
+helper ranges, comments, and every unrelated OOXML package part therefore keep
 their existing addresses and bytes.
 
 The caller supplies the authoritative event roster and position scoring.  The
@@ -33,6 +33,7 @@ import pandas as pd
 
 import dashboard_core as core
 import race_import as race
+import race_metadata
 import race_workbook as workbook
 
 
@@ -122,14 +123,14 @@ def _normalized_metadata(metadata: workbook.RaceMetadata) -> workbook.RaceMetada
     event_type = str(metadata.event_type or "").strip().upper()
     if event_type not in {"R", "SR"}:
         raise EventCorrectionError("The selected event type must be Race or Sprint.")
-    return workbook.RaceMetadata(
+    return race_metadata.make_race_metadata(
         game=values["game"],
         season=values["season"],
         league=values["league"],
         round_number=round_number,
         event_type=event_type,
         gp_name=values["gp_name"],
-        league_id=str(metadata.league_id or "").strip(),
+        league_id=str(getattr(metadata, "league_id", "") or "").strip(),
     )
 
 
@@ -464,14 +465,14 @@ def _commit_event_correction_locked(
             authority = league_runtime.resolve_event_authority(
                 path,
                 core.load_standings_data(path),
-                workbook.RaceMetadata(
-                    metadata.game,
-                    metadata.season,
-                    metadata.league,
-                    metadata.round_number,
-                    metadata.event_type,
-                    metadata.gp_name,
-                    configured_key.league_id,
+                race_metadata.make_race_metadata(
+                    game=metadata.game,
+                    season=metadata.season,
+                    league=metadata.league,
+                    round_number=metadata.round_number,
+                    event_type=metadata.event_type,
+                    gp_name=metadata.gp_name,
+                    league_id=configured_key.league_id,
                 ),
             )
             roster = list(authority.roster)

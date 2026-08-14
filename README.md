@@ -179,15 +179,23 @@ configured league is active and every one of its managed Calendar rows is
 already `Done`, the same transaction marks it Completed before activating its
 successor. A league with unfinished rounds is blocked from being closed.
 
-Configuration-backed leagues can also publish a complete roster snapshot from
-a specified future round. Adding, removing, replacing, or moving a driver to a
-different team therefore changes only that round and later rounds. Historical
-events continue resolving the earlier snapshot. The same future snapshot may
-revise complete Race/Sprint and fastest-lap rules for the new grid size. The UI
-defaults to the next unpublished Calendar round and rejects any effective round
-that already has results. Legacy leagues keep the manual Excel workflow for
-roster changes; the next league can be brought under managed configuration
-through the new-league wizard.
+The season code is generated automatically as `YYYY-TNN`. `YYYY` comes from
+the selected season-start year (and is rechecked against the earliest reviewed
+Calendar date); `NN` is one above the highest existing season number for that
+year. With the current workbook, the next 2026 league therefore starts as
+`2026-T03`. Conflicting ownership or malformed historical codes block the
+preview instead of guessing.
+
+The **Define future driver–team lineup** task publishes a complete roster
+snapshot from a specified future round. This is where the administrator defines
+which drivers will race and for which teams. Adding, removing, replacing, or
+moving a driver to a different team therefore changes only that round and later
+rounds. Historical events continue resolving the earlier snapshot. The same
+future snapshot may revise complete Race/Sprint and fastest-lap rules for the
+new grid size. The UI defaults to the next unpublished Calendar round and
+rejects any effective round that already has results. Legacy leagues keep the
+manual Excel workflow for roster changes; the next league can be brought under
+managed configuration through the new-league wizard.
 
 Each roster row may also contain optional **Alternative screenshot names**.
 These reviewed spellings are copied into future leagues and round-effective
@@ -254,6 +262,21 @@ Sprint scoring, and optional fastest-lap bonus eligibility. Older workbooks
 without those sheets continue using verified result history and the manual
 Excel workflow.
 
+The repository workbook is Pivot-free. The dashboard does not use an Excel
+Pivot worksheet: standings and records are calculated directly from `Leagues`.
+A legacy workbook can be converted to the smaller Pivot-free package without
+rewriting any retained worksheet, formula, helper column, comment, or style:
+
+```powershell
+python -m workbook_simplify F1_Standings.xlsx F1_Standings.simplified.xlsx
+```
+
+The output path must be new. The command validates all package relationships,
+blocks removal if a retained formula, data validation, conditional format, or
+hyperlink still references `Pivot`, and leaves the source untouched. The app's
+race-import, correction, league-setup, and manual Excel workflows accept both
+legacy and Pivot-free workbooks.
+
 If `Calendar` is missing, standings remain available and the app displays a schedule-feature warning. Missing required sheets or columns, blank identifiers, invalid rounds, and non-numeric results stop loading with a clear message.
 
 ## Scoring behavior
@@ -270,7 +293,7 @@ Run the automated checks with:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile app.py admin_app.py dashboard_page.py admin_page.py admin_auth.py admin_management_ui.py dashboard_core.py league_config.py league_runtime.py league_workbook.py puskas_html.py race_correction.py race_import.py race_ocr.py race_workbook.py race_github.py race_import_ui.py
+python -m py_compile app.py admin_app.py dashboard_page.py admin_page.py admin_auth.py admin_management_ui.py dashboard_core.py league_config.py league_runtime.py league_workbook.py puskas_html.py race_correction.py race_import.py race_metadata.py race_ocr.py race_workbook.py race_github.py race_import_ui.py workbook_simplify.py
 ```
 
 The GitHub Actions workflow runs these checks and performs a minimal Streamlit startup test for every push and pull request.
@@ -288,8 +311,10 @@ The GitHub Actions workflow runs these checks and performs a minimal Streamlit s
 - `league_workbook.py` — preservation-oriented league/configuration transactions
 - `race_correction.py` — approval-gated replacement and undo transactions
 - `race_import.py` — controlled matching, reconciliation, and review validation
+- `race_metadata.py` — mixed-version-safe event metadata and writer API guard
 - `race_ocr.py` — lazy OCR and bounded raster-image validation
 - `race_workbook.py` — approval-gated, serialized safe OOXML transaction
+- `workbook_simplify.py` — deterministic, recovery-backed removal of obsolete Pivot artifacts
 - `race_github.py` — short-lived GitHub App authentication and optimistic workbook publication
 - `race_import_ui.py` — protected local/hosted 2–4 screenshot review workflow
 - `puskas_html.py` — custom dashboard HTML rendering

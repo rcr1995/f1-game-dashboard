@@ -106,7 +106,7 @@ class HostedStreamlitSafetyTests(unittest.TestCase):
         self.assertFalse(admin.exception)
         self.assertTrue(admin.error)
         self.assertIn(
-            "Nenhum dado pode ser alterado",
+            "No data can be changed",
             "\n".join(str(item.value) for item in admin.error),
         )
         fetch_remote.assert_not_called()

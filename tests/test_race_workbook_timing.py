@@ -227,7 +227,6 @@ class TimingWorkbookRoundTripTests(unittest.TestCase):
 
             allowed_changes = {
                 sheet_part,
-                workbook._PIVOT_SOURCE_PART,
                 calendar_part,
             }
             self.assertTrue(changed_parts.issubset(allowed_changes))

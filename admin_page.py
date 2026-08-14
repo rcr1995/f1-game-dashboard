@@ -17,43 +17,129 @@ import streamlit as st
 import admin_auth
 
 
-APP_VERSION = "v42"
+APP_VERSION = "v43"
 PUBLIC_DASHBOARD_URL = "https://f1-game-dashboard.streamlit.app/"
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
 
+LANGUAGE_NAMES = ("English", "Português (Portugal)")
+
 COPY = {
-    "disabled": (
-        "Admin is disabled",
-        "Race importing is not enabled for this deployment.",
-    ),
-    "unconfigured": (
-        "Admin is unavailable",
-        "Authentication is not fully configured. The area is closed by default.",
-    ),
-    "anonymous": (
-        "Admin sign-in",
-        "Sign in to manage race results.",
-    ),
-    "forbidden": (
-        "Access denied",
-        "This signed-in identity is not authorized to administer race results.",
-    ),
-    "expired": (
-        "Session expired",
-        "Sign out, then sign in again before continuing.",
-    ),
+    "en": {
+        "disabled": (
+            "Admin is disabled",
+            "Race importing is not enabled for this deployment.",
+        ),
+        "unconfigured": (
+            "Admin is unavailable",
+            "Authentication is not fully configured. The area is closed by default.",
+        ),
+        "anonymous": ("Admin sign-in", "Sign in to manage race results."),
+        "forbidden": (
+            "Access denied",
+            "This signed-in identity is not authorized to administer race results.",
+        ),
+        "expired": (
+            "Session expired",
+            "Sign out, then sign in again before continuing.",
+        ),
+        "password": "Admin password",
+        "sign_in": "Sign in",
+        "sign_out": "Sign out",
+        "too_many": "Too many failed attempts. Try again in {seconds} seconds.",
+        "incorrect": "Incorrect password.",
+        "administrator": "Administrator",
+        "signed_in": "Signed in as {identity}",
+        "authorization_expired": "Admin authorization expired. Sign out, then sign in again.",
+        "loading_latest": "Loading the latest workbook from GitHub…",
+        "private_updater": "Private updater · phone or computer",
+        "open_dashboard": "Open dashboard",
+        "updates_unavailable": "Updates are temporarily unavailable. No data can be changed.",
+        "secure_config": "secure GitHub configuration required",
+        "load_latest": "↻ Load latest workbook",
+        "workbook_load_error": "The GitHub workbook could not be loaded. Try again later; no data was changed.",
+        "workbook_validation_error": "The remote workbook did not pass validation. No data can be published.",
+        "footer": "private updater",
+    },
+    "pt": {
+        "disabled": (
+            "Administração desativada",
+            "A importação de corridas não está ativa nesta instalação.",
+        ),
+        "unconfigured": (
+            "Administração indisponível",
+            "A autenticação não está totalmente configurada. A área permanece fechada por segurança.",
+        ),
+        "anonymous": (
+            "Iniciar sessão na administração",
+            "Inicia sessão para gerir os resultados das corridas.",
+        ),
+        "forbidden": (
+            "Acesso recusado",
+            "A identidade autenticada não está autorizada a administrar resultados.",
+        ),
+        "expired": (
+            "Sessão expirada",
+            "Termina a sessão e volta a entrar antes de continuar.",
+        ),
+        "password": "Palavra-passe de administração",
+        "sign_in": "Iniciar sessão",
+        "sign_out": "Terminar sessão",
+        "too_many": "Demasiadas tentativas falhadas. Tenta novamente dentro de {seconds} segundos.",
+        "incorrect": "Palavra-passe incorreta.",
+        "administrator": "Administrador",
+        "signed_in": "Sessão iniciada como {identity}",
+        "authorization_expired": "A autorização de administração expirou. Termina a sessão e volta a entrar.",
+        "loading_latest": "A carregar o Excel mais recente do GitHub…",
+        "private_updater": "Atualizador privado · telemóvel ou computador",
+        "open_dashboard": "Abrir dashboard",
+        "updates_unavailable": "As atualizações estão temporariamente indisponíveis. Nenhum dado pode ser alterado.",
+        "secure_config": "configuração segura do GitHub obrigatória",
+        "load_latest": "↻ Carregar Excel mais recente",
+        "workbook_load_error": "Não foi possível carregar o Excel do GitHub. Tenta novamente mais tarde; nenhum dado foi alterado.",
+        "workbook_validation_error": "O Excel remoto não passou a validação. Nenhum dado pode ser publicado.",
+        "footer": "atualizador privado",
+    },
 }
 
 
-def _render_password_sign_in() -> None:
+def _preferred_language_name(state: object) -> str:
+    """Use the public dashboard language as the cross-page authority."""
+
+    try:
+        dashboard_value = state.get("app_lang")  # type: ignore[attr-defined]
+        admin_value = state.get("admin_language")  # type: ignore[attr-defined]
+    except Exception:
+        dashboard_value = admin_value = None
+    if dashboard_value in LANGUAGE_NAMES:
+        return str(dashboard_value)
+    legacy_admin = {
+        "English": "English",
+        "Português": "Português (Portugal)",
+        "Português (Portugal)": "Português (Portugal)",
+    }
+    if admin_value in legacy_admin:
+        return legacy_admin[str(admin_value)]
+    return "English"
+
+
+def _language_code(language_name: str) -> str:
+    return "pt" if language_name == "Português (Portugal)" else "en"
+
+
+def _copy(lang: str, key: str) -> str:
+    value = COPY.get(lang, COPY["en"]).get(key, COPY["en"].get(key, key))
+    return str(value)
+
+
+def _render_password_sign_in(lang: str) -> None:
     with st.form("admin_password_sign_in", clear_on_submit=True):
         password = st.text_input(
-            "Admin password",
+            _copy(lang, "password"),
             type="password",
             autocomplete="current-password",
         )
-        submitted = st.form_submit_button("Sign in", type="primary")
+        submitted = st.form_submit_button(_copy(lang, "sign_in"), type="primary")
 
     if not submitted:
         return
@@ -67,49 +153,62 @@ def _render_password_sign_in() -> None:
     elif result.locked:
         seconds = max(1, result.retry_after_seconds)
         st.error(
-            f"Too many failed attempts. Try again in {seconds} seconds.",
+            _copy(lang, "too_many").format(seconds=seconds),
             icon=":material/lock_clock:",
         )
     else:
-        st.error("Incorrect password.", icon=":material/error:")
+        st.error(_copy(lang, "incorrect"), icon=":material/error:")
 
 
-def _render_closed_state(state: admin_auth.AdminState) -> None:
-    title, message = COPY[state.value]
+def _render_closed_state(state: admin_auth.AdminState, lang: str) -> None:
+    title, message = COPY.get(lang, COPY["en"])[state.value]
     st.title(title)
     st.info(message, icon=":material/lock:")
     if state is admin_auth.AdminState.ANONYMOUS:
         if admin_auth.password_mode_enabled():
-            _render_password_sign_in()
-        elif st.button("Sign in", type="primary", icon=":material/login:"):
+            _render_password_sign_in(lang)
+        elif st.button(_copy(lang, "sign_in"), type="primary", icon=":material/login:"):
             admin_auth.login()
     elif state in {
         admin_auth.AdminState.FORBIDDEN,
         admin_auth.AdminState.EXPIRED,
     }:
-        if st.button("Sign out", icon=":material/logout:"):
+        if st.button(_copy(lang, "sign_out"), icon=":material/logout:"):
             admin_auth.logout()
 
 
 # This is the route's capability boundary.  Keep every GitHub/OCR/workbook
 # import below it so a direct request cannot construct those capabilities.
+language_name = _preferred_language_name(st.session_state)
+lang = _language_code(language_name)
 state = admin_auth.current_admin_state()
 if state is not admin_auth.AdminState.AUTHORIZED:
-    _render_closed_state(state)
+    _render_closed_state(state, lang)
     st.stop()
 
 with st.sidebar:
     if admin_auth.password_mode_enabled():
-        identity = "Administrator"
+        identity = _copy(lang, "administrator")
     else:
         claims = admin_auth.current_claims()
-        identity = claims.get("email") or claims.get("name") or "Administrator"
-    st.caption(f"Signed in as {identity}")
-    if st.button("Sign out", icon=":material/logout:", key="admin_logout"):
+        identity = claims.get("email") or claims.get("name") or _copy(lang, "administrator")
+    st.caption(_copy(lang, "signed_in").format(identity=identity))
+    if st.button(_copy(lang, "sign_out"), icon=":material/logout:", key="admin_logout"):
         admin_auth.logout()
 
 # These modules construct the remote publication, OCR, and workbook-write
 # capabilities.  They must remain after the authorization boundary above.
+import race_metadata
+
+# A Streamlit hot reload may retain the pre-managed workbook module. Refresh
+# it before any publisher/correction module can bind exception classes or
+# writer functions, and fail closed if the managed API is still unavailable.
+try:
+    race_metadata.ensure_current_race_workbook()
+except RuntimeError:
+    st.error(_copy(lang, "updates_unavailable"))
+    st.stop()
+
 import dashboard_core as core
 import admin_management_ui
 import race_github as github_store
@@ -206,13 +305,13 @@ def _require_current_admin() -> None:
     """Recheck authorization immediately before a protected callback."""
 
     if not admin_auth.is_current_admin():
-        st.error("Admin authorization expired. Sign out, then sign in again.")
+        st.error(_copy(lang, "authorization_expired"))
         st.stop()
 
 
 def _load_remote(config: github_store.GitHubAppConfig) -> dict[str, object]:
     _require_current_admin()
-    with st.spinner("Loading the latest workbook from GitHub…"):
+    with st.spinner(_copy(lang, "loading_latest")):
         remote = github_store.fetch_remote_workbook(config)
     return asdict(remote)
 
@@ -221,22 +320,31 @@ def _clear_remote_snapshot() -> None:
     st.session_state.pop(REMOTE_STATE_KEY, None)
 
 
+def _sync_dashboard_language() -> None:
+    selected = st.session_state.get("admin_language")
+    if selected in LANGUAGE_NAMES:
+        st.session_state["app_lang"] = selected
+        st.session_state["app_lang_selector"] = selected
+
+
+# The public dashboard selection is authoritative on page entry. The Admin
+# selector writes back to that same preference so subsequent page changes
+# remain synchronized in both directions.
+language_name = _preferred_language_name(st.session_state)
+st.session_state["admin_language"] = language_name
 language_name = st.selectbox(
     "Idioma / Language",
-    ["Português", "English"],
+    LANGUAGE_NAMES,
     key="admin_language",
+    on_change=_sync_dashboard_language,
 )
-lang = "pt" if language_name == "Português" else "en"
+lang = _language_code(language_name)
 
 header_columns = st.columns([3, 1])
 header_columns[0].title("🏁 F1 Race Updater")
-header_columns[0].caption(
-    "Atualizador privado · telemóvel ou computador"
-    if lang == "pt"
-    else "Private updater · phone or computer"
-)
+header_columns[0].caption(_copy(lang, "private_updater"))
 header_columns[1].link_button(
-    "Abrir dashboard" if lang == "pt" else "Open dashboard",
+    _copy(lang, "open_dashboard"),
     PUBLIC_DASHBOARD_URL,
     use_container_width=True,
 )
@@ -244,16 +352,12 @@ header_columns[1].link_button(
 try:
     config = github_config_from_secrets()
 except (github_store.GitHubConfigurationError, ValueError, TypeError):
-    st.error(
-        "As atualizações estão temporariamente indisponíveis. Nenhum dado pode ser alterado."
-        if lang == "pt"
-        else "Updates are temporarily unavailable. No data can be changed."
-    )
-    st.caption(f"{APP_VERSION} · secure GitHub configuration required")
+    st.error(_copy(lang, "updates_unavailable"))
+    st.caption(f"{APP_VERSION} · {_copy(lang, 'secure_config')}")
     st.stop()
 
 refresh_clicked = st.button(
-    "↻ Carregar Excel mais recente" if lang == "pt" else "↻ Load latest workbook",
+    _copy(lang, "load_latest"),
     use_container_width=True,
 )
 if refresh_clicked:
@@ -274,11 +378,7 @@ try:
     remote_blob_sha = str(remote_state["blob_sha"])
 except (github_store.GitHubPersistenceError, KeyError, TypeError, ValueError):
     _clear_remote_snapshot()
-    st.error(
-        "Não foi possível carregar o Excel do GitHub. Tenta novamente mais tarde; nenhum dado foi alterado."
-        if lang == "pt"
-        else "The GitHub workbook could not be loaded. Try again later; no data was changed."
-    )
+    st.error(_copy(lang, "workbook_load_error"))
     st.stop()
 
 
@@ -350,20 +450,12 @@ def _publish_correction(
     if str(request.get("source_version") or "") != expected_source_version:
         raise github_store.GitHubConflictError(
             "The reviewed correction is not bound to this workbook version."
-        )
+    )
     import race_import
-    import race_workbook
+    import race_metadata
 
     event = request.get("event", {})
-    metadata = race_workbook.RaceMetadata(
-        str(event.get("game") or ""),
-        str(event.get("season") or ""),
-        str(event.get("league") or ""),
-        int(event.get("round", 0)),
-        str(event.get("type") or ""),
-        str(event.get("gp") or ""),
-        str(event.get("league_id") or ""),
-    )
+    metadata = race_metadata.from_event_mapping(event)
     roster = [
         race_import.DriverEntry(
             str(row.get("Driver") or "").strip(),
@@ -408,11 +500,7 @@ with TemporaryDirectory(prefix="f1-race-review-") as temporary_directory:
         standings = core.load_standings_data(workbook_path)
         calendar = core.load_calendar_data(workbook_path)
     except (core.WorkbookValidationError, OSError, ValueError):
-        st.error(
-            "O Excel remoto não passou a validação. Nenhum dado pode ser publicado."
-            if lang == "pt"
-            else "The remote workbook did not pass validation. No data can be published."
-        )
+        st.error(_copy(lang, "workbook_validation_error"))
         st.stop()
 
     admin_management_ui.render_admin_management(
@@ -428,4 +516,4 @@ with TemporaryDirectory(prefix="f1-race-review-") as temporary_directory:
         dashboard_url=PUBLIC_DASHBOARD_URL,
     )
 
-st.caption(f"{APP_VERSION} · private updater")
+st.caption(f"{APP_VERSION} · {_copy(lang, 'footer')}")

@@ -4,6 +4,7 @@ __pycache__/
 # Local development environments and logs
 .codex-tmp/
 .codex-remote-attachments/
+outputs/
 .venv/
 venv/
 *.log

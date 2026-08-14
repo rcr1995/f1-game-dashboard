@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
 from xml.etree import ElementTree as ET
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZipFile
 
 import pandas as pd
 from PIL import Image, ImageDraw
@@ -143,19 +143,6 @@ def build_temporary_workbook(path: Path) -> None:
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         standings.to_excel(writer, sheet_name="Leagues", index=False)
         calendar.to_excel(writer, sheet_name="Calendar", index=False)
-
-    # The production writer deliberately requires the Leagues pivot source.
-    # An orphaned synthetic definition is sufficient for this isolated OOXML
-    # transaction test; pandas and Excel readers ignore it safely.
-    pivot_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        '<cacheSource type="worksheet"><worksheetSource ref="A1:L5" sheet="Leagues"/>'
-        '</cacheSource></pivotCacheDefinition>'
-    ).encode("utf-8")
-    with ZipFile(path, "a", compression=ZIP_DEFLATED) as archive:
-        archive.writestr(workbook._PIVOT_SOURCE_PART, pivot_xml)
-
 
 def git_blob_sha(content: bytes) -> str:
     return hashlib.sha1(
