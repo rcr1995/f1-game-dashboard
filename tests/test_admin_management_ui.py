@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from dataclasses import dataclass
 from datetime import date, time
 from pathlib import Path
 from types import SimpleNamespace
+import time as clock
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -15,6 +18,7 @@ import admin_management_ui as ui
 import league_config
 import league_workbook
 import race_github
+import race_metadata
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -90,6 +94,54 @@ class AdminManagementRoutingTests(unittest.TestCase):
 
 
 class AdminPageSetupCallbackTests(unittest.TestCase):
+    def test_admin_language_inherits_and_synchronizes_dashboard_widget_state(self):
+        workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()
+        with (
+            patch(
+                "admin_auth.current_admin_state",
+                return_value=admin_auth.AdminState.AUTHORIZED,
+            ),
+            patch(
+                "admin_auth.current_claims",
+                return_value={"email": "admin@example.com"},
+            ),
+            patch("admin_auth.is_current_admin", return_value=True),
+            patch(
+                "race_github.fetch_remote_workbook",
+                return_value=race_github.RemoteWorkbook(
+                    content=workbook_content,
+                    blob_sha="a" * 40,
+                ),
+            ),
+            patch("admin_management_ui.render_admin_management") as render,
+            patch(
+                "tempfile.TemporaryDirectory",
+                side_effect=lambda *args, **kwargs: nullcontext(
+                    str(TEST_TEMP_ROOT)
+                ),
+            ),
+        ):
+            app = AppTest.from_file("admin_page.py", default_timeout=60)
+            app.secrets = GITHUB_SECRETS
+            app.session_state["app_lang"] = "English"
+            app.session_state["app_lang_selector"] = "English"
+            app.run()
+            self.assertFalse(app.exception)
+            self.assertEqual("en", render.call_args.kwargs["lang"])
+
+            app.selectbox(key="admin_language").set_value(
+                "Português (Portugal)"
+            )
+            app.run()
+
+        self.assertFalse(app.exception)
+        self.assertEqual("Português (Portugal)", app.session_state["app_lang"])
+        self.assertEqual(
+            "Português (Portugal)",
+            app.session_state["app_lang_selector"],
+        )
+        self.assertEqual("pt", render.call_args.kwargs["lang"])
+
     def test_callback_rebuilds_new_and_roster_drafts_after_authorization(self):
         workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()
         for mode in ("new", "roster"):
@@ -102,6 +154,7 @@ class AdminPageSetupCallbackTests(unittest.TestCase):
                 publish_result = SimpleNamespace(commit_url="https://example.test/commit")
 
                 def render(*_args, **kwargs):
+                    self.assertEqual("en", kwargs["lang"])
                     callback = kwargs["setup_publisher"]
                     self.assertIs(
                         publish_result,
@@ -146,6 +199,7 @@ class AdminPageSetupCallbackTests(unittest.TestCase):
                 ):
                     app = AppTest.from_file("admin_page.py", default_timeout=60)
                     app.secrets = GITHUB_SECRETS
+                    app.session_state["app_lang"] = "English"
                     app.run()
 
                 self.assertFalse(app.exception)
@@ -157,6 +211,102 @@ class AdminPageSetupCallbackTests(unittest.TestCase):
                     "a" * 40, publish.call_args.kwargs["expected_blob_sha"]
                 )
                 self.assertTrue(publish.call_args.kwargs["approved"])
+
+    def test_correction_publisher_accepts_legacy_six_field_metadata_cache(self):
+        @dataclass(frozen=True)
+        class LegacyRaceMetadata:
+            game: str
+            season: str
+            league: str
+            round_number: int
+            event_type: str
+            gp_name: str
+
+        workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()
+        publish_result = SimpleNamespace(
+            commit_url="https://example.test/correction"
+        )
+        request = {
+            "source_version": "a" * 40,
+            "operation": "replace",
+            "event": {
+                "game": "F1 25",
+                "season": "2026-T02",
+                "league": "Teikirise",
+                "round": 3,
+                "type": "R",
+                "gp": "British Grand Prix",
+                "league_id": "league-teikirise",
+            },
+            "authoritative_roster": [],
+            "authoritative_scoring": {},
+            "expected_event_digest": "e" * 64,
+            "new_rows": [],
+        }
+
+        def legacy_factory(event, **_kwargs):
+            return race_metadata.make_race_metadata(
+                game=event["game"],
+                season=event["season"],
+                league=event["league"],
+                round_number=event["round"],
+                event_type=event["type"],
+                gp_name=event["gp"],
+                league_id=event["league_id"],
+                metadata_class=LegacyRaceMetadata,
+            )
+
+        def render(*_args, **kwargs):
+            result = kwargs["correction_publisher"](
+                request, "a" * 40, True
+            )
+            self.assertIs(result, publish_result)
+
+        with (
+            patch(
+                "admin_auth.current_admin_state",
+                return_value=admin_auth.AdminState.AUTHORIZED,
+            ),
+            patch(
+                "admin_auth.current_claims",
+                return_value={"email": "admin@example.com"},
+            ),
+            patch("admin_auth.is_current_admin", return_value=True),
+            patch(
+                "race_github.fetch_remote_workbook",
+                return_value=race_github.RemoteWorkbook(
+                    content=workbook_content,
+                    blob_sha="a" * 40,
+                ),
+            ),
+            patch(
+                "race_metadata.from_event_mapping",
+                side_effect=legacy_factory,
+            ),
+            patch(
+                "race_github.publish_event_correction",
+                return_value=publish_result,
+            ) as publish,
+            patch(
+                "admin_management_ui.render_admin_management",
+                side_effect=render,
+            ),
+            patch(
+                "tempfile.TemporaryDirectory",
+                side_effect=lambda *args, **kwargs: nullcontext(
+                    str(TEST_TEMP_ROOT)
+                ),
+            ),
+        ):
+            app = AppTest.from_file("admin_page.py", default_timeout=60)
+            app.secrets = GITHUB_SECRETS
+            app.session_state["app_lang"] = "English"
+            app.run()
+
+        self.assertFalse(app.exception)
+        metadata = publish.call_args.kwargs["metadata"]
+        self.assertEqual("league-teikirise", metadata.league_id)
+        self.assertEqual(3, metadata.round_number)
 
 
 class AdminManagementPureHelperTests(unittest.TestCase):
@@ -430,6 +580,259 @@ class AdminManagementPureHelperTests(unittest.TestCase):
         )
         self.assertTrue(any("matches driver Bob" in error for error in errors))
         self.assertTrue(any("more than one driver" in error for error in errors))
+
+    def test_next_season_code_uses_start_year_and_highest_existing_suffix(self):
+        championships = (
+            ("F1 26", "2026-T01", "League One"),
+            ("F1 26", "2026-T02", "League Two"),
+            ("F1 26", "2025-T04", "Older League"),
+        )
+        self.assertEqual(
+            "2026-T03",
+            ui.derive_next_season_code(date(2026, 8, 20), championships),
+        )
+        self.assertEqual(
+            "2027-T01",
+            ui.derive_next_season_code(date(2027, 1, 5), championships),
+        )
+
+    def test_current_workbook_next_2026_season_is_t03(self):
+        import dashboard_core
+
+        workbook_path = PROJECT_ROOT / "F1_Standings.xlsx"
+        standings = dashboard_core.load_standings_data(workbook_path)
+        calendar = dashboard_core.load_calendar_data(workbook_path)
+        identities = ui._season_code_championships(
+            str(workbook_path), standings, calendar
+        )
+        self.assertEqual(
+            "2026-T03",
+            ui.derive_next_season_code(date(2026, 9, 1), identities),
+        )
+
+    def test_next_season_code_advances_across_a_historical_gap(self):
+        self.assertEqual(
+            "2026-T04",
+            ui.derive_next_season_code(
+                date(2026, 9, 1),
+                (
+                    ("F1 26", "2026-T01", "League One"),
+                    ("F1 26", "2026-T03", "League Three"),
+                ),
+            ),
+        )
+
+    def test_next_season_code_fails_closed_on_ambiguous_or_malformed_history(self):
+        with self.assertRaisesRegex(ValueError, "multiple championship"):
+            ui.derive_next_season_code(
+                date(2026, 9, 1),
+                (
+                    ("F1 26", "2026-T01", "League One"),
+                    ("F1 26", "2026-T01", "Different League"),
+                ),
+            )
+        with self.assertRaisesRegex(ValueError, "does not use YYYY-TNN"):
+            ui.derive_next_season_code(
+                date(2026, 9, 1),
+                (("F1 26", "2026-SECOND", "Broken League"),),
+            )
+
+    def test_calendar_only_managed_identity_is_included_in_season_scan(self):
+        calendar = pd.DataFrame(
+            [
+                {
+                    "Game": "F1 26",
+                    "Season": "2026-T02",
+                    "League Name": "Calendar Only",
+                    "League ID": "league-calendar-only",
+                }
+            ]
+        )
+        with patch(
+            "league_config.load_config_tables", side_effect=ValueError("legacy")
+        ):
+            identities = ui._season_code_championships(
+                "unused.xlsx", pd.DataFrame(), calendar
+            )
+        self.assertIn(
+            ("F1 26", "2026-T02", "id:league-calendar-only"), identities
+        )
+
+    def test_admin_management_translations_have_complete_matching_keys(self):
+        self.assertEqual(set(ui._COPY["en"]), set(ui._COPY["pt"]))
+        self.assertEqual(
+            "Define future driver–team lineup",
+            ui._text("en", "roster_change"),
+        )
+        self.assertEqual(
+            "Definir grelha futura de pilotos e equipas",
+            ui._text("pt", "roster_change"),
+        )
+        self.assertEqual(
+            "Corrected event screenshots",
+            ui._text("en", "corrected_uploads"),
+        )
+
+    def test_legacy_six_field_metadata_keeps_managed_id_without_type_error(self):
+        @dataclass(frozen=True)
+        class LegacyRaceMetadata:
+            game: str
+            season: str
+            league: str
+            round_number: int
+            event_type: str
+            gp_name: str
+
+        metadata = ui.event_metadata_from_mapping(
+            {
+                "game": "F1 26",
+                "season": "2026-T02",
+                "league": "League Two",
+                "round": 3,
+                "type": "R",
+                "gp": "British Grand Prix",
+                "league_id": "league-two",
+            },
+            metadata_class=LegacyRaceMetadata,
+        )
+        self.assertEqual("league-two", metadata.league_id)
+        self.assertEqual(3, metadata.round_number)
+
+    def test_managed_writer_guard_reloads_stale_module_and_fails_closed(self):
+        @dataclass(frozen=True)
+        class LegacyRaceMetadata:
+            game: str
+            season: str
+            league: str
+            round_number: int
+            event_type: str
+            gp_name: str
+
+        stale = SimpleNamespace(
+            RACE_METADATA_API_VERSION=0,
+            RaceMetadata=LegacyRaceMetadata,
+        )
+        current = SimpleNamespace(
+            RACE_METADATA_API_VERSION=2,
+            RaceMetadata=__import__("race_workbook").RaceMetadata,
+        )
+        with patch("race_metadata.importlib.reload", return_value=current) as reload:
+            self.assertIs(
+                current, race_metadata.ensure_current_race_workbook(stale)
+            )
+        reload.assert_called_once_with(stale)
+
+        with patch("race_metadata.importlib.reload", return_value=stale):
+            with self.assertRaisesRegex(RuntimeError, "does not support"):
+                race_metadata.ensure_current_race_workbook(stale)
+
+    def test_managed_writer_reload_is_serialized_and_rechecked_inside_lock(self):
+        @dataclass(frozen=True)
+        class LegacyRaceMetadata:
+            game: str
+            season: str
+            league: str
+            round_number: int
+            event_type: str
+            gp_name: str
+
+        stale = SimpleNamespace(
+            RACE_METADATA_API_VERSION=0,
+            RaceMetadata=LegacyRaceMetadata,
+        )
+
+        def refresh(module):
+            clock.sleep(0.05)
+            module.RACE_METADATA_API_VERSION = 2
+            module.RaceMetadata = __import__("race_workbook").RaceMetadata
+            return module
+
+        with patch(
+            "race_metadata.importlib.reload", side_effect=refresh
+        ) as reload:
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                results = list(
+                    executor.map(
+                        race_metadata.ensure_current_race_workbook,
+                        [stale] * 4,
+                    )
+                )
+
+        self.assertTrue(all(result is stale for result in results))
+        self.assertEqual(1, reload.call_count)
+
+    def test_correction_selection_survives_legacy_six_field_cache(self):
+        @dataclass(frozen=True)
+        class LegacyRaceMetadata:
+            game: str
+            season: str
+            league: str
+            round_number: int
+            event_type: str
+            gp_name: str
+
+        event = {
+            "game": "F1 26",
+            "season": "2026-T02",
+            "league": "League Two",
+            "round": 3,
+            "type": "R",
+            "gp": "British Grand Prix",
+            "league_id": "league-two",
+        }
+        snapshot = SimpleNamespace(rows=(), digest="d" * 64)
+        replacement = Mock()
+        with (
+            patch.object(ui.st, "session_state", {}),
+            patch.object(ui.st, "header"),
+            patch.object(ui.st, "write"),
+            patch.object(ui.st, "subheader"),
+            patch.object(ui.st, "dataframe"),
+            patch.object(ui.st, "selectbox", return_value=event),
+            patch.object(ui.st, "radio", return_value="replace"),
+            patch.object(ui, "_published_events", return_value=[event]),
+            patch.object(
+                ui,
+                "_correction_operations",
+                return_value=(("replace",), "Active"),
+            ),
+            patch(
+                "race_metadata.ensure_current_race_workbook",
+                return_value=SimpleNamespace(RaceMetadata=LegacyRaceMetadata),
+            ),
+            patch(
+                "race_correction.load_event_snapshot",
+                return_value=snapshot,
+            ),
+            patch.object(
+                ui, "_render_replace_correction", replacement
+            ),
+        ):
+            ui.render_event_correction(
+                "unused.xlsx",
+                pd.DataFrame(),
+                pd.DataFrame(),
+                lang="en",
+                clear_data_cache=Mock(),
+                source_version="a" * 40,
+                hosted_publisher=Mock(),
+            )
+
+        metadata = replacement.call_args.kwargs["metadata"]
+        self.assertEqual("league-two", metadata.league_id)
+        self.assertEqual(3, metadata.round_number)
+
+    def test_every_production_metadata_constructor_uses_guarded_factory(self):
+        for filename in (
+            "admin_page.py",
+            "admin_management_ui.py",
+            "race_import_ui.py",
+            "race_correction.py",
+        ):
+            with self.subTest(filename=filename):
+                source = (PROJECT_ROOT / filename).read_text(encoding="utf-8")
+                self.assertNotIn("RaceMetadata(", source)
+                self.assertIn("race_metadata", source)
 
     def test_new_league_name_is_globally_unique_across_history(self):
         draft = {

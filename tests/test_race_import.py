@@ -15,6 +15,7 @@ import pandas as pd
 import dashboard_core as core
 import race_import as race
 import race_workbook as workbook
+import workbook_simplify
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -767,21 +768,12 @@ class RealWorkbookTransactionTests(unittest.TestCase):
                 original_status,
             )
 
-    def test_pivot_source_extends_when_append_crosses_existing_range(self):
+    def test_import_accepts_simplified_workbook_without_pivot_artifacts(self):
         with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
             directory = Path(temporary_directory)
-            copied = self.copy_real_workbook(directory)
-            before_parts = archive_payloads(copied)
-            definition = before_parts[workbook._PIVOT_SOURCE_PART]
-            reduced_definition = re.sub(
-                rb'(<worksheetSource\b[^>]*\bref="[A-Z]+\d+:[A-Z]+)\d+("[^>]*\bsheet="Leagues"[^>]*/>)',
-                rb'\g<1>1750\g<2>',
-                definition,
-                count=1,
-            )
-            with ZipFile(copied, "w") as target:
-                for name, payload in before_parts.items():
-                    target.writestr(name, reduced_definition if name == workbook._PIVOT_SOURCE_PART else payload)
+            legacy = self.copy_real_workbook(directory)
+            copied = directory / "F1_Standings.simplified.xlsx"
+            workbook_simplify.stage_simplified_workbook(legacy, copied)
 
             result = workbook.commit_race_import(
                 copied,
@@ -793,12 +785,15 @@ class RealWorkbookTransactionTests(unittest.TestCase):
                 backup_directory=directory / "backups",
             )
 
+            self.assertEqual(result.rows_added, len(self.roster))
             with ZipFile(copied) as archive:
-                updated_definition = archive.read(workbook._PIVOT_SOURCE_PART)
-            self.assertIn(
-                f'A1:J{result.last_excel_row}'.encode("ascii"),
-                updated_definition,
-            )
+                self.assertNotIn("Pivot", workbook._sheet_paths(archive))
+                self.assertFalse(
+                    any(
+                        part.startswith(("xl/pivotCache/", "xl/pivotTables/"))
+                        for part in archive.namelist()
+                    )
+                )
 
 
 if __name__ == "__main__":

@@ -1132,7 +1132,7 @@ def commit_league_workbook_update(
     """Commit one approved setup/roster configuration atomically.
 
     The mutation is append-only.  Existing result rows, prior configuration
-    snapshots, Calendar rows, formulas, pivots and other package parts are
+    snapshots, Calendar rows, formulas and other package parts are
     preserved.  A new roster/team assignment is represented by another
     complete snapshot with a later ``Effective From Round``.
     """

@@ -1,10 +1,11 @@
 """Transaction-safe, preservation-oriented updates for ``F1_Standings.xlsx``.
 
-The workbook contains pivot caches, cached formulas, and modern comment parts
-that normal Excel round-trips can discard. This writer therefore changes only
-the two worksheet XML parts that own race results and calendar status, copies
-every other OOXML part unchanged, validates a temporary workbook, and replaces
-the original only after explicit approval.
+The workbook contains cached formulas and modern comment parts that normal
+Excel round-trips can discard. This writer therefore changes only the two
+worksheet XML parts that own race results and calendar status, copies every
+other OOXML part unchanged, validates a temporary workbook, and replaces the
+original only after explicit approval. Both legacy workbooks that still have
+the obsolete Pivot sheet and simplified workbooks without it are supported.
 """
 
 from __future__ import annotations
@@ -34,6 +35,12 @@ else:
 
 import pandas as pd
 
+
+# Used by the Admin hot-reload boundary before any protected write. A cached
+# pre-managed module is reloaded from disk and must expose this version before
+# its writer can be used.
+RACE_METADATA_API_VERSION = 2
+
 import dashboard_core as core
 import race_import as race
 
@@ -57,10 +64,6 @@ class DuplicateEventError(WorkbookUpdateError):
 _WORKBOOK_LOCK_TIMEOUT_SECONDS = 30.0
 _WORKBOOK_LOCK_POLL_SECONDS = 0.05
 _LOCK_FILE_INITIALIZATION_GUARD = threading.Lock()
-_PIVOT_SOURCE_PART = "xl/pivotCache/pivotCacheDefinition1.xml"
-_PIVOT_SOURCE_PATTERN = re.compile(
-    rb'(<worksheetSource\b[^>]*\bref=")([A-Z]+\d+):([A-Z]+)(\d+)("[^>]*\bsheet="Leagues"[^>]*/>)'
-)
 _MAIN_SPREADSHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _DURATION_PATTERN = re.compile(
     r"^(?:(?P<hours>\d{1,3}):)?(?P<minutes>\d{1,3}):(?P<seconds>[0-5]\d)"
@@ -402,35 +405,6 @@ def _calendar_identity_is_unambiguous(standings: pd.DataFrame, metadata: RaceMet
     return len(championships) == 1 and tuple(championships.iloc[0]) == expected
 
 
-def _extend_pivot_source_if_needed(
-    archive: ZipFile,
-    replacements: dict[str, bytes],
-    *,
-    last_excel_row: int,
-) -> None:
-    """Extend the cached Leagues pivot source so imported rows remain visible."""
-    if _PIVOT_SOURCE_PART not in archive.namelist():
-        raise WorkbookUpdateError("Workbook is missing the Leagues pivot-cache definition.")
-    payload = archive.read(_PIVOT_SOURCE_PART)
-    match = _PIVOT_SOURCE_PATTERN.search(payload)
-    if match is None:
-        raise WorkbookUpdateError("Could not verify the Leagues pivot-cache source range.")
-    current_last_row = int(match.group(4))
-    if last_excel_row <= current_last_row:
-        return
-    updated = (
-        payload[: match.start()]
-        + match.group(1)
-        + re.sub(rb"\d+$", b"", match.group(2))
-        + b"1:"
-        + match.group(3)
-        + str(last_excel_row).encode("ascii")
-        + match.group(5)
-        + payload[match.end() :]
-    )
-    replacements[_PIVOT_SOURCE_PART] = updated
-
-
 def _copy_archive_with_replacements(source: Path, destination: Path, replacements: Mapping[str, bytes]) -> None:
     try:
         with ZipFile(source, "r") as source_zip, ZipFile(destination, "w", compression=ZIP_DEFLATED, allowZip64=True) as target_zip:
@@ -687,11 +661,6 @@ def _commit_race_import_locked(
                 tuple("ABCDEFGHIJKL"),
             )
         replacements: dict[str, bytes] = {leagues_part: leagues_xml}
-        _extend_pivot_source_if_needed(
-            archive,
-            replacements,
-            last_excel_row=last_row,
-        )
 
         calendar_part = sheet_paths.get("Calendar")
         calendar_updated = bool(metadata.event_type.upper() == "R" and calendar_row and calendar_part)

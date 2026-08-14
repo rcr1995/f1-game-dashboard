@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from datetime import date, datetime, time, timezone
 from typing import Any, Protocol
@@ -56,20 +57,31 @@ _COPY = {
         "setup_intro": "Create the next league from a reviewed copy of an existing roster, rules, and calendar. Existing leagues and results are never replaced.",
         "setup_mode": "Setup task",
         "new_league": "Start new league",
-        "roster_change": "Schedule roster change",
+        "roster_change": "Define future driver–team lineup",
+        "roster_change_help": "Define the complete driver-to-team lineup that will apply from the selected future round. Earlier results and lineups stay unchanged.",
         "source": "Copy from",
         "identity": "League identity",
+        "value": "Value",
         "game": "Game / version",
         "season": "Season code",
+        "season_start": "Season start date",
+        "season_auto_help": "Generated automatically from the season start year and the number of seasons already started in that year.",
+        "season_code_error": "The next season code cannot be determined safely: {error}",
         "league": "Unique league name",
         "effective_round": "Effective from round",
+        "round": "Round",
+        "round_value": "Round {value}",
         "continue": "Continue",
         "back": "Back",
         "reset": "Start over",
         "roster": "Roster and teams",
-        "roster_help": "Edit the complete roster. Add or remove rows, replace drivers, change teams, and enter new team names directly.",
+        "roster_help": "Edit the complete lineup. Add or remove rows, replace drivers, change teams, and enter new team names directly.",
         "aliases": "Alternative screenshot names",
         "aliases_help": "Optional. Add abbreviations or other names shown in screenshots, separated with | or ;. Each alternative must belong to only this driver.",
+        "driver": "Driver",
+        "team": "Team",
+        "position": "Position",
+        "points": "Points",
         "scoring": "Scoring rules",
         "race_points": "Race points",
         "sprint_points": "Sprint points",
@@ -80,6 +92,12 @@ _COPY = {
         "bonus_any": "Leave 0 to allow any classified driver.",
         "calendar": "Calendar",
         "calendar_help": "Create one ordered row per round. New rows are published as Upcoming.",
+        "date": "Date",
+        "grand_prix": "Grand Prix",
+        "circuit": "Circuit",
+        "lisbon_start": "Lisbon start",
+        "sprint_weekend": "Sprint weekend",
+        "status": "Status",
         "preview": "Review setup",
         "approval": "I reviewed this complete setup and approve publishing one workbook update.",
         "publish": "Publish league setup",
@@ -106,6 +124,72 @@ _COPY = {
         "no_events": "No complete published events are available for correction.",
         "stale": "The workbook or selected source changed. Start this review again.",
         "publisher_error": "The protected publisher could not confirm the update. No automatic retry was made.",
+        "history_protected": "Every step is reviewed before one protected GitHub commit. Historical results are unchanged.",
+        "step_progress": "Step {step} of 5",
+        "no_source": "No source championship is available to copy.",
+        "no_roster_round": "This active league has no managed, unpublished Calendar round available for a future lineup.",
+        "identity_required": "Game, season code, and league name are required.",
+        "identity_exists": "The new league identity already exists.",
+        "league_name_unique": "League name must be unique across every current and historical league.",
+        "configured_roster_error": "Configured roster data could not be loaded: {error}",
+        "roster_active_only": "Future lineups are available only for the Active configuration-backed league. Legacy or completed leagues keep their historical/manual workflow.",
+        "roster_minimum": "The lineup needs at least two drivers.",
+        "roster_incomplete": "Every lineup row needs a driver and team.",
+        "roster_duplicate": "The lineup contains a duplicate driver.",
+        "alias_matches_driver": "Alternative name {alias!r} for {driver} matches driver {other_driver}.",
+        "alias_duplicate": "Alternative name {alias!r} is assigned to more than one driver.",
+        "scoring_positions": "{event_type} scoring must contain every lineup position in order.",
+        "scoring_points_invalid": "{event_type} scoring contains an invalid points value.",
+        "bonus_invalid": "{event_type} fastest-lap bonus must be greater than zero when enabled.",
+        "calendar_round_invalid": "Calendar row {row} needs a numeric round.",
+        "calendar_row_incomplete": "Calendar row {row} is incomplete.",
+        "calendar_round_order": "Calendar rounds must be ordered and consecutive from 1.",
+        "calendar_date_order": "Calendar dates must be in round order.",
+        "season_recalculated": "The season code was updated to {season} from the earliest reviewed Calendar date.",
+        "current_league_completed": "The current active league will be marked Completed in the same protected update: {leagues}",
+        "view_commit": "View GitHub commit",
+        "admin_success": "Admin update published.",
+        "session": "Session",
+        "enabled": "Enabled",
+        "highest_eligible": "Highest eligible finish",
+        "any_classified": "Any classified",
+        "race": "Race",
+        "sprint": "Sprint",
+        "event_identity_error": "This event identity could not be loaded safely. Reload the latest workbook and try again.",
+        "excel_row": "Excel row",
+        "finish_position": "Finish position",
+        "time": "Time",
+        "fastest_lap": "Fastest lap",
+        "corrected_uploads": "Corrected event screenshots",
+        "view_screenshots": "View corrected screenshots ({count})",
+        "upload_count": "Upload between 2 and 4 screenshots from this event only.",
+        "reading_screenshots": "Reading corrected screenshots…",
+        "no_rows_recognized": "No corrected result rows were recognized.",
+        "select_driver": "— Select driver —",
+        "driver_choices_needed": "{count} rows need your driver choice.",
+        "ocr_details": "OCR confidence and source details",
+        "suggested_driver": "Suggested driver",
+        "confidence": "Confidence",
+        "seen_in": "Seen in",
+        "ocr_text": "OCR text",
+        "ocr_notes": "OCR notes",
+        "suggested_time": "Suggested time",
+        "time_confidence": "Time confidence",
+        "time_notes": "Time notes",
+        "suggested_fastest_lap": "Suggested fastest lap",
+        "fastest_lap_confidence": "Fastest-lap confidence",
+        "fastest_lap_notes": "Fastest-lap notes",
+        "fastest_bonus_award": "Fastest-lap bonus: {driver} +{bonus:g} points",
+        "old_driver": "Old driver",
+        "new_driver": "New driver",
+        "old_team": "Old team",
+        "new_team": "New team",
+        "old_points": "Old points",
+        "new_points": "New points",
+        "old_time": "Old time",
+        "new_time": "New time",
+        "old_fastest_lap": "Old fastest lap",
+        "new_fastest_lap": "New fastest lap",
     },
     "pt": {
         "task": "Tarefa de administração",
@@ -116,20 +200,31 @@ _COPY = {
         "setup_intro": "Cria a próxima liga a partir de uma cópia revista da grelha, regras e calendário existentes. As ligas e resultados anteriores nunca são substituídos.",
         "setup_mode": "Tarefa de configuração",
         "new_league": "Iniciar nova liga",
-        "roster_change": "Agendar alteração da grelha",
+        "roster_change": "Definir grelha futura de pilotos e equipas",
+        "roster_change_help": "Define a grelha completa de pilotos e respetivas equipas que será aplicada a partir da ronda futura selecionada. Os resultados e grelhas anteriores não são alterados.",
         "source": "Copiar de",
         "identity": "Identidade da liga",
+        "value": "Valor",
         "game": "Jogo / versão",
         "season": "Código da época",
+        "season_start": "Data de início da época",
+        "season_auto_help": "Gerado automaticamente a partir do ano de início da época e do número de épocas já iniciadas nesse ano.",
+        "season_code_error": "Não foi possível determinar com segurança o próximo código da época: {error}",
         "league": "Nome único da liga",
         "effective_round": "Em vigor a partir da ronda",
+        "round": "Ronda",
+        "round_value": "Ronda {value}",
         "continue": "Continuar",
         "back": "Voltar",
         "reset": "Recomeçar",
         "roster": "Grelha e equipas",
         "roster_help": "Edita a grelha completa. Adiciona ou remove linhas, substitui pilotos, muda equipas e escreve diretamente novos nomes de equipas.",
         "aliases": "Nomes alternativos nas capturas",
-        "aliases_help": "Opcional. Adiciona abreviaÃ§Ãµes ou outros nomes vistos nas capturas, separados por | ou ;. Cada alternativa deve pertencer apenas a este piloto.",
+        "aliases_help": "Opcional. Adiciona abreviações ou outros nomes vistos nas capturas, separados por | ou ;. Cada alternativa deve pertencer apenas a este piloto.",
+        "driver": "Piloto",
+        "team": "Equipa",
+        "position": "Posição",
+        "points": "Pontos",
         "scoring": "Regras de pontuação",
         "race_points": "Pontos da Corrida",
         "sprint_points": "Pontos da Sprint",
@@ -140,6 +235,12 @@ _COPY = {
         "bonus_any": "Deixa 0 para permitir qualquer piloto classificado.",
         "calendar": "Calendário",
         "calendar_help": "Cria uma linha ordenada por ronda. As novas linhas são publicadas como Upcoming.",
+        "date": "Data",
+        "grand_prix": "Grande Prémio",
+        "circuit": "Circuito",
+        "lisbon_start": "Início em Lisboa",
+        "sprint_weekend": "Fim de semana com Sprint",
+        "status": "Estado",
         "preview": "Rever configuração",
         "approval": "Revisei toda esta configuração e aprovo a publicação de uma atualização do Excel.",
         "publish": "Publicar configuração da liga",
@@ -166,12 +267,227 @@ _COPY = {
         "no_events": "Não existem eventos publicados completos disponíveis para correção.",
         "stale": "O Excel ou a origem selecionada mudou. Recomeça esta revisão.",
         "publisher_error": "O publicador protegido não confirmou a atualização. Não foi feita uma repetição automática.",
+        "history_protected": "Cada etapa é revista antes de um único commit protegido no GitHub. Os resultados históricos não são alterados.",
+        "step_progress": "Etapa {step} de 5",
+        "no_source": "Não existe uma competição de origem disponível para copiar.",
+        "no_roster_round": "Esta liga ativa não tem uma ronda futura e não publicada no Calendário disponível para uma nova grelha.",
+        "identity_required": "O jogo, o código da época e o nome da liga são obrigatórios.",
+        "identity_exists": "A identidade da nova liga já existe.",
+        "league_name_unique": "O nome da liga deve ser único entre todas as ligas atuais e históricas.",
+        "configured_roster_error": "Não foi possível carregar a grelha configurada: {error}",
+        "roster_active_only": "As grelhas futuras só estão disponíveis para a liga Ativa baseada na configuração. As ligas antigas ou concluídas mantêm o fluxo histórico/manual.",
+        "roster_minimum": "A grelha precisa de pelo menos dois pilotos.",
+        "roster_incomplete": "Todas as linhas da grelha precisam de um piloto e de uma equipa.",
+        "roster_duplicate": "A grelha contém um piloto duplicado.",
+        "alias_matches_driver": "O nome alternativo {alias!r} de {driver} corresponde ao piloto {other_driver}.",
+        "alias_duplicate": "O nome alternativo {alias!r} está atribuído a mais do que um piloto.",
+        "scoring_positions": "A pontuação de {event_type} deve conter todas as posições da grelha por ordem.",
+        "scoring_points_invalid": "A pontuação de {event_type} contém um valor de pontos inválido.",
+        "bonus_invalid": "O bónus de volta mais rápida de {event_type} deve ser superior a zero quando está ativo.",
+        "calendar_round_invalid": "A linha {row} do Calendário precisa de uma ronda numérica.",
+        "calendar_row_incomplete": "A linha {row} do Calendário está incompleta.",
+        "calendar_round_order": "As rondas do Calendário devem estar ordenadas e ser consecutivas a partir de 1.",
+        "calendar_date_order": "As datas do Calendário devem estar ordenadas por ronda.",
+        "season_recalculated": "O código da época foi atualizado para {season} a partir da primeira data revista do Calendário.",
+        "current_league_completed": "A liga ativa atual será marcada como Concluída na mesma atualização protegida: {leagues}",
+        "view_commit": "Ver commit no GitHub",
+        "admin_success": "Atualização de administração publicada.",
+        "session": "Sessão",
+        "enabled": "Ativo",
+        "highest_eligible": "Melhor chegada elegível",
+        "any_classified": "Qualquer piloto classificado",
+        "race": "Corrida",
+        "sprint": "Sprint",
+        "event_identity_error": "Não foi possível carregar a identidade deste evento com segurança. Carrega o Excel mais recente e tenta novamente.",
+        "excel_row": "Linha do Excel",
+        "finish_position": "Posição final",
+        "time": "Tempo",
+        "fastest_lap": "Volta mais rápida",
+        "corrected_uploads": "Capturas corrigidas do evento",
+        "view_screenshots": "Ver capturas corrigidas ({count})",
+        "upload_count": "Carrega entre 2 e 4 capturas apenas deste evento.",
+        "reading_screenshots": "A ler as capturas corrigidas…",
+        "no_rows_recognized": "Não foram reconhecidas linhas de resultados corrigidos.",
+        "select_driver": "— Selecionar piloto —",
+        "driver_choices_needed": "Falta escolher o piloto em {count} linhas.",
+        "ocr_details": "Confiança do OCR e detalhes da origem",
+        "suggested_driver": "Piloto sugerido",
+        "confidence": "Confiança",
+        "seen_in": "Visto em",
+        "ocr_text": "Texto do OCR",
+        "ocr_notes": "Notas do OCR",
+        "suggested_time": "Tempo sugerido",
+        "time_confidence": "Confiança do tempo",
+        "time_notes": "Notas do tempo",
+        "suggested_fastest_lap": "Volta mais rápida sugerida",
+        "fastest_lap_confidence": "Confiança da volta mais rápida",
+        "fastest_lap_notes": "Notas da volta mais rápida",
+        "fastest_bonus_award": "Bónus de volta mais rápida: {driver} +{bonus:g} pontos",
+        "old_driver": "Piloto anterior",
+        "new_driver": "Novo piloto",
+        "old_team": "Equipa anterior",
+        "new_team": "Nova equipa",
+        "old_points": "Pontos anteriores",
+        "new_points": "Novos pontos",
+        "old_time": "Tempo anterior",
+        "new_time": "Novo tempo",
+        "old_fastest_lap": "Volta mais rápida anterior",
+        "new_fastest_lap": "Nova volta mais rápida",
     },
 }
 
 
 def _text(lang: str, key: str) -> str:
     return _COPY.get(lang, _COPY["en"]).get(key, _COPY["en"].get(key, key))
+
+
+def _format_text(lang: str, key: str, **values: object) -> str:
+    return _text(lang, key).format(**values)
+
+
+_SEASON_CODE_PATTERN = re.compile(r"^(?P<year>\d{4})-T(?P<ordinal>\d{2})$")
+
+
+def derive_next_season_code(
+    start_date: date | datetime | pd.Timestamp,
+    championships: Sequence[Sequence[object]],
+) -> str:
+    """Return the next unambiguous ``YYYY-TNN`` code for a start date.
+
+    One code represents one season even when the same identity is present in
+    both legacy standings and the managed configuration. The next value is
+    one above the highest valid suffix, while malformed labels for the
+    requested year are rejected instead of guessing.
+    """
+
+    if isinstance(start_date, datetime):
+        normalized_date = start_date.date()
+    elif isinstance(start_date, pd.Timestamp):
+        normalized_date = start_date.date()
+    elif isinstance(start_date, date):
+        normalized_date = start_date
+    else:
+        raise ValueError("the season start date is invalid")
+    year = normalized_date.year
+    owners: dict[str, set[tuple[str, ...]]] = {}
+    for championship in championships:
+        if len(championship) < 2:
+            continue
+        label = str(championship[1]).strip()
+        if not label:
+            continue
+        normalized_identity = tuple(
+            " ".join(_optional_text(value).casefold().split())
+            for value in championship
+        )
+        owners.setdefault(label, set()).add(normalized_identity)
+    ordinals: set[int] = set()
+    for label, identities in owners.items():
+        match = _SEASON_CODE_PATTERN.fullmatch(label)
+        if match is None:
+            if label.startswith(str(year)):
+                raise ValueError(
+                    f"existing season label {label!r} does not use YYYY-TNN"
+                )
+            continue
+        if int(match.group("year")) == year:
+            if len(identities) > 1:
+                raise ValueError(
+                    f"season code {label!r} belongs to multiple championship identities"
+                )
+            ordinal = int(match.group("ordinal"))
+            if ordinal < 1:
+                raise ValueError(f"existing season label {label!r} has no ordinal")
+            ordinals.add(ordinal)
+    ordinal = max(ordinals, default=0) + 1
+    if ordinal > 99:
+        raise ValueError(f"the {year} season sequence is already full")
+    return f"{year}-T{ordinal:02d}"
+
+
+def _optional_text(value: object) -> str:
+    """Normalize one scalar without evaluating ``pandas.NA`` as a boolean."""
+
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        missing = False
+    if isinstance(missing, bool) and missing:
+        return ""
+    return str(value).strip()
+
+
+def event_metadata_from_mapping(
+    event: Mapping[str, object], *, metadata_class: object | None = None
+) -> object:
+    """Build correction metadata across Streamlit's hot-reload boundary.
+
+    Streamlit can retain the pre-managed six-field ``RaceMetadata`` class in
+    ``sys.modules`` while loading the new Admin page. In that production-only
+    transition the seventh positional argument raised the reported TypeError.
+    Keyword construction plus a compatibility attribute preserves the exact
+    managed League ID until the process has fully restarted.
+    """
+
+    import race_metadata
+
+    return race_metadata.from_event_mapping(
+        event, metadata_class=metadata_class
+    )
+
+
+_COLUMN_COPY_KEYS = {
+    "Excel Row": "excel_row",
+    "Finish Pos": "finish_position",
+    "Driver": "driver",
+    "Team": "team",
+    "Points": "points",
+    "Position": "position",
+    "Time": "time",
+    "Fastest Lap": "fastest_lap",
+    "OCR Aliases": "aliases",
+    "Round": "round",
+    "Date": "date",
+    "GP Name": "grand_prix",
+    "Circuit": "circuit",
+    "Time (Lisbon)": "lisbon_start",
+    "Has Sprint": "sprint_weekend",
+    "Status": "status",
+    "Session": "session",
+    "Enabled": "enabled",
+    "Bonus points": "bonus_points",
+    "Highest eligible finish": "highest_eligible",
+    "Old driver": "old_driver",
+    "New driver": "new_driver",
+    "Old team": "old_team",
+    "New team": "new_team",
+    "Old points": "old_points",
+    "New points": "new_points",
+    "Old time": "old_time",
+    "New time": "new_time",
+    "Old fastest lap": "old_fastest_lap",
+    "New fastest lap": "new_fastest_lap",
+    "Suggested driver": "suggested_driver",
+    "Confidence": "confidence",
+    "Seen in": "seen_in",
+    "OCR text": "ocr_text",
+    "OCR notes": "ocr_notes",
+    "Suggested Time": "suggested_time",
+    "Time Confidence": "time_confidence",
+    "Time Notes": "time_notes",
+    "Suggested Fastest Lap": "suggested_fastest_lap",
+    "Fastest Lap Confidence": "fastest_lap_confidence",
+    "Fastest Lap Notes": "fastest_lap_notes",
+}
+
+
+def _localized_frame(frame: pd.DataFrame, lang: str) -> pd.DataFrame:
+    labels: dict[str, str] = {}
+    for column in frame.columns:
+        key = _COLUMN_COPY_KEYS.get(str(column))
+        if key:
+            labels[str(column)] = _text(lang, key)
+    return frame.rename(columns=labels)
 
 
 def _digest(value: object) -> str:
@@ -231,6 +547,44 @@ def _setup_championships(
         # preview/publication; legacy standings remain available for recovery.
         pass
     return sorted(values, key=lambda item: (item[1], item[2], item[0]), reverse=True)
+
+
+def _season_code_championships(
+    workbook_path: str,
+    standings: pd.DataFrame,
+    calendar: pd.DataFrame | None,
+) -> tuple[tuple[str, str, str], ...]:
+    """Include configured, legacy, and exact Calendar-only season identities."""
+
+    values = set(_setup_championships(workbook_path, standings))
+    league_identities: dict[str, tuple[str, str, str]] = {}
+    try:
+        import league_config
+
+        tables = league_config.load_config_tables(workbook_path)
+        league_identities = {
+            key.league_id: (key.game, key.season, key.league_name)
+            for key in league_config.configured_league_keys(tables)
+        }
+    except Exception:
+        pass
+    if calendar is None or calendar.empty or "Season" not in calendar:
+        return tuple(sorted(values))
+    for row in calendar.to_dict("records"):
+        season = _optional_text(row.get("Season"))
+        if not season:
+            continue
+        league_id = _optional_text(row.get("League ID"))
+        configured_identity = league_identities.get(league_id)
+        if configured_identity is not None:
+            values.add(configured_identity)
+            continue
+        game = _optional_text(row.get("Game"))
+        league = _optional_text(row.get("League Name"))
+        exact_owner = f"id:{league_id}" if league_id else league
+        if game and exact_owner:
+            values.add((game, season, exact_owner))
+    return tuple(sorted(values))
 
 
 def _active_configured_championships(
@@ -348,6 +702,8 @@ def _canonical_alias_text(value: object) -> str:
 
 def _roster_alias_errors(
     records: Sequence[Mapping[str, object]],
+    *,
+    lang: str = "en",
 ) -> list[str]:
     """Return friendly alias collisions before the backend preview boundary."""
 
@@ -370,12 +726,18 @@ def _roster_alias_errors(
             other_driver = canonical.get(alias_key)
             if other_driver and alias_key != driver_key:
                 errors.append(
-                    f"Alternative name {alias!r} for {driver} matches driver {other_driver}."
+                    _format_text(
+                        lang,
+                        "alias_matches_driver",
+                        alias=alias,
+                        driver=driver,
+                        other_driver=other_driver,
+                    )
                 )
             previous = alias_owner.get(alias_key)
             if previous and previous != driver_key:
                 errors.append(
-                    f"Alternative name {alias!r} is assigned to more than one driver."
+                    _format_text(lang, "alias_duplicate", alias=alias)
                 )
             alias_owner[alias_key] = driver_key
     return list(dict.fromkeys(errors))
@@ -401,10 +763,10 @@ def render_admin_management(
 
     success = st.session_state.pop(f"{STATE_PREFIX}management_success", None)
     if isinstance(success, Mapping):
-        st.success(str(success.get("message") or "Admin update published."))
+        st.success(str(success.get("message") or _text(lang, "admin_success")))
         if success.get("commit_url"):
             st.link_button(
-                "View GitHub commit",
+                _text(lang, "view_commit"),
                 str(success["commit_url"]),
                 use_container_width=True,
             )
@@ -484,7 +846,7 @@ def render_league_setup(
     st.header(_text(lang, "setup_title"))
     st.write(_text(lang, "setup_intro"))
     st.info(
-        "Every step is reviewed before one protected GitHub commit. Historical results are unchanged.",
+        _text(lang, "history_protected"),
         icon=":material/history:",
     )
 
@@ -495,11 +857,14 @@ def render_league_setup(
         st.session_state[token_key] = token
     step_key = f"{SETUP_PREFIX}step"
     step = int(st.session_state.get(step_key, 1))
-    st.progress(min(max(step, 1), 5) / 5, text=f"Step {step} of 5")
+    st.progress(
+        min(max(step, 1), 5) / 5,
+        text=_format_text(lang, "step_progress", step=step),
+    )
 
     options = _setup_championships(workbook_path, standings)
     if not options:
-        st.error("No source championship is available to clone.")
+        st.error(_text(lang, "no_source"))
         return
     active_options = _active_configured_championships(workbook_path)
 
@@ -574,26 +939,60 @@ def _render_setup_identity(
             source_game = source_season = source_league = ""
         else:
             source_game, source_season, source_league = source
+        season_error = ""
+        season_start_date: date | None = None
         if mode == "new":
-            columns = st.columns(3)
-            game = columns[0].text_input(
+            saved_start = pd.to_datetime(
+                saved.get("season_start_date"), errors="coerce"
+            )
+            season_start_default = (
+                saved_start.date() if not pd.isna(saved_start) else date.today()
+            )
+            first_row = st.columns(2)
+            game = first_row[0].text_input(
                 _text(lang, "game"),
                 value=str(saved.get("game", source_game)),
                 key=f"{SETUP_PREFIX}identity_game",
             )
-            season = columns[1].text_input(
-                _text(lang, "season"),
-                value=str(saved.get("season", "")),
-                key=f"{SETUP_PREFIX}identity_season",
+            season_start_date = first_row[1].date_input(
+                _text(lang, "season_start"),
+                value=season_start_default,
+                key=f"{SETUP_PREFIX}identity_season_start",
             )
-            league = columns[2].text_input(
+            try:
+                derived_season = derive_next_season_code(
+                    season_start_date,
+                    _season_code_championships(
+                        workbook_path, standings, calendar
+                    ),
+                )
+            except ValueError as exc:
+                derived_season = ""
+                season_error = _format_text(
+                    lang, "season_code_error", error=exc
+                )
+            second_row = st.columns(2)
+            second_row[0].text_input(
+                _text(lang, "season"),
+                value=derived_season,
+                disabled=True,
+                help=_text(lang, "season_auto_help"),
+                key=f"{SETUP_PREFIX}identity_season_{derived_season or 'invalid'}",
+            )
+            season = derived_season
+            league = second_row[1].text_input(
                 _text(lang, "league"),
                 value=str(saved.get("league", "")),
                 key=f"{SETUP_PREFIX}identity_league",
             )
+            if season_error:
+                st.error(season_error)
+            else:
+                st.caption(_text(lang, "season_auto_help"))
             effective_round = 1
         else:
             game, season, league = source_game, source_season, source_league
+            st.caption(_text(lang, "roster_change_help"))
             round_options = _managed_roster_rounds(
                 workbook_path, standings, calendar, source
             )
@@ -607,18 +1006,20 @@ def _render_setup_identity(
                 _text(lang, "effective_round"),
                 round_options,
                 index=round_index,
-                format_func=lambda value: f"Round {value}",
+                format_func=lambda value: _format_text(
+                    lang, "round_value", value=value
+                ),
                 key=f"{SETUP_PREFIX}identity_effective_round",
             )
             if effective_round is None:
-                st.warning(
-                    "This active league has no managed unpublished Calendar round available for a roster change."
-                )
+                st.warning(_text(lang, "no_roster_round"))
         submitted = st.form_submit_button(
             _text(lang, "continue"),
             type="primary",
             use_container_width=True,
-            disabled=source is None or (mode == "roster" and effective_round is None),
+            disabled=bool(season_error)
+            or source is None
+            or (mode == "roster" and effective_round is None),
         )
     if not submitted:
         return
@@ -631,13 +1032,18 @@ def _render_setup_identity(
         "season": str(season).strip(),
         "league": str(league).strip(),
         "effective_round": int(effective_round or 1),
+        "season_start_date": (
+            season_start_date.isoformat()
+            if mode == "new" and season_start_date is not None
+            else ""
+        ),
         "created_utc": str(
             saved.get("created_utc")
             or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         ),
     }
     if not identity["game"] or not identity["season"] or not identity["league"]:
-        errors.append("Game, season, and league name are required.")
+        errors.append(_text(lang, "identity_required"))
     existing = {
         (str(game).strip().casefold(), str(season).strip().casefold(), str(league).strip().casefold())
         for game, season, league in _championships(standings)
@@ -648,7 +1054,7 @@ def _render_setup_identity(
         str(identity["league"]).casefold(),
     )
     if mode == "new" and candidate in existing:
-        errors.append("The new league identity already exists.")
+        errors.append(_text(lang, "identity_exists"))
     if mode == "new":
         try:
             import league_config
@@ -663,9 +1069,7 @@ def _render_setup_identity(
             for _, _, existing_league in options
         }
         if normalize_league(identity["league"]) in used_league_names:
-            errors.append(
-                "League name must be unique across every current and historical league."
-            )
+            errors.append(_text(lang, "league_name_unique"))
     if mode == "roster":
         try:
             import league_config
@@ -687,13 +1091,12 @@ def _render_setup_identity(
                 if key.league_id in active_ids
             }
         except Exception as exc:
-            errors.append(f"Configured roster data could not be loaded: {exc}")
+            errors.append(
+                _format_text(lang, "configured_roster_error", error=exc)
+            )
         else:
             if tuple(source) not in configured_identities:
-                errors.append(
-                    "Roster changes are available only for the Active configuration-backed league. "
-                    "Legacy or completed leagues keep their historical/manual workflow."
-                )
+                errors.append(_text(lang, "roster_active_only"))
     if errors:
         for error in errors:
             st.error(error)
@@ -982,8 +1385,12 @@ def _render_setup_roster(
         hide_index=True,
         width="stretch",
         column_config={
-            "Driver": st.column_config.TextColumn("Driver", required=True),
-            "Team": st.column_config.TextColumn("Team", required=True),
+            "Driver": st.column_config.TextColumn(
+                _text(lang, "driver"), required=True
+            ),
+            "Team": st.column_config.TextColumn(
+                _text(lang, "team"), required=True
+            ),
             "OCR Aliases": st.column_config.TextColumn(
                 _text(lang, "aliases"),
                 help=_text(lang, "aliases_help"),
@@ -1014,13 +1421,13 @@ def _render_setup_roster(
     drivers = [str(row["Driver"]) for row in records]
     errors = []
     if len(records) < 2:
-        errors.append("The roster needs at least two drivers.")
+        errors.append(_text(lang, "roster_minimum"))
     if any(not row["Driver"] or not row["Team"] for row in records):
-        errors.append("Every roster row needs a driver and team.")
+        errors.append(_text(lang, "roster_incomplete"))
     normalized = [" ".join(name.casefold().split()) for name in drivers]
     if len(normalized) != len(set(normalized)):
-        errors.append("The roster contains a duplicate driver.")
-    errors.extend(_roster_alias_errors(records))
+        errors.append(_text(lang, "roster_duplicate"))
+    errors.extend(_roster_alias_errors(records, lang=lang))
     if errors:
         for error in errors:
             st.error(error)
@@ -1155,6 +1562,14 @@ def _render_setup_scoring(
             hide_index=True,
             width="stretch",
             disabled=["Position"],
+            column_config={
+                "Position": st.column_config.NumberColumn(
+                    _text(lang, "position")
+                ),
+                "Points": st.column_config.NumberColumn(
+                    _text(lang, "points"), min_value=0.0
+                ),
+            },
             key=f"{SETUP_PREFIX}race_scoring_editor_{roster_token}",
         )
     with columns[1]:
@@ -1169,6 +1584,14 @@ def _render_setup_scoring(
             hide_index=True,
             width="stretch",
             disabled=["Position"],
+            column_config={
+                "Position": st.column_config.NumberColumn(
+                    _text(lang, "position")
+                ),
+                "Points": st.column_config.NumberColumn(
+                    _text(lang, "points"), min_value=0.0
+                ),
+            },
             key=f"{SETUP_PREFIX}sprint_scoring_editor_{roster_token}",
         )
     st.caption(_text(lang, "fastest_bonus"))
@@ -1227,9 +1650,17 @@ def _render_setup_scoring(
         positions = [int(row.get("Position", 0) or 0) for row in records]
         points = [pd.to_numeric(row.get("Points"), errors="coerce") for row in records]
         if positions != list(range(1, len(roster) + 1)):
-            errors.append(f"{event_type} scoring must contain every roster position in order.")
+            errors.append(
+                _format_text(
+                    lang, "scoring_positions", event_type=event_type
+                )
+            )
         if any(pd.isna(value) or float(value) < 0 for value in points):
-            errors.append(f"{event_type} scoring contains an invalid points value.")
+            errors.append(
+                _format_text(
+                    lang, "scoring_points_invalid", event_type=event_type
+                )
+            )
         scoring[event_type] = [
             {"Position": position, "Points": float(value)}
             for position, value in zip(positions, points)
@@ -1237,7 +1668,9 @@ def _render_setup_scoring(
         ]
     for event_type, rule in bonuses.items():
         if rule["enabled"] and float(rule["points"]) <= 0:
-            errors.append(f"{event_type} fastest-lap bonus must be greater than zero when enabled.")
+            errors.append(
+                _format_text(lang, "bonus_invalid", event_type=event_type)
+            )
     if errors:
         for error in errors:
             st.error(error)
@@ -1399,13 +1832,23 @@ def _render_setup_calendar(
         hide_index=True,
         width="stretch",
         column_config={
-            "Round": st.column_config.NumberColumn("Round", min_value=1, step=1, required=True),
-            "Date": st.column_config.DateColumn("Date", required=True),
-            "GP Name": st.column_config.TextColumn("Grand Prix", required=True),
-            "Circuit": st.column_config.TextColumn("Circuit", required=True),
-            "Time (Lisbon)": st.column_config.TimeColumn("Lisbon start", required=True),
+            "Round": st.column_config.NumberColumn(
+                _text(lang, "round"), min_value=1, step=1, required=True
+            ),
+            "Date": st.column_config.DateColumn(
+                _text(lang, "date"), required=True
+            ),
+            "GP Name": st.column_config.TextColumn(
+                _text(lang, "grand_prix"), required=True
+            ),
+            "Circuit": st.column_config.TextColumn(
+                _text(lang, "circuit"), required=True
+            ),
+            "Time (Lisbon)": st.column_config.TimeColumn(
+                _text(lang, "lisbon_start"), required=True
+            ),
             "Has Sprint": st.column_config.CheckboxColumn(
-                "Sprint weekend", default=False
+                _text(lang, "sprint_weekend"), default=False
             ),
         },
         key=f"{SETUP_PREFIX}calendar_editor",
@@ -1423,7 +1866,9 @@ def _render_setup_calendar(
     for index, row in enumerate(records, start=1):
         round_value = pd.to_numeric(row.get("Round"), errors="coerce")
         if pd.isna(round_value) or not float(round_value).is_integer():
-            errors.append(f"Calendar row {index} needs a numeric round.")
+            errors.append(
+                _format_text(lang, "calendar_round_invalid", row=index)
+            )
             continue
         round_number = int(round_value)
         rounds.append(round_number)
@@ -1432,7 +1877,9 @@ def _render_setup_calendar(
         event_date = pd.to_datetime(row.get("Date"), errors="coerce")
         start_time = row.get("Time (Lisbon)")
         if not gp_name or not circuit or pd.isna(event_date) or start_time in (None, ""):
-            errors.append(f"Calendar row {index} is incomplete.")
+            errors.append(
+                _format_text(lang, "calendar_row_incomplete", row=index)
+            )
         normalized.append(
             {
                 "Round": round_number,
@@ -1445,14 +1892,31 @@ def _render_setup_calendar(
             }
         )
     if rounds != list(range(1, len(rounds) + 1)):
-        errors.append("Calendar rounds must be ordered and consecutive from 1.")
+        errors.append(_text(lang, "calendar_round_order"))
     dates = [row["Date"] for row in normalized if row["Date"] is not None]
     if dates != sorted(dates):
-        errors.append("Calendar dates must be in round order.")
+        errors.append(_text(lang, "calendar_date_order"))
     if errors:
         for error in errors:
             st.error(error)
         return
+    if dates:
+        try:
+            reviewed_season = derive_next_season_code(
+                min(dates),
+                _season_code_championships(
+                    workbook_path, standings, calendar
+                ),
+            )
+        except ValueError as exc:
+            st.error(_format_text(lang, "season_code_error", error=exc))
+            return
+        if reviewed_season != str(identity.get("season") or ""):
+            st.session_state[f"{SETUP_PREFIX}season_notice"] = reviewed_season
+        reviewed_identity = dict(identity)
+        reviewed_identity["season"] = reviewed_season
+        reviewed_identity["season_start_date"] = min(dates).isoformat()
+        st.session_state[f"{SETUP_PREFIX}identity"] = reviewed_identity
     st.session_state[f"{SETUP_PREFIX}calendar"] = normalized
     st.session_state[f"{SETUP_PREFIX}step"] = 5
     st.rerun()
@@ -1506,15 +1970,41 @@ def _render_setup_preview(
         return
     st.subheader(_text(lang, "preview"))
     identity = draft["identity"]
-    st.json(identity, expanded=False)
+    if season_notice := st.session_state.pop(
+        f"{SETUP_PREFIX}season_notice", None
+    ):
+        st.info(
+            _format_text(
+                lang, "season_recalculated", season=season_notice
+            )
+        )
+    identity_rows = [
+        {_text(lang, "identity"): _text(lang, "game"), _text(lang, "value"): identity.get("game", "")},
+        {_text(lang, "identity"): _text(lang, "season"), _text(lang, "value"): identity.get("season", "")},
+        {_text(lang, "identity"): _text(lang, "season_start"), _text(lang, "value"): identity.get("season_start_date", "")},
+        {_text(lang, "identity"): _text(lang, "league"), _text(lang, "value"): identity.get("league", "")},
+    ]
+    st.dataframe(pd.DataFrame(identity_rows), hide_index=True, width="stretch")
     st.caption(_text(lang, "roster"))
-    st.dataframe(pd.DataFrame(draft["roster"]), hide_index=True, width="stretch")
+    st.dataframe(
+        _localized_frame(pd.DataFrame(draft["roster"]), lang),
+        hide_index=True,
+        width="stretch",
+    )
     scoring_columns = st.columns(2)
     scoring = draft["scoring"]
     scoring_columns[0].caption(_text(lang, "race_points"))
-    scoring_columns[0].dataframe(pd.DataFrame(scoring["R"]), hide_index=True, width="stretch")
+    scoring_columns[0].dataframe(
+        _localized_frame(pd.DataFrame(scoring["R"]), lang),
+        hide_index=True,
+        width="stretch",
+    )
     scoring_columns[1].caption(_text(lang, "sprint_points"))
-    scoring_columns[1].dataframe(pd.DataFrame(scoring["SR"]), hide_index=True, width="stretch")
+    scoring_columns[1].dataframe(
+        _localized_frame(pd.DataFrame(scoring["SR"]), lang),
+        hide_index=True,
+        width="stretch",
+    )
     st.caption(_text(lang, "fastest_bonus"))
     bonus_rows = []
     for event_type in ("R", "SR"):
@@ -1522,18 +2012,29 @@ def _render_setup_preview(
         rule = rule if isinstance(rule, Mapping) else {}
         bonus_rows.append(
             {
-                "Session": "Race" if event_type == "R" else "Sprint",
+                "Session": _text(
+                    lang, "race" if event_type == "R" else "sprint"
+                ),
                 "Enabled": rule.get("enabled", False),
                 "Bonus points": rule.get("points", 0.0),
                 "Highest eligible finish": (
-                    rule.get("eligibility_max_position") or "Any classified"
+                    rule.get("eligibility_max_position")
+                    or _text(lang, "any_classified")
                 ),
             }
         )
-    st.dataframe(pd.DataFrame(bonus_rows), hide_index=True, width="stretch")
+    st.dataframe(
+        _localized_frame(pd.DataFrame(bonus_rows), lang),
+        hide_index=True,
+        width="stretch",
+    )
     if draft["calendar"]:
         st.caption(_text(lang, "calendar"))
-        st.dataframe(pd.DataFrame(draft["calendar"]), hide_index=True, width="stretch")
+        st.dataframe(
+            _localized_frame(pd.DataFrame(draft["calendar"]), lang),
+            hide_index=True,
+            width="stretch",
+        )
     try:
         publication = build_setup_publication(draft, workbook_path, standings)
     except Exception as exc:
@@ -1569,8 +2070,11 @@ def _render_setup_preview(
             except Exception:
                 pass
             st.info(
-                "The current active league will be marked Completed in the same protected update: "
-                + ", ".join(completion_labels),
+                _format_text(
+                    lang,
+                    "current_league_completed",
+                    leagues=", ".join(completion_labels),
+                ),
                 icon=":material/check_circle:",
             )
     else:
@@ -2021,6 +2525,28 @@ def build_setup_publication(
         calendar_records = draft.get("calendar")
         if not isinstance(calendar_records, list):
             raise ValueError("Calendar review is missing.")
+        reviewed_dates = pd.to_datetime(
+            [row.get("Date") for row in calendar_records], errors="coerce"
+        )
+        valid_dates = reviewed_dates[~pd.isna(reviewed_dates)]
+        if len(valid_dates) == 0:
+            raise ValueError(
+                "The reviewed Calendar needs a valid season start date."
+            )
+        import dashboard_core
+
+        reviewed_calendar = dashboard_core.load_calendar_data(workbook_path)
+        championship_identities = _season_code_championships(
+            workbook_path, standings, reviewed_calendar
+        )
+        expected_season = derive_next_season_code(
+            min(valid_dates).date(), championship_identities
+        )
+        if season != expected_season:
+            raise ValueError(
+                "Season code is stale or does not match the earliest Calendar "
+                f"date; expected {expected_season}."
+            )
         calendar_rows = _calendar_dataclasses(calendar_records)
         roster = tuple(
             league_config.RosterChange(
@@ -2118,7 +2644,7 @@ def render_event_correction(
     event = st.selectbox(
         _text(lang, "event"),
         events,
-        format_func=_format_event,
+        format_func=lambda item: _format_event(item, lang=lang),
         key=f"{CORRECTION_PREFIX}event_{token}",
     )
     try:
@@ -2137,18 +2663,19 @@ def render_event_correction(
         horizontal=True,
         key=f"{CORRECTION_PREFIX}operation_{token}_{_digest(event)[:8]}",
     )
-    import race_correction
-    import race_workbook
+    import race_metadata
 
-    metadata = race_workbook.RaceMetadata(
-        str(event["game"]),
-        str(event["season"]),
-        str(event["league"]),
-        int(event["round"]),
-        str(event["type"]),
-        str(event["gp"]),
-        str(event.get("league_id") or ""),
-    )
+    try:
+        metadata = event_metadata_from_mapping(event)
+    except (
+        TypeError,
+        ValueError,
+        race_metadata.RaceMetadataCompatibilityError,
+    ):
+        st.error(_text(lang, "event_identity_error"))
+        return
+    import race_correction
+
     try:
         snapshot = race_correction.load_event_snapshot(workbook_path, metadata)
     except race_correction.EventCorrectionError as exc:
@@ -2174,7 +2701,11 @@ def render_event_correction(
         for column in ["Finish Pos", "Driver", "Team", "Points", "Time", "Fastest Lap"]
         if column in old_rows
     ]
-    st.dataframe(old_rows[display_columns], hide_index=True, width="stretch")
+    st.dataframe(
+        _localized_frame(old_rows[display_columns], lang),
+        hide_index=True,
+        width="stretch",
+    )
 
     if operation == "replace":
         _render_replace_correction(
@@ -2267,7 +2798,7 @@ def _published_events(
             if len(matching_calendar) != 1:
                 continue
         league_id = (
-            str(matching_calendar.iloc[0].get("League ID") or "").strip()
+            _optional_text(matching_calendar.iloc[0].get("League ID"))
             if len(matching_calendar) == 1
             else ""
         )
@@ -2289,8 +2820,8 @@ def _published_events(
     )
 
 
-def _format_event(event: Mapping[str, object]) -> str:
-    session = "Sprint" if event["type"] == "SR" else "Race"
+def _format_event(event: Mapping[str, object], *, lang: str = "en") -> str:
+    session = _text(lang, "sprint" if event["type"] == "SR" else "race")
     return f"{event['season']} · {event['league']} · R{event['round']} · {event['gp']} · {session}"
 
 
@@ -2357,7 +2888,7 @@ def _render_replace_correction(
         ):
             del st.session_state[key]
     uploads = st.file_uploader(
-        "Corrected event screenshots",
+        _text(lang, "corrected_uploads"),
         type=["png", "jpg", "jpeg", "webp"],
         accept_multiple_files=True,
         help=_text(lang, "replace_help"),
@@ -2368,7 +2899,9 @@ def _render_replace_correction(
         race_import_ui.validate_screenshot_set(upload_bytes) if uploads else []
     )
     if uploads and not upload_errors:
-        with st.expander(f"View corrected screenshots ({len(uploads)})"):
+        with st.expander(
+            _format_text(lang, "view_screenshots", count=len(uploads))
+        ):
             columns = st.columns(min(2, len(uploads)))
             for index, upload in enumerate(uploads):
                 columns[index % len(columns)].image(
@@ -2377,7 +2910,7 @@ def _render_replace_correction(
     for error in upload_errors:
         st.error(error)
     if not race_import_ui.valid_screenshot_count(len(upload_bytes)):
-        st.caption("Upload between 2 and 4 screenshots from this event only.")
+        st.caption(_text(lang, "upload_count"))
     screenshot_digests = [hashlib.sha256(value).hexdigest() for value in upload_bytes]
     extract_context = _digest({**context, "screenshots": screenshot_digests})
     extract = st.button(
@@ -2392,7 +2925,7 @@ def _render_replace_correction(
     if extract:
         extract_error: str | None = None
         try:
-            with st.spinner("Reading corrected screenshots…"):
+            with st.spinner(_text(lang, "reading_screenshots")):
                 ocr_draft = race_import_ui._prepare_ocr_draft(
                     upload_bytes,
                     roster,
@@ -2434,12 +2967,12 @@ def _render_replace_correction(
         return
     editor_frame = pd.DataFrame(draft.get("rows", []))
     if editor_frame.empty:
-        st.error("No corrected result rows were recognized.")
+        st.error(_text(lang, "no_rows_recognized"))
         return
     for column in ("Position", "Driver", "Time", "Fastest Lap"):
         if column not in editor_frame:
             editor_frame[column] = ""
-    unselected = "— Select driver —"
+    unselected = _text(lang, "select_driver")
     editor_frame["Driver"] = editor_frame["Driver"].fillna("").replace("", unselected)
     editable = editor_frame[["Position", "Driver", "Time", "Fastest Lap"]].copy()
     corrected = st.data_editor(
@@ -2449,22 +2982,33 @@ def _render_replace_correction(
         num_rows="dynamic",
         column_config={
             "Position": st.column_config.NumberColumn(
-                "Position", min_value=1, max_value=len(roster), required=True
+                _text(lang, "position"),
+                min_value=1,
+                max_value=len(roster),
+                required=True,
             ),
             "Driver": st.column_config.SelectboxColumn(
-                "Driver",
+                _text(lang, "driver"),
                 options=[unselected] + [entry.driver for entry in roster],
                 required=True,
             ),
-            "Time": st.column_config.TextColumn("Time", required=True),
-            "Fastest Lap": st.column_config.TextColumn("Fastest Lap", required=True),
+            "Time": st.column_config.TextColumn(
+                _text(lang, "time"), required=True
+            ),
+            "Fastest Lap": st.column_config.TextColumn(
+                _text(lang, "fastest_lap"), required=True
+            ),
         },
         key=f"{CORRECTION_PREFIX}replacement_editor_{draft['draft_id']}",
     )
     unresolved_count = int(corrected["Driver"].eq(unselected).sum())
     if unresolved_count:
-        st.warning(f"{unresolved_count} rows need your driver choice.")
-    with st.expander("OCR confidence and source details"):
+        st.warning(
+            _format_text(
+                lang, "driver_choices_needed", count=unresolved_count
+            )
+        )
+    with st.expander(_text(lang, "ocr_details")):
         detail_columns = [
             "Position",
             "Suggested driver",
@@ -2480,9 +3024,12 @@ def _render_replace_correction(
             "Fastest Lap Notes",
         ]
         st.dataframe(
-            editor_frame[
-                [column for column in detail_columns if column in editor_frame]
-            ],
+            _localized_frame(
+                editor_frame[
+                    [column for column in detail_columns if column in editor_frame]
+                ],
+                lang,
+            ),
             hide_index=True,
             width="stretch",
         )
@@ -2507,14 +3054,24 @@ def _render_replace_correction(
             st.markdown(f"- {blocker}")
     st.subheader(_text(lang, "new_results"))
     st.dataframe(
-        pd.DataFrame(new_records).sort_values("Position", na_position="last"),
+        _localized_frame(
+            pd.DataFrame(new_records).sort_values(
+                "Position", na_position="last"
+            ),
+            lang,
+        ),
         hide_index=True,
         width="stretch",
     )
     st.subheader(_text(lang, "comparison"))
     if fastest_award is not None and fastest_award.bonus:
         st.info(
-            f"Fastest-lap bonus: {fastest_award.driver_name} +{fastest_award.bonus:g} points"
+            _format_text(
+                lang,
+                "fastest_bonus_award",
+                driver=fastest_award.driver_name,
+                bonus=fastest_award.bonus,
+            )
         )
     new_by_position = {
         int(row["Position"]): row
@@ -2549,7 +3106,9 @@ def _render_replace_correction(
             for position in positions
         ]
     )
-    st.dataframe(comparison, hide_index=True, width="stretch")
+    st.dataframe(
+        _localized_frame(comparison, lang), hide_index=True, width="stretch"
+    )
     request = {
         "operation": "replace",
         "event": dict(event),

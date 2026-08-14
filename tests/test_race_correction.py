@@ -198,10 +198,6 @@ class RealWorkbookCorrectionTests(unittest.TestCase):
                 column_cell_snapshots(after_parts[leagues_part], {"O", "P"}),
                 helper_cells,
             )
-            self.assertEqual(
-                after_parts[workbook._PIVOT_SOURCE_PART],
-                before_parts[workbook._PIVOT_SOURCE_PART],
-            )
 
     def test_race_undo_clears_only_event_cells_and_reopens_calendar(self):
         with TemporaryDirectory(dir=PROJECT_ROOT) as temporary_directory:
@@ -256,10 +252,6 @@ class RealWorkbookCorrectionTests(unittest.TestCase):
             self.assertEqual(
                 column_cell_snapshots(after_parts[leagues_part], {"O", "P"}),
                 helper_cells,
-            )
-            self.assertEqual(
-                after_parts[workbook._PIVOT_SOURCE_PART],
-                before_parts[workbook._PIVOT_SOURCE_PART],
             )
 
     def test_sprint_undo_never_changes_main_race_calendar_status(self):
