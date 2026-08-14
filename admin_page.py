@@ -17,7 +17,7 @@ import streamlit as st
 import admin_auth
 
 
-APP_VERSION = "v41"
+APP_VERSION = "v42"
 PUBLIC_DASHBOARD_URL = "https://f1-game-dashboard.streamlit.app/"
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
@@ -111,8 +111,8 @@ with st.sidebar:
 # These modules construct the remote publication, OCR, and workbook-write
 # capabilities.  They must remain after the authorization boundary above.
 import dashboard_core as core
+import admin_management_ui
 import race_github as github_store
-import race_import_ui
 
 
 st.markdown(
@@ -309,6 +309,96 @@ def _publish(
         raise
 
 
+def _publish_league_setup(
+    draft,
+    expected_source_version: str,
+    approved: bool,
+):
+    """Recheck Admin authorization and rebuild one reviewed setup mutation."""
+
+    _require_current_admin()
+    if str(draft.get("source_version") or "") != expected_source_version:
+        raise github_store.GitHubConflictError(
+            "The reviewed league setup is not bound to this workbook version."
+        )
+    mutation = admin_management_ui.build_setup_publication(
+        draft,
+        str(workbook_path),
+        standings,
+    )
+    try:
+        return github_store.publish_league_workbook_update(
+            config,
+            mutation=mutation,
+            expected_blob_sha=expected_source_version,
+            approved=approved,
+            commit_message="Create or update protected league configuration",
+        )
+    except github_store.GitHubConflictError:
+        _clear_remote_snapshot()
+        raise
+
+
+def _publish_correction(
+    request,
+    expected_source_version: str,
+    approved: bool,
+):
+    """Adapt the reviewed UI request to the correction publication boundary."""
+
+    _require_current_admin()
+    if str(request.get("source_version") or "") != expected_source_version:
+        raise github_store.GitHubConflictError(
+            "The reviewed correction is not bound to this workbook version."
+        )
+    import race_import
+    import race_workbook
+
+    event = request.get("event", {})
+    metadata = race_workbook.RaceMetadata(
+        str(event.get("game") or ""),
+        str(event.get("season") or ""),
+        str(event.get("league") or ""),
+        int(event.get("round", 0)),
+        str(event.get("type") or ""),
+        str(event.get("gp") or ""),
+        str(event.get("league_id") or ""),
+    )
+    roster = [
+        race_import.DriverEntry(
+            str(row.get("Driver") or "").strip(),
+            str(row.get("Team") or "").strip(),
+        )
+        for row in request.get("authoritative_roster", ())
+    ]
+    scoring = {
+        int(position): float(points)
+        for position, points in dict(
+            request.get("authoritative_scoring") or {}
+        ).items()
+    }
+    try:
+        return github_store.publish_event_correction(
+            config,
+            metadata=metadata,
+            action=str(request.get("operation") or ""),
+            expected_event_digest=str(request.get("expected_event_digest") or ""),
+            expected_blob_sha=expected_source_version,
+            approved=approved,
+            rows=request.get("new_rows", ()),
+            authoritative_roster=roster,
+            authoritative_scoring=scoring,
+            commit_message=(
+                f"{str(request.get('operation') or 'correct').title()} "
+                f"{metadata.event_type} results: {metadata.gp_name} "
+                f"(round {metadata.round_number})"
+            ),
+        )
+    except github_store.GitHubConflictError:
+        _clear_remote_snapshot()
+        raise
+
+
 with TemporaryDirectory(prefix="f1-race-review-") as temporary_directory:
     workbook_path = Path(temporary_directory) / Path(config.workbook_path).name
     workbook_path.write_bytes(remote_content)
@@ -325,14 +415,16 @@ with TemporaryDirectory(prefix="f1-race-review-") as temporary_directory:
         )
         st.stop()
 
-    race_import_ui.render_race_import(
+    admin_management_ui.render_admin_management(
         str(workbook_path),
         standings,
         calendar,
         lang=lang,
         clear_data_cache=_clear_remote_snapshot,
         source_version=remote_blob_sha,
-        hosted_publisher=_publish,
+        import_publisher=_publish,
+        setup_publisher=_publish_league_setup,
+        correction_publisher=_publish_correction,
         dashboard_url=PUBLIC_DASHBOARD_URL,
     )
 

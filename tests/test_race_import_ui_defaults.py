@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 
 import dashboard_core as core
+import league_config
 import race_import_ui as ui
 
 
@@ -195,6 +196,128 @@ class AdminDefaultInferenceTests(unittest.TestCase):
         self.assertFalse(defaults.confident)
         self.assertEqual(defaults.event.round_number, 4)
 
+    def test_import_options_hide_managed_draft_and_completed_leagues(self):
+        identities = [
+            ("active-id", "F1 27", "2027-T01", "Active League", "Active"),
+            ("completed-id", "F1 26", "2026-T02", "Completed League", "Completed"),
+            ("draft-id", "F1 28", "2028-T01", "Draft League", "Draft"),
+        ]
+        tables = league_config.ConfigTables(
+            pd.DataFrame(
+                [
+                    [league_id, game, season, league, status, "", "2026-08-14T12:00:00Z", 1]
+                    for league_id, game, season, league, status in identities
+                ],
+                columns=league_config.LEAGUE_CONFIG_COLUMNS,
+            ),
+            pd.DataFrame(
+                [
+                    [league_id, 1, f"{league_id} Driver", f"{league_id} Team", ""]
+                    for league_id, *_ in identities
+                ],
+                columns=league_config.ROSTER_CONFIG_COLUMNS,
+            ),
+            pd.DataFrame(
+                [
+                    [f"{league_id}:R:1", league_id, "R", 1, 0, None]
+                    for league_id, *_ in identities
+                ],
+                columns=league_config.SCORING_PROFILE_COLUMNS,
+            ),
+            pd.DataFrame(
+                [
+                    [f"{league_id}:R:1", 1, 25]
+                    for league_id, *_ in identities
+                ],
+                columns=league_config.SCORING_POINT_COLUMNS,
+            ),
+        )
+        league_config.validate_config_tables(tables)
+        historical = pd.concat(
+            [
+                standings_rows(
+                    "F1 26", "2026-T02", "Completed League", [(1, "Old GP", "R")]
+                ),
+                standings_rows(
+                    "F1 25", "2025-T01", "Unmanaged Legacy", [(1, "Legacy GP", "R")]
+                ),
+            ],
+            ignore_index=True,
+        )
+
+        options = ui._championship_options(historical, tables)
+
+        self.assertIn(("F1 27", "2027-T01", "Active League"), options)
+        self.assertIn(("F1 25", "2025-T01", "Unmanaged Legacy"), options)
+        self.assertNotIn(("F1 26", "2026-T02", "Completed League"), options)
+        self.assertNotIn(("F1 28", "2028-T01", "Draft League"), options)
+
+    def test_done_configured_race_with_undone_sprint_defaults_to_sprint_recovery(self):
+        league_id = "active-sprint-recovery"
+        game = "F1 27"
+        season = "2027-T01"
+        league = "Sprint Recovery League"
+        tables = league_config.ConfigTables(
+            pd.DataFrame(
+                [[league_id, game, season, league, "Active", "", "2026-08-14T12:00:00Z", 1]],
+                columns=league_config.LEAGUE_CONFIG_COLUMNS,
+            ),
+            pd.DataFrame(
+                [[league_id, 1, "Driver One", "Team One", ""]],
+                columns=league_config.ROSTER_CONFIG_COLUMNS,
+            ),
+            pd.DataFrame(
+                [
+                    [f"{league_id}:R:1", league_id, "R", 1, 0, None],
+                    [f"{league_id}:SR:1", league_id, "SR", 1, 0, None],
+                ],
+                columns=league_config.SCORING_PROFILE_COLUMNS,
+            ),
+            pd.DataFrame(
+                [
+                    [f"{league_id}:R:1", 1, 25],
+                    [f"{league_id}:SR:1", 1, 8],
+                ],
+                columns=league_config.SCORING_POINT_COLUMNS,
+            ),
+        )
+        league_config.validate_config_tables(tables)
+        # This is the exact post-Undo state: the complete Race remains, the
+        # configured Sprint is absent, and Race publication keeps Calendar Done.
+        standings = standings_rows(
+            game, season, league, [(1, "British GP", "R")]
+        )
+        calendar = pd.DataFrame(
+            [
+                {
+                    "League Name": league,
+                    "Round": 1,
+                    "Date": pd.Timestamp("2027-07-18"),
+                    "GP Name": "British GP",
+                    "Circuit": "Silverstone",
+                    "Status": "Done",
+                    "Time (Lisbon)": "15:00",
+                    "Game": game,
+                    "Season": season,
+                    "Has Sprint": True,
+                    "League ID": league_id,
+                }
+            ]
+        )
+
+        defaults = ui.infer_admin_defaults(standings, calendar, tables)
+
+        self.assertTrue(defaults.confident)
+        self.assertEqual(defaults.championship, (game, season, league))
+        self.assertEqual(defaults.event.round_number, 1)
+        self.assertEqual(defaults.event.gp_name, "British GP")
+        self.assertEqual(defaults.event.event_type, "SR")
+
+        duplicated = pd.concat([calendar, calendar], ignore_index=True)
+        ambiguous = ui.infer_admin_defaults(standings, duplicated, tables)
+        self.assertFalse(ambiguous.confident)
+        self.assertFalse(ambiguous.event.confident)
+
 
 class _FakeStreamlit:
     def __init__(self) -> None:
@@ -282,24 +405,85 @@ class AdminDefaultUiTests(unittest.TestCase):
         self.assertEqual(fake.radio_indices, [0, 1])
         self.assertEqual(second.event_type, "SR")
 
-    def test_session_synchronization_keeps_the_same_upload_widget_state(self):
+    def test_successful_ocr_can_rotate_upload_widget_without_losing_review_hashes(self):
         key_before = ui._upload_widget_key(
             "source1",
             "championship1",
             2,
             "Australian GP",
         )
-        state = {key_before: [b"screenshot-one", b"screenshot-two"]}
-        state["race_import_session_override"] = "SR"
+        state = {
+            key_before: [b"screenshot-one", b"screenshot-two"],
+            "race_import_uploads_v2_stale_context_0": [b"stale-screenshot"],
+            "race_import_draft": {"screenshot_hashes": ["digest-one", "digest-two"]},
+            ui.EXTRACTION_ERROR_KEY: "stale error",
+        }
         key_after = ui._upload_widget_key(
             "source1",
             "championship1",
             2,
             "Australian GP",
+            generation=1,
         )
 
-        self.assertEqual(key_after, key_before)
-        self.assertEqual(state[key_after], [b"screenshot-one", b"screenshot-two"])
+        ui.finalize_ocr_attempt(
+            state,
+            upload_widget_key=key_before,
+            upload_generation=0,
+        )
+
+        self.assertNotEqual(key_after, key_before)
+        self.assertNotIn(key_before, state)
+        self.assertFalse(
+            any(str(key).startswith("race_import_uploads_v2_") for key in state)
+        )
+        self.assertEqual(state["race_import_upload_generation"], 1)
+        self.assertNotIn(ui.EXTRACTION_ERROR_KEY, state)
+        self.assertEqual(
+            state["race_import_draft"]["screenshot_hashes"],
+            ["digest-one", "digest-two"],
+        )
+
+    def test_failed_ocr_discards_uploads_and_old_review_but_keeps_text_error(self):
+        current_key = ui._upload_widget_key(
+            "source1",
+            "championship1",
+            2,
+            "Australian GP",
+            generation=3,
+        )
+        state = {
+            current_key: [b"screenshot-one", b"screenshot-two"],
+            "race_import_uploads_v2_other_context_2": [b"older-screenshot"],
+            "race_import_draft": {
+                "rows": [{"Driver": "Old review"}],
+                "screenshot_hashes": ["old-digest"],
+            },
+            "race_import_detected_notice": "Old session notice",
+            "dashboard_filter": "public-state",
+        }
+
+        ui.finalize_ocr_attempt(
+            state,
+            upload_widget_key=current_key,
+            upload_generation=3,
+            error_message="The selected screenshots could not be reconciled.",
+        )
+
+        self.assertFalse(
+            any(str(key).startswith("race_import_uploads_v2_") for key in state)
+        )
+        self.assertNotIn("race_import_draft", state)
+        self.assertNotIn("race_import_detected_notice", state)
+        self.assertEqual(state["race_import_upload_generation"], 4)
+        self.assertEqual(
+            state[ui.EXTRACTION_ERROR_KEY],
+            "The selected screenshots could not be reconciled.",
+        )
+        self.assertIsInstance(state[ui.EXTRACTION_ERROR_KEY], str)
+        self.assertNotIn("b'screenshot", repr(state).casefold())
+        self.assertNotIn("b'older-screenshot", repr(state).casefold())
+        self.assertEqual(state["dashboard_filter"], "public-state")
 
     def test_success_reset_removes_stale_filters_uploads_and_draft(self):
         state = {
@@ -317,6 +501,63 @@ class AdminDefaultUiTests(unittest.TestCase):
         self.assertFalse(
             any(key.startswith("race_import_") and key != "race_import_success" for key in state)
         )
+
+    def test_config_only_active_league_is_automatically_selected_for_its_first_event(self):
+        setup = league_config.LeagueSetup(
+            key=league_config.LeagueKey(
+                "league-new",
+                "F1 27",
+                "2027-T01",
+                "New League",
+            ),
+            calendar=(
+                league_config.CalendarRound(
+                    1,
+                    pd.Timestamp("2027-03-14").date(),
+                    "Australian GP",
+                    "Albert Park",
+                ),
+            ),
+            roster=(
+                league_config.RosterChange(
+                    "league-new", 1, "New Driver", "New Team"
+                ),
+            ),
+            scoring_profiles=(
+                league_config.ScoringProfile(
+                    "league-new:R:1", "league-new", "R", 1
+                ),
+            ),
+            scoring_points=(
+                league_config.ScoringPoint("league-new:R:1", 1, 25),
+            ),
+            status="Active",
+        )
+        tables = league_config.config_tables_from_setup(setup)
+        calendar = pd.DataFrame(
+            [
+                {
+                    "League Name": "New League",
+                    "Round": 1,
+                    "Date": pd.Timestamp("2027-03-14"),
+                    "GP Name": "Australian GP",
+                    "Circuit": "Albert Park",
+                    "Status": "Upcoming",
+                    "Time (Lisbon)": "06:00",
+                    "Game": "F1 27",
+                    "Season": "2027-T01",
+                    "Has Sprint": False,
+                    "League ID": "league-new",
+                }
+            ]
+        )
+
+        defaults = ui.infer_admin_defaults(self.standings, calendar, tables)
+
+        self.assertTrue(defaults.confident)
+        self.assertEqual(defaults.championship, ("F1 27", "2027-T01", "New League"))
+        self.assertEqual(defaults.event.round_number, 1)
+        self.assertEqual(defaults.event.gp_name, "Australian GP")
 
 
 class SessionAutoDetectionTests(unittest.TestCase):

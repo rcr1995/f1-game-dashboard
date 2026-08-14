@@ -125,6 +125,31 @@ class DashboardCoreTests(unittest.TestCase):
         self.assertEqual(loaded.iloc[0]["GP Name"], "Season Final")
         self.assertEqual(loaded.iloc[0]["Type"], "R")
 
+    def test_calendar_loader_parses_false_text_without_truthiness_and_blocks_unknown(self):
+        leagues = self.normalized_results().iloc[:1].drop(
+            columns=["SeasonLabel", "SeasonNum", "IsSeasonFinal"]
+        )
+        calendar = pd.DataFrame(
+            [
+                {
+                    "League Name": "League",
+                    "Round": 1,
+                    "Date": "2026-01-10",
+                    "GP Name": "Bahrain GP",
+                    "Circuit": "Bahrain",
+                    "Status": "Upcoming",
+                    "Time (Lisbon)": "20:00",
+                    "Has Sprint": "False",
+                }
+            ]
+        )
+        loaded = core.load_calendar_data(self.workbook_bytes(leagues, calendar))
+        self.assertFalse(bool(loaded.iloc[0]["Has Sprint"]))
+
+        calendar.loc[0, "Has Sprint"] = "sometimes"
+        with self.assertRaisesRegex(core.WorkbookValidationError, "invalid boolean"):
+            core.load_calendar_data(self.workbook_bytes(leagues, calendar))
+
     def test_cumulative_points_progress_by_round(self):
         _, long = core.cumulative_points_wide(self.normalized_results(), "Driver", all_time=False)
         alice = long[long["Driver"] == "Alice"].sort_values("EventIdx")

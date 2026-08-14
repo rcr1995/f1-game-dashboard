@@ -1,4 +1,4 @@
-"""Safe GitHub-backed persistence for hosted race imports.
+"""Safe GitHub-backed persistence for protected Admin workbook updates.
 
 The Streamlit deployment cannot durably edit its checked-out workbook.  This
 module instead authenticates as a repository-scoped GitHub App installation,
@@ -20,11 +20,14 @@ from pathlib import Path, PurePosixPath
 import re
 from tempfile import TemporaryDirectory
 import time
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Iterable, Mapping, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+import league_workbook
+import race_correction as correction
+import race_import as race
 import race_workbook as workbook
 
 
@@ -149,6 +152,30 @@ class HostedCommitResult:
     last_excel_row: int
     calendar_updated: bool
     workbook_sha256: str
+
+
+@dataclass(frozen=True)
+class HostedCorrectionResult:
+    commit_sha: str
+    commit_url: str
+    blob_sha: str
+    action: correction.CorrectionAction
+    affected_excel_rows: tuple[int, ...]
+    rows_replaced: int
+    rows_removed: int
+    calendar_updated: bool
+    workbook_sha256: str
+
+
+@dataclass(frozen=True)
+class HostedWorkbookUpdateResult:
+    commit_sha: str
+    commit_url: str
+    blob_sha: str
+    workbook_sha256: str
+    rows_added_by_sheet: Mapping[str, int]
+    calendar_rows_added: int
+    changed_parts: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -296,7 +323,7 @@ def _api_message_mentions_sha(response_body: bytes) -> bool:
 
 
 class GitHubAppClient:
-    """Authenticated client for the two GitHub operations this workflow needs."""
+    """Authenticated client for protected workbook fetch and publication flows."""
 
     def __init__(
         self,
@@ -440,6 +467,65 @@ class GitHubAppClient:
     def fetch_workbook(self) -> RemoteWorkbook:
         return self._fetch_with_token(self.create_installation_token())
 
+    def _publish_updated_workbook(
+        self,
+        *,
+        token: InstallationToken,
+        remote: RemoteWorkbook,
+        updated_bytes: bytes,
+        message: str,
+        operation: str,
+    ) -> tuple[str, str, str]:
+        """Perform one contents-API CAS and verify the returned blob."""
+
+        response = self._request_json(
+            "PUT",
+            self._contents_url(include_ref=False),
+            bearer=token.token,
+            payload={
+                "message": message,
+                "content": b64encode(updated_bytes).decode("ascii"),
+                "sha": remote.blob_sha,
+                "branch": self.config.branch,
+            },
+            expected_status={200},
+            operation=operation,
+        )
+        commit = response.get("commit")
+        content = response.get("content")
+        if not isinstance(commit, dict) or not isinstance(content, dict):
+            raise GitHubAPIError(
+                "GitHub accepted the update but returned incomplete commit metadata.",
+                status_code=200,
+                publication_may_have_succeeded=True,
+            )
+        commit_sha = commit.get("sha")
+        commit_url = commit.get("html_url")
+        updated_blob_sha = content.get("sha")
+        expected_updated_blob_sha = hashlib.sha1(
+            f"blob {len(updated_bytes)}\0".encode("ascii") + updated_bytes,
+            usedforsecurity=False,
+        ).hexdigest()
+        if (
+            not isinstance(commit_sha, str)
+            or not re.fullmatch(r"[0-9a-fA-F]{40,64}", commit_sha)
+            or not isinstance(updated_blob_sha, str)
+            or updated_blob_sha.casefold() != expected_updated_blob_sha.casefold()
+        ):
+            raise GitHubAPIError(
+                "GitHub accepted the update but returned incomplete commit metadata.",
+                status_code=200,
+                publication_may_have_succeeded=True,
+            )
+        if not isinstance(commit_url, str) or not commit_url:
+            owner = quote(self.config.owner, safe="")
+            repository = quote(self.config.repository, safe="")
+            commit_url = (
+                f"{self.config.web_base_url.rstrip('/')}/{owner}/{repository}/commit/"
+                f"{quote(commit_sha, safe='')}"
+            )
+        return commit_sha, commit_url, updated_blob_sha
+
     def publish_race_import(
         self,
         *,
@@ -483,49 +569,13 @@ class GitHubAppClient:
             )
             updated_bytes = temporary_path.read_bytes()
 
-        response = self._request_json(
-            "PUT",
-            self._contents_url(include_ref=False),
-            bearer=token.token,
-            payload={
-                "message": message,
-                "content": b64encode(updated_bytes).decode("ascii"),
-                "sha": remote.blob_sha,
-                "branch": self.config.branch,
-            },
-            expected_status={200},
+        commit_sha, commit_url, updated_blob_sha = self._publish_updated_workbook(
+            token=token,
+            remote=remote,
+            updated_bytes=updated_bytes,
+            message=message,
             operation="workbook publication",
         )
-        commit = response.get("commit")
-        content = response.get("content")
-        if not isinstance(commit, dict) or not isinstance(content, dict):
-            raise GitHubAPIError(
-                "GitHub accepted the update but returned incomplete commit metadata.",
-                status_code=200,
-                publication_may_have_succeeded=True,
-            )
-        commit_sha = commit.get("sha")
-        commit_url = commit.get("html_url")
-        updated_blob_sha = content.get("sha")
-        expected_updated_blob_sha = hashlib.sha1(
-            f"blob {len(updated_bytes)}\0".encode("ascii") + updated_bytes,
-            usedforsecurity=False,
-        ).hexdigest()
-        if (
-            not isinstance(commit_sha, str)
-            or not re.fullmatch(r"[0-9a-fA-F]{40,64}", commit_sha)
-            or not isinstance(updated_blob_sha, str)
-            or updated_blob_sha.casefold() != expected_updated_blob_sha.casefold()
-        ):
-            raise GitHubAPIError(
-                "GitHub accepted the update but returned incomplete commit metadata.",
-                status_code=200,
-                publication_may_have_succeeded=True,
-            )
-        if not isinstance(commit_url, str) or not commit_url:
-            owner = quote(self.config.owner, safe="")
-            repository = quote(self.config.repository, safe="")
-            commit_url = f"{self.config.web_base_url.rstrip('/')}/{owner}/{repository}/commit/{quote(commit_sha, safe='')}"
         return HostedCommitResult(
             commit_sha=commit_sha,
             commit_url=commit_url,
@@ -535,6 +585,156 @@ class GitHubAppClient:
             last_excel_row=local_result.last_excel_row,
             calendar_updated=local_result.calendar_updated,
             workbook_sha256=local_result.workbook_sha256,
+        )
+
+    def publish_event_correction(
+        self,
+        *,
+        metadata: workbook.RaceMetadata,
+        action: correction.CorrectionAction | str,
+        expected_event_digest: str,
+        expected_blob_sha: str,
+        approved: bool,
+        rows: Iterable[Mapping[str, object]] = (),
+        authoritative_roster: Sequence[race.DriverEntry] | Sequence[Mapping[str, object]] = (),
+        authoritative_scoring: Mapping[int, float] | None = None,
+        commit_message: str | None = None,
+    ) -> HostedCorrectionResult:
+        """Validate one reviewed correction and publish it with one blob CAS."""
+
+        if not approved:
+            raise workbook.ApprovalRequiredError(
+                "GitHub correction requires explicit approval from the old-versus-new review."
+            )
+        try:
+            correction_action = correction.CorrectionAction(action)
+        except ValueError as exc:
+            raise correction.EventCorrectionError(
+                "Correction action must be replace or undo."
+            ) from exc
+        reviewed_blob_sha = str(expected_blob_sha or "")
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", reviewed_blob_sha):
+            raise GitHubConflictError(
+                "The reviewed workbook version is missing or invalid. Reload and review again."
+            )
+        reviewed_event_digest = str(expected_event_digest or "")
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", reviewed_event_digest):
+            raise GitHubConflictError(
+                "The reviewed event snapshot is missing or invalid. Reload and review again."
+            )
+        message = (
+            commit_message
+            or (
+                f"{correction_action.value.title()} {metadata.event_type} results: "
+                f"{metadata.gp_name} (round {metadata.round_number})"
+            )
+        ).strip()
+        if not message:
+            raise GitHubConfigurationError("GitHub commit message cannot be empty.")
+
+        token = self.create_installation_token()
+        remote = self._fetch_with_token(token)
+        if remote.blob_sha.casefold() != reviewed_blob_sha.casefold():
+            raise GitHubConflictError(
+                "The workbook changed after this correction review was created. Reload and review again."
+            )
+
+        reviewed_rows = [dict(row) for row in rows]
+        roster = list(authoritative_roster)
+        scoring = dict(authoritative_scoring or {})
+        with TemporaryDirectory(prefix="f1-hosted-event-correction-") as temporary_directory:
+            temporary_path = Path(temporary_directory) / Path(self.config.workbook_path).name
+            temporary_path.write_bytes(remote.content)
+            local_result = correction.commit_event_correction(
+                temporary_path,
+                metadata=metadata,
+                action=correction_action,
+                rows=reviewed_rows,
+                authoritative_roster=roster,
+                authoritative_scoring=scoring,
+                expected_event_digest=reviewed_event_digest,
+                expected_sha256=workbook.workbook_fingerprint(temporary_path),
+                approved=True,
+                backup_directory=Path(temporary_directory) / "backup",
+            )
+            updated_bytes = temporary_path.read_bytes()
+
+        commit_sha, commit_url, updated_blob_sha = self._publish_updated_workbook(
+            token=token,
+            remote=remote,
+            updated_bytes=updated_bytes,
+            message=message,
+            operation="event correction publication",
+        )
+        return HostedCorrectionResult(
+            commit_sha=commit_sha,
+            commit_url=commit_url,
+            blob_sha=updated_blob_sha,
+            action=local_result.action,
+            affected_excel_rows=local_result.affected_excel_rows,
+            rows_replaced=local_result.rows_replaced,
+            rows_removed=local_result.rows_removed,
+            calendar_updated=local_result.calendar_updated,
+            workbook_sha256=local_result.workbook_sha256,
+        )
+
+    def publish_league_workbook_update(
+        self,
+        *,
+        mutation: league_workbook.LeagueWorkbookMutation,
+        expected_blob_sha: str,
+        approved: bool,
+        commit_message: str | None = None,
+    ) -> HostedWorkbookUpdateResult:
+        """Validate one league mutation and publish it with one blob CAS."""
+
+        if not approved:
+            raise workbook.ApprovalRequiredError(
+                "GitHub league update requires explicit approval from the complete preview."
+            )
+        reviewed_blob_sha = str(expected_blob_sha or "")
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", reviewed_blob_sha):
+            raise GitHubConflictError(
+                "The reviewed workbook version is missing or invalid. Reload and review again."
+            )
+        message = (commit_message or "Create or update protected league configuration").strip()
+        if not message:
+            raise GitHubConfigurationError("GitHub commit message cannot be empty.")
+
+        token = self.create_installation_token()
+        remote = self._fetch_with_token(token)
+        if remote.blob_sha.casefold() != reviewed_blob_sha.casefold():
+            raise GitHubConflictError(
+                "The workbook changed after this league preview was created. Reload and review again."
+            )
+
+        with TemporaryDirectory(prefix="f1-hosted-league-update-") as temporary_directory:
+            temporary_path = Path(temporary_directory) / Path(self.config.workbook_path).name
+            temporary_path.write_bytes(remote.content)
+            local_result = league_workbook.commit_league_workbook_update(
+                temporary_path,
+                mutation=mutation,
+                expected_sha256=workbook.workbook_fingerprint(temporary_path),
+                approved=True,
+                backup_directory=Path(temporary_directory) / "backup",
+            )
+            updated_bytes = temporary_path.read_bytes()
+
+        commit_sha, commit_url, updated_blob_sha = self._publish_updated_workbook(
+            token=token,
+            remote=remote,
+            updated_bytes=updated_bytes,
+            message=message,
+            operation="league workbook publication",
+        )
+        return HostedWorkbookUpdateResult(
+            commit_sha=commit_sha,
+            commit_url=commit_url,
+            blob_sha=updated_blob_sha,
+            workbook_sha256=local_result.workbook_sha256,
+            rows_added_by_sheet=dict(local_result.rows_added_by_sheet),
+            calendar_rows_added=local_result.calendar_rows_added,
+            changed_parts=local_result.changed_parts,
         )
 
 
@@ -572,6 +772,52 @@ def publish_race_import(
         metadata=metadata,
         rows=rows,
         scoring_profile=scoring_profile,
+        expected_blob_sha=expected_blob_sha,
+        approved=approved,
+        commit_message=commit_message,
+    )
+
+
+def publish_event_correction(
+    config: GitHubAppConfig,
+    *,
+    metadata: workbook.RaceMetadata,
+    action: correction.CorrectionAction | str,
+    expected_event_digest: str,
+    expected_blob_sha: str,
+    approved: bool,
+    rows: Iterable[Mapping[str, object]] = (),
+    authoritative_roster: Sequence[race.DriverEntry] | Sequence[Mapping[str, object]] = (),
+    authoritative_scoring: Mapping[int, float] | None = None,
+    commit_message: str | None = None,
+    transport: HttpTransport | None = None,
+    clock: Clock = time.time,
+) -> HostedCorrectionResult:
+    return GitHubAppClient(config, transport=transport, clock=clock).publish_event_correction(
+        metadata=metadata,
+        action=action,
+        rows=rows,
+        authoritative_roster=authoritative_roster,
+        authoritative_scoring=authoritative_scoring,
+        expected_event_digest=expected_event_digest,
+        expected_blob_sha=expected_blob_sha,
+        approved=approved,
+        commit_message=commit_message,
+    )
+
+
+def publish_league_workbook_update(
+    config: GitHubAppConfig,
+    *,
+    mutation: league_workbook.LeagueWorkbookMutation,
+    expected_blob_sha: str,
+    approved: bool,
+    commit_message: str | None = None,
+    transport: HttpTransport | None = None,
+    clock: Clock = time.time,
+) -> HostedWorkbookUpdateResult:
+    return GitHubAppClient(config, transport=transport, clock=clock).publish_league_workbook_update(
+        mutation=mutation,
         expected_blob_sha=expected_blob_sha,
         approved=approved,
         commit_message=commit_message,
