@@ -478,6 +478,7 @@ class GitHubAppClient:
                 scoring_profile=scoring_profile,
                 expected_sha256=workbook.workbook_fingerprint(temporary_path),
                 approved=True,
+                require_complete_timing=True,
                 backup_directory=Path(temporary_directory) / "backup",
             )
             updated_bytes = temporary_path.read_bytes()

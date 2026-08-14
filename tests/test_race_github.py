@@ -237,6 +237,7 @@ class GitHubPersistenceTests(unittest.TestCase):
             temporary_paths.append(temporary_path)
             self.assertEqual(temporary_path.read_bytes(), original)
             self.assertTrue(kwargs["approved"])
+            self.assertTrue(kwargs["require_complete_timing"])
             self.assertEqual(kwargs["expected_sha256"], workbook.workbook_fingerprint(temporary_path))
             temporary_path.write_bytes(updated)
             return workbook.CommitResult(
