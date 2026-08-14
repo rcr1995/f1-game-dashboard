@@ -23,7 +23,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Compile Python modules
-        run: python -m py_compile app.py dashboard_page.py admin_page.py admin_app.py admin_auth.py dashboard_core.py puskas_html.py race_import.py race_ocr.py race_workbook.py race_github.py race_import_ui.py
+        run: python -m py_compile app.py dashboard_page.py admin_page.py admin_app.py admin_auth.py admin_management_ui.py dashboard_core.py league_config.py league_runtime.py league_workbook.py puskas_html.py race_correction.py race_import.py race_ocr.py race_workbook.py race_github.py race_import_ui.py
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v

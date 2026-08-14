@@ -33,6 +33,12 @@ CALENDAR_COLUMNS = [
     "Circuit",
     "Status",
     "Time (Lisbon)",
+    # Optional protected-Admin identity metadata. Legacy workbooks remain
+    # valid because load_calendar_data supplies blank defaults.
+    "Game",
+    "Season",
+    "Has Sprint",
+    "League ID",
 ]
 SEASON_TOTAL_MARKERS = {"all", "season total", "final", "season final"}
 
@@ -159,6 +165,30 @@ def empty_calendar() -> pd.DataFrame:
     return pd.DataFrame(columns=CALENDAR_COLUMNS)
 
 
+def _calendar_boolean(value: object, *, column: str = "Has Sprint") -> bool:
+    """Parse one workbook boolean without Python's truthy-string coercion."""
+
+    if value is None or pd.isna(value):
+        return False
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+        if int(value) in {0, 1}:
+            return bool(int(value))
+    if isinstance(value, (float, np.floating)) and np.isfinite(float(value)):
+        if float(value) in {0.0, 1.0}:
+            return bool(int(value))
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"true", "yes", "y", "sim", "s", "1"}:
+            return True
+        if normalized in {"false", "no", "n", "não", "nao", "0", ""}:
+            return False
+    raise WorkbookValidationError(
+        f"Calendar column '{column}' contains an invalid boolean value: {value!r}."
+    )
+
+
 def load_calendar_data(source: str | Path | BinaryIO) -> pd.DataFrame:
     """Load the optional ``Calendar`` worksheet, normalizing missing columns."""
     try:
@@ -180,13 +210,20 @@ def load_calendar_data(source: str | Path | BinaryIO) -> pd.DataFrame:
         "Circuit": "",
         "Status": "",
         "Time (Lisbon)": pd.NA,
+        "Game": "",
+        "Season": "",
+        "Has Sprint": False,
+        "League ID": "",
     }
     for column, default in defaults.items():
         if column not in result.columns:
             result[column] = default
 
-    for column in ["League Name", "GP Name", "Circuit", "Status"]:
+    for column in ["League Name", "GP Name", "Circuit", "Status", "Game", "Season", "League ID"]:
         result[column] = result[column].fillna("").astype(str).str.strip()
+    result["Has Sprint"] = result["Has Sprint"].map(
+        lambda value: _calendar_boolean(value, column="Has Sprint")
+    )
     result["Round"] = pd.to_numeric(result["Round"], errors="coerce").astype("Int64")
     result["Date"] = pd.to_datetime(result["Date"], errors="coerce")
     result = result[~(result["GP Name"].eq("") & result["Date"].isna())].copy()

@@ -169,6 +169,9 @@ class RaceMetadata:
     round_number: int
     event_type: str
     gp_name: str
+    # Immutable identity for configuration-backed leagues.  Legacy callers
+    # may omit it; protected Admin setup always supplies it.
+    league_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -362,11 +365,24 @@ def _calendar_excel_row(path: Path, metadata: RaceMetadata) -> int | None:
     required = {"League Name", "Round", "GP Name"}
     if not required.issubset(calendar.columns):
         return None
-    mask = (
-        calendar["League Name"].fillna("").astype(str).str.strip().eq(metadata.league)
-        & pd.to_numeric(calendar["Round"], errors="coerce").eq(metadata.round_number)
-        & calendar["GP Name"].fillna("").astype(str).str.strip().eq(metadata.gp_name)
-    )
+    if metadata.league_id:
+        if "League ID" not in calendar.columns:
+            return None
+        mask = (
+            calendar["League ID"].fillna("").astype(str).str.strip().eq(metadata.league_id)
+            & pd.to_numeric(calendar["Round"], errors="coerce").eq(metadata.round_number)
+            & calendar["GP Name"].fillna("").astype(str).str.strip().eq(metadata.gp_name)
+        )
+        if "Game" in calendar.columns:
+            mask &= calendar["Game"].fillna("").astype(str).str.strip().eq(metadata.game)
+        if "Season" in calendar.columns:
+            mask &= calendar["Season"].fillna("").astype(str).str.strip().eq(metadata.season)
+    else:
+        mask = (
+            calendar["League Name"].fillna("").astype(str).str.strip().eq(metadata.league)
+            & pd.to_numeric(calendar["Round"], errors="coerce").eq(metadata.round_number)
+            & calendar["GP Name"].fillna("").astype(str).str.strip().eq(metadata.gp_name)
+        )
     indexes = calendar.index[mask].tolist()
     if len(indexes) > 1:
         raise WorkbookUpdateError("Calendar contains more than one matching event row.")
@@ -375,6 +391,10 @@ def _calendar_excel_row(path: Path, metadata: RaceMetadata) -> int | None:
 
 def _calendar_identity_is_unambiguous(standings: pd.DataFrame, metadata: RaceMetadata) -> bool:
     """A Calendar row without Game/Season columns must map to one championship."""
+    if metadata.league_id:
+        # _calendar_excel_row already required the immutable ID and, when
+        # present, exact Game/Season columns.  Reused display labels are safe.
+        return True
     season_column = "SeasonLabel" if "SeasonLabel" in standings.columns else "Season"
     league_rows = standings[standings["League Name"].astype(str).eq(metadata.league)]
     championships = league_rows[["Game", season_column]].astype(str).drop_duplicates()
@@ -598,30 +618,45 @@ def _commit_race_import_locked(
         raise WorkbookUpdateError(
             "The Calendar league does not identify exactly this championship; use the manual Excel workflow."
         )
-    try:
-        roster = race.derive_championship_roster(
-            before,
-            game=metadata.game,
-            season=metadata.season,
-            league=metadata.league,
-        )
-        verified_scoring = race.infer_scoring_profile(
-            before,
-            game=metadata.game,
-            season=metadata.season,
-            league=metadata.league,
-            event_type=metadata.event_type,
-            grid_size=len(roster),
-        )
-    except (race.RosterError, race.ScoringProfileError) as exc:
-        raise WorkbookUpdateError(f"The workbook can no longer verify this import: {exc}") from exc
+    # Resolve configured snapshots first so a new league's very first event,
+    # replacement drivers, team changes, custom Sprint rules, and optional
+    # fastest-lap bonus all have an authoritative workbook source. Legacy
+    # championships continue to derive the same values from result history.
+    import league_runtime
+
+    authority = league_runtime.resolve_event_authority(path, before, metadata)
+    if authority.league_key is not None:
+        import league_config
+
+        try:
+            league_config.require_active_configured_league(
+                league_config.load_config_tables(path),
+                authority.league_key.league_id,
+            )
+        except league_config.LeagueConfigError as exc:
+            raise WorkbookUpdateError(
+                f"The configured league cannot accept new results: {exc}"
+            ) from exc
+    roster = list(authority.roster)
+    verified_scoring = authority.base_points
 
     supplied_scoring = {int(position): float(points) for position, points in scoring_profile.items()}
     if supplied_scoring != verified_scoring:
         raise WorkbookUpdateError("The approved scoring profile does not match the workbook's verified rules.")
+    supplied_rows = [dict(row) for row in rows]
+    scored_rows, _ = league_runtime.apply_configured_points(supplied_rows, authority)
+    total_scoring = {
+        int(row["Position"]): float(row["Points"])
+        for row in scored_rows
+    }
+    for supplied, expected in zip(supplied_rows, scored_rows, strict=True):
+        if "Points" in supplied and float(supplied["Points"]) != float(expected["Points"]):
+            raise WorkbookUpdateError(
+                f"Points for position {expected['Position']} do not match the configured rules."
+            )
     normalized_rows = _validate_commit_rows(
-        rows,
-        verified_scoring,
+        scored_rows,
+        total_scoring,
         require_complete_timing=require_complete_timing,
     )
     roster_map = {entry.driver: entry.team for entry in roster}

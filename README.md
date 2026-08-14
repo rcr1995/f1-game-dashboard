@@ -161,7 +161,52 @@ current admin identity, reviewed Git blob, event uniqueness, full roster,
 teams, positions, and scoring; then it performs the preservation-oriented OOXML
 transaction and publishes only the validated workbook with an optimistic blob
 version check. Concurrent, duplicate, stale, or invented data is blocked and
-must be reviewed again. Screenshots and credentials are never committed.
+must be reviewed again. After every OCR attempt the uploader is rotated and its
+image bytes are discarded. A successful attempt retains only screenshot hashes
+and review rows; a failed attempt retains only a one-shot text error and clears
+any older review. Screenshots and credentials are never committed.
+
+### League setup, roster changes, and corrections
+
+The protected Admin task selector renders only one workflow at a time. **League
+& roster setup** creates a new unique game/season/league identity, copies the
+latest source roster for editing, accepts new drivers and teams, configures
+complete Race and Sprint position points plus optional fastest-lap rules, and
+builds an ordered Calendar including Sprint-weekend flags. The final preview is
+bound to the reviewed GitHub blob and requires explicit approval. Publishing
+adds configuration and Calendar rows without altering previous results; when a
+configured league is active and every one of its managed Calendar rows is
+already `Done`, the same transaction marks it Completed before activating its
+successor. A league with unfinished rounds is blocked from being closed.
+
+Configuration-backed leagues can also publish a complete roster snapshot from
+a specified future round. Adding, removing, replacing, or moving a driver to a
+different team therefore changes only that round and later rounds. Historical
+events continue resolving the earlier snapshot. The same future snapshot may
+revise complete Race/Sprint and fastest-lap rules for the new grid size. The UI
+defaults to the next unpublished Calendar round and rejects any effective round
+that already has results. Legacy leagues keep the manual Excel workflow for
+roster changes; the next league can be brought under managed configuration
+through the new-league wizard.
+
+Each roster row may also contain optional **Alternative screenshot names**.
+These reviewed spellings are copied into future leagues and round-effective
+roster snapshots, and are used only to match OCR text to that exact configured
+driver. An OCR name that is not the canonical driver name or one of these
+controlled alternatives is never created automatically: it remains unresolved
+until the admin selects an existing driver or first publishes a legitimate
+roster change.
+
+**Correct published event** selects one exact Calendar/result identity. Replace
+requires 2–4 corrected screenshots and the same controlled OCR review, then
+shows the currently published values beside the proposed replacement. Undo
+shows every row being removed; undoing a Race restores only its exact Calendar
+row to `Upcoming`, while undoing a Sprint does not change Calendar status. Both
+operations create a new Git commit, preserve later events and the original
+mistake in Git history, and require a source-versioned, digest-bound approval.
+For an Active managed league, an undone scheduled Sprint automatically returns
+as the next Sprint import while its completed Race remains intact. Completed or
+Draft managed leagues allow replacement only, preventing unrecoverable gaps.
 
 RapidOCR may download recognition models the first time extraction is used;
 later extraction uses cached models. Editing `F1_Standings.xlsx` directly and
@@ -199,6 +244,15 @@ The optional `Calendar` worksheet supports:
 - `Circuit`
 - `Status`
 - `Time (Lisbon)`
+- `Game`, `Season`, and immutable `League ID` for managed leagues
+- `Has Sprint`
+
+Managed leagues additionally use the locked `League Config`, `Roster Config`,
+`Scoring Profiles`, and `Scoring Points` worksheets. These tables provide the
+authoritative first-event roster, round-effective team assignments, Race and
+Sprint scoring, and optional fastest-lap bonus eligibility. Older workbooks
+without those sheets continue using verified result history and the manual
+Excel workflow.
 
 If `Calendar` is missing, standings remain available and the app displays a schedule-feature warning. Missing required sheets or columns, blank identifiers, invalid rounds, and non-numeric results stop loading with a clear message.
 
@@ -216,7 +270,7 @@ Run the automated checks with:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile app.py admin_app.py dashboard_page.py admin_page.py admin_auth.py dashboard_core.py puskas_html.py race_import.py race_ocr.py race_workbook.py race_github.py race_import_ui.py
+python -m py_compile app.py admin_app.py dashboard_page.py admin_page.py admin_auth.py admin_management_ui.py dashboard_core.py league_config.py league_runtime.py league_workbook.py puskas_html.py race_correction.py race_import.py race_ocr.py race_workbook.py race_github.py race_import_ui.py
 ```
 
 The GitHub Actions workflow runs these checks and performs a minimal Streamlit startup test for every push and pull request.
@@ -228,7 +282,11 @@ The GitHub Actions workflow runs these checks and performs a minimal Streamlit s
 - `admin_page.py` — fail-closed hosted Admin controller and phone-friendly UI
 - `admin_app.py` — compatibility entrypoint to the same protected Admin route
 - `admin_auth.py` — password/OIDC authorization, lockout, sessions, and logout-state clearing
+- `admin_management_ui.py` — conditional league setup, roster snapshot, and correction workflows
 - `dashboard_core.py` — workbook validation, normalization, and standings calculations
+- `league_config.py` / `league_runtime.py` — managed roster and scoring models plus per-round authority
+- `league_workbook.py` — preservation-oriented league/configuration transactions
+- `race_correction.py` — approval-gated replacement and undo transactions
 - `race_import.py` — controlled matching, reconciliation, and review validation
 - `race_ocr.py` — lazy OCR and bounded raster-image validation
 - `race_workbook.py` — approval-gated, serialized safe OOXML transaction

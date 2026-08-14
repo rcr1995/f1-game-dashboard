@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 from collections.abc import MutableMapping
@@ -15,6 +16,8 @@ import streamlit as st
 
 import admin_auth
 import dashboard_core as core
+import league_config as league_cfg
+import league_runtime
 import race_github as ghstore
 import race_import as ri
 import race_ocr
@@ -248,11 +251,49 @@ def _upload_widget_key(
     context_key: str,
     round_number: int,
     gp_name: str,
+    generation: int = 0,
 ) -> str:
     """Keep attached files stable when OCR synchronizes Race/Sprint."""
     return (
         f"race_import_uploads_v2_{source_token}_{context_key}_{round_number}_"
-        f"{hashlib.sha1(str(gp_name).encode()).hexdigest()[:6]}"
+        f"{hashlib.sha1(str(gp_name).encode()).hexdigest()[:6]}_{int(generation)}"
+    )
+
+
+EXTRACTION_ERROR_KEY = "race_import_extraction_error"
+_UPLOAD_WIDGET_PREFIX = "race_import_uploads_v2_"
+
+
+def finalize_ocr_attempt(
+    session_state: MutableMapping[object, object],
+    *,
+    upload_widget_key: str,
+    upload_generation: int,
+    error_message: str | None = None,
+) -> None:
+    """Discard attempted screenshots and rotate the uploader generation.
+
+    The OCR review may retain only normalized review data and non-reversible
+    screenshot hashes.  A failed attempt clears any older review so rotating
+    the uploader cannot accidentally make that stale approval current again;
+    only a text error survives for the next render.
+    """
+
+    for key in list(session_state):
+        if isinstance(key, str) and (
+            key == upload_widget_key or key.startswith(_UPLOAD_WIDGET_PREFIX)
+        ):
+            del session_state[key]
+    session_state["race_import_upload_generation"] = int(upload_generation) + 1
+    if error_message is None:
+        session_state.pop(EXTRACTION_ERROR_KEY, None)
+        return
+
+    session_state.pop("race_import_draft", None)
+    session_state.pop("race_import_detected_notice", None)
+    message = str(error_message).strip()
+    session_state[EXTRACTION_ERROR_KEY] = message or (
+        "OCR could not finish reading these screenshots. Upload a fresh set and try again."
     )
 
 
@@ -265,9 +306,15 @@ def reset_import_state_after_success(
     session_state["race_import_success"] = success
 
 
-def _championship_options(data: pd.DataFrame) -> list[tuple[str, str, str]]:
-    pairs = data[["Game", "SeasonLabel", "League Name"]].drop_duplicates()
-    options = [tuple(map(str, row)) for row in pairs.itertuples(index=False, name=None)]
+def _championship_options(
+    data: pd.DataFrame,
+    config_tables: league_cfg.ConfigTables | None = None,
+) -> list[tuple[str, str, str]]:
+    if config_tables is not None:
+        options = [tuple(row[:3]) for row in league_runtime.championship_options(data, config_tables)]
+    else:
+        pairs = data[["Game", "SeasonLabel", "League Name"]].drop_duplicates()
+        options = [tuple(map(str, row)) for row in pairs.itertuples(index=False, name=None)]
     return sorted(
         options,
         key=lambda item: (
@@ -326,20 +373,106 @@ def _selected_championship_rows(
     ].copy()
 
 
+def _selected_event_rows(
+    selected: pd.DataFrame,
+    *,
+    round_number: int,
+    gp_name: str,
+    event_type: str,
+) -> pd.DataFrame:
+    if selected.empty or not {"Round", "Type", "GP Name"}.issubset(selected.columns):
+        return selected.iloc[0:0].copy()
+    return selected[
+        pd.to_numeric(selected["Round"], errors="coerce").eq(round_number)
+        & selected["Type"].fillna("R").astype(str).str.strip().str.upper().eq(event_type)
+        & selected["GP Name"].fillna("").astype(str).str.strip().eq(gp_name)
+    ].copy()
+
+
+def _configured_event_is_complete(
+    selected: pd.DataFrame,
+    tables: league_cfg.ConfigTables,
+    *,
+    league_id: str,
+    round_number: int,
+    gp_name: str,
+    event_type: str,
+) -> bool:
+    """Verify one exact event against its effective configured roster."""
+
+    try:
+        roster = league_cfg.resolve_roster_snapshot(tables, league_id, round_number)
+    except league_cfg.LeagueConfigError:
+        return False
+    event = _selected_event_rows(
+        selected,
+        round_number=round_number,
+        gp_name=gp_name,
+        event_type=event_type,
+    )
+    if event.empty or len(event) != len(roster):
+        return False
+    required = {"Driver", "Team", "Finish Pos", "Points"}
+    if not required.issubset(event.columns):
+        return False
+    positions = pd.to_numeric(event["Finish Pos"], errors="coerce")
+    points = pd.to_numeric(event["Points"], errors="coerce")
+    if (
+        positions.isna().any()
+        or points.isna().any()
+        or points.lt(0).any()
+        or not positions.map(lambda value: float(value).is_integer()).all()
+        or not points.map(lambda value: math.isfinite(float(value))).all()
+        or set(positions.astype(int)) != set(range(1, len(roster) + 1))
+    ):
+        return False
+    actual = {
+        (
+            league_cfg.normalize_identity(driver),
+            league_cfg.normalize_identity(team),
+        )
+        for driver, team in event[["Driver", "Team"]]
+        .fillna("")
+        .itertuples(index=False, name=None)
+    }
+    expected = {
+        (
+            league_cfg.normalize_identity(row.driver_name),
+            league_cfg.normalize_identity(row.team_name),
+        )
+        for row in roster
+    }
+    return (
+        len(actual) == len(roster)
+        and all(driver and team for driver, team in actual)
+        and actual == expected
+    )
+
+
 def _calendar_candidates(
     selected: pd.DataFrame,
     calendar: pd.DataFrame,
     league: str,
+    league_id: str = "",
+    *,
+    game: str = "",
+    season: str = "",
+    config_tables: league_cfg.ConfigTables | None = None,
 ) -> pd.DataFrame:
-    """Return valid Upcoming rows whose Race result is not already present."""
+    """Return ordinary Race candidates plus safe missing-Sprint recovery."""
     required_columns = {"League Name", "Round", "GP Name", "Status"}
     if calendar.empty or not required_columns.issubset(calendar.columns):
         return calendar.iloc[0:0].copy()
-    league_calendar = (
-        calendar[calendar["League Name"].astype(str).eq(league)].copy()
-        if "League Name" in calendar
-        else calendar.iloc[0:0].copy()
-    )
+    if league_id and "League ID" in calendar:
+        league_calendar = calendar[
+            calendar["League ID"].fillna("").astype(str).str.strip().eq(league_id)
+        ].copy()
+    else:
+        league_calendar = (
+            calendar[calendar["League Name"].astype(str).eq(league)].copy()
+            if "League Name" in calendar
+            else calendar.iloc[0:0].copy()
+        )
     if league_calendar.empty:
         return league_calendar
 
@@ -352,12 +485,11 @@ def _calendar_candidates(
         & gp_names.ne("")
         & statuses.eq("upcoming")
     ].copy()
-    if upcoming.empty:
-        return upcoming
-
-    upcoming["_Round"] = pd.to_numeric(upcoming["Round"], errors="coerce").astype(int)
-    upcoming["_GPKey"] = upcoming["GP Name"].map(ri.normalize_name)
-    upcoming["_Date"] = pd.to_datetime(upcoming.get("Date"), errors="coerce")
+    if not upcoming.empty:
+        upcoming["_Round"] = pd.to_numeric(upcoming["Round"], errors="coerce").astype(int)
+        upcoming["_GPKey"] = upcoming["GP Name"].map(ri.normalize_name)
+        upcoming["_Date"] = pd.to_datetime(upcoming.get("Date"), errors="coerce")
+        upcoming["_EventType"] = "R"
 
     completed_races = selected[selected["Type"].astype(str).str.upper().eq("R")].copy()
     completed_keys = {
@@ -365,12 +497,93 @@ def _calendar_candidates(
         for row_round, gp_name in completed_races[["Round", "GP Name"]].itertuples(index=False, name=None)
         if not pd.isna(row_round)
     }
-    return upcoming[
-        ~upcoming.apply(
-            lambda row: (int(row["_Round"]), str(row["_GPKey"])) in completed_keys,
-            axis=1,
+    if not upcoming.empty:
+        upcoming = upcoming[
+            ~upcoming.apply(
+                lambda row: (int(row["_Round"]), str(row["_GPKey"])) in completed_keys,
+                axis=1,
+            )
+        ].copy()
+
+    recovery_rows: list[pd.Series] = []
+    if league_id and config_tables is not None:
+        configured_rows = config_tables.league_config[
+            config_tables.league_config["League ID"].astype(str).str.strip().eq(league_id)
+        ]
+        configured_identity_ok = (
+            len(configured_rows) == 1
+            and str(configured_rows.iloc[0]["Status"]).strip().casefold() == "active"
+            and (
+                str(configured_rows.iloc[0]["Game"]).strip(),
+                str(configured_rows.iloc[0]["Season"]).strip(),
+                str(configured_rows.iloc[0]["League Name"]).strip(),
+            )
+            == (game, season, league)
         )
-    ].copy()
+        if configured_identity_ok:
+            for index, row in league_calendar.iterrows():
+                numeric_round = pd.to_numeric(row.get("Round"), errors="coerce")
+                gp_name = str(row.get("GP Name") or "").strip()
+                try:
+                    has_sprint = core._calendar_boolean(
+                        row.get("Has Sprint", False), column="Has Sprint"
+                    )
+                except core.WorkbookValidationError:
+                    continue
+                exact_calendar_identity = (
+                    str(row.get("Game") or "").strip(),
+                    str(row.get("Season") or "").strip(),
+                    str(row.get("League Name") or "").strip(),
+                ) == (game, season, league)
+                if (
+                    pd.isna(numeric_round)
+                    or not float(numeric_round).is_integer()
+                    or int(numeric_round) < 1
+                    or not gp_name
+                    or str(row.get("Status") or "").strip().casefold() != "done"
+                    or not has_sprint
+                    or not exact_calendar_identity
+                ):
+                    continue
+                round_number = int(numeric_round)
+                sprint_rows = _selected_event_rows(
+                    selected,
+                    round_number=round_number,
+                    gp_name=gp_name,
+                    event_type="SR",
+                )
+                if not sprint_rows.empty or not _configured_event_is_complete(
+                    selected,
+                    config_tables,
+                    league_id=league_id,
+                    round_number=round_number,
+                    gp_name=gp_name,
+                    event_type="R",
+                ):
+                    continue
+                candidate = row.copy()
+                candidate["_Round"] = round_number
+                candidate["_GPKey"] = ri.normalize_name(gp_name)
+                candidate["_Date"] = pd.to_datetime(row.get("Date"), errors="coerce")
+                candidate["_EventType"] = "SR"
+                candidate.name = index
+                recovery_rows.append(candidate)
+
+    recovery = (
+        pd.DataFrame(recovery_rows)
+        if recovery_rows
+        else league_calendar.iloc[0:0].assign(
+            _Round=pd.Series(dtype=int),
+            _GPKey=pd.Series(dtype=str),
+            _Date=pd.Series(dtype="datetime64[ns]"),
+            _EventType=pd.Series(dtype=str),
+        )
+    )
+    if upcoming.empty:
+        return recovery
+    if recovery.empty:
+        return upcoming
+    return pd.concat([upcoming, recovery], ignore_index=False, sort=False)
 
 
 def _gp_options(
@@ -378,12 +591,18 @@ def _gp_options(
     calendar: pd.DataFrame,
     league: str,
     default_gp: str,
+    league_id: str = "",
 ) -> tuple[str, ...]:
-    league_calendar = (
-        calendar[calendar["League Name"].astype(str).eq(league)]
-        if not calendar.empty and "League Name" in calendar
-        else calendar.iloc[0:0]
-    )
+    if league_id and not calendar.empty and "League ID" in calendar:
+        league_calendar = calendar[
+            calendar["League ID"].fillna("").astype(str).str.strip().eq(league_id)
+        ]
+    else:
+        league_calendar = (
+            calendar[calendar["League Name"].astype(str).eq(league)]
+            if not calendar.empty and "League Name" in calendar
+            else calendar.iloc[0:0]
+        )
     calendar_gps = [
         str(value).strip()
         for value in league_calendar.get("GP Name", pd.Series(dtype=object)).dropna().tolist()
@@ -404,9 +623,19 @@ def _event_default_for_championship(
     game: str,
     season: str,
     league: str,
+    league_id: str = "",
+    config_tables: league_cfg.ConfigTables | None = None,
 ) -> EventDefaults:
     selected = _selected_championship_rows(data, game, season, league)
-    candidates = _calendar_candidates(selected, calendar, league)
+    candidates = _calendar_candidates(
+        selected,
+        calendar,
+        league,
+        league_id,
+        game=game,
+        season=season,
+        config_tables=config_tables,
+    )
 
     confident = False
     event_date: date | None = None
@@ -427,6 +656,7 @@ def _event_default_for_championship(
         else:
             same_priority = ordered[ordered["_Date"].eq(pd.Timestamp(event_date))]
         confident = not identity_duplicates and len(same_priority) == 1
+        default_event_type = str(next_row.get("_EventType") or "R").upper()
     else:
         latest_round = int(selected["Round"].max()) if not selected.empty else 0
         latest_rows = selected[pd.to_numeric(selected["Round"], errors="coerce").eq(latest_round)]
@@ -435,9 +665,14 @@ def _event_default_for_championship(
         # still the expected event. Otherwise fall forward one round.
         default_round = latest_round if "SR" in latest_types and "R" not in latest_types else latest_round + 1
         default_round = max(1, default_round)
+        calendar_identity = (
+            calendar["League ID"].fillna("").astype(str).str.strip().eq(league_id)
+            if league_id and "League ID" in calendar
+            else calendar["League Name"].astype(str).eq(league)
+        ) if not calendar.empty else pd.Series(False, index=calendar.index)
         matching = (
             calendar[
-                calendar["League Name"].astype(str).eq(league)
+                calendar_identity
                 & pd.to_numeric(calendar["Round"], errors="coerce").eq(default_round)
             ]
             if not calendar.empty
@@ -445,14 +680,15 @@ def _event_default_for_championship(
             else calendar.iloc[0:0]
         )
         default_gp = str(matching.iloc[0]["GP Name"]).strip() if len(matching) == 1 else ""
+        default_event_type = "R"
 
     # Every calendar event has a Race, while Sprint is optional. If Sprint is
     # already present and Race is absent, Race is still the only safe default.
     return EventDefaults(
         round_number=default_round,
         gp_name=default_gp,
-        event_type="R",
-        gp_options=_gp_options(selected, calendar, league, default_gp),
+        event_type=default_event_type if default_event_type in {"R", "SR"} else "R",
+        gp_options=_gp_options(selected, calendar, league, default_gp, league_id),
         event_date=event_date,
         confident=confident,
     )
@@ -461,11 +697,39 @@ def _event_default_for_championship(
 def infer_admin_defaults(
     data: pd.DataFrame,
     calendar: pd.DataFrame,
+    config_tables: league_cfg.ConfigTables | None = None,
 ) -> AdminDefaults:
     """Infer one active championship/event, failing closed on ambiguity."""
-    options = _championship_options(data)
+    options = _championship_options(data, config_tables)
     if not options:
         raise ValueError("No championship data is available.")
+
+    configured_ids: dict[tuple[str, str, str], str] = {}
+    if config_tables is not None:
+        configured_ids = {
+            (key.game, key.season, key.league_name): key.league_id
+            for key in league_cfg.configured_league_keys(config_tables)
+        }
+        active_rows = config_tables.league_config[
+            config_tables.league_config["Status"].astype(str).str.casefold().eq("active")
+        ]
+        configured_active: list[tuple[tuple[str, str, str], EventDefaults]] = []
+        for row in active_rows.to_dict("records"):
+            option = (str(row["Game"]), str(row["Season"]), str(row["League Name"]))
+            if option not in options:
+                continue
+            event = _event_default_for_championship(
+                data,
+                calendar,
+                *option,
+                str(row["League ID"]),
+                config_tables,
+            )
+            if event.confident:
+                configured_active.append((option, event))
+        if len(configured_active) == 1:
+            option, event = configured_active[0]
+            return AdminDefaults(option, event, True)
 
     by_league: dict[str, list[tuple[str, str, str]]] = {}
     for option in options:
@@ -478,7 +742,13 @@ def infer_admin_defaults(
         if len(league_options) != 1:
             continue
         option = league_options[0]
-        event = _event_default_for_championship(data, calendar, *option)
+        event = _event_default_for_championship(
+            data,
+            calendar,
+            *option,
+            configured_ids.get(option, ""),
+            config_tables,
+        )
         if event.confident:
             active.append((option, event))
 
@@ -486,13 +756,22 @@ def infer_admin_defaults(
         option, event = active[0]
         return AdminDefaults(option, event, True)
 
-    _, latest = core.latest_league_slice(data)
-    fallback = (str(latest["Game"]), str(latest["SeasonLabel"]), str(latest["League Name"]))
+    if data.empty:
+        fallback = options[0]
+    else:
+        _, latest = core.latest_league_slice(data)
+        fallback = (str(latest["Game"]), str(latest["SeasonLabel"]), str(latest["League Name"]))
     if fallback not in options:
         fallback = options[0]
     return AdminDefaults(
         fallback,
-        _event_default_for_championship(data, calendar, *fallback),
+        _event_default_for_championship(
+            data,
+            calendar,
+            *fallback,
+            configured_ids.get(fallback, ""),
+            config_tables,
+        ),
         False,
     )
 
@@ -843,6 +1122,7 @@ def _require_local_admin(*, hosted: bool, expired: bool = False) -> bool:
 @dataclass(frozen=True)
 class RenderedEventFilters:
     championship: tuple[str, str, str]
+    league_id: str
     round_number: int
     gp_name: str
     event_type: str
@@ -855,12 +1135,21 @@ def _render_event_filters(
     *,
     lang: str,
     source_token: str,
+    config_tables: league_cfg.ConfigTables | None = None,
 ) -> RenderedEventFilters:
     """Render pre-selected but editable event metadata controls."""
-    options = _championship_options(standings)
+    options = _championship_options(standings, config_tables)
     if not options:
         raise ValueError("No championship data is available.")
-    automatic = infer_admin_defaults(standings, calendar)
+    automatic = infer_admin_defaults(standings, calendar, config_tables)
+    league_ids = (
+        {
+            (key.game, key.season, key.league_name): key.league_id
+            for key in league_cfg.configured_league_keys(config_tables)
+        }
+        if config_tables is not None
+        else {}
+    )
     championship_index = (
         options.index(automatic.championship)
         if automatic.championship in options
@@ -880,6 +1169,7 @@ def _render_event_filters(
             key=f"race_import_championship_v2_{source_token}",
         )
         game, season, league = championship
+        league_id = league_ids.get(championship, "")
         context_key = hashlib.sha256("|".join(championship).encode("utf-8")).hexdigest()[:10]
         event_defaults = _event_default_for_championship(
             standings,
@@ -887,6 +1177,8 @@ def _render_event_filters(
             game,
             season,
             league,
+            league_id,
+            config_tables,
         )
 
         metadata_columns = st.columns([1, 2.4, 1.2])
@@ -901,9 +1193,14 @@ def _render_event_filters(
                     key=f"race_import_round_v2_{source_token}_{context_key}",
                 )
             )
+        calendar_identity = (
+            calendar["League ID"].fillna("").astype(str).str.strip().eq(league_id)
+            if league_id and "League ID" in calendar
+            else calendar["League Name"].astype(str).eq(league)
+        ) if not calendar.empty else pd.Series(False, index=calendar.index)
         matching_calendar = (
             calendar[
-                calendar["League Name"].astype(str).eq(league)
+                calendar_identity
                 & pd.to_numeric(calendar["Round"], errors="coerce").eq(round_number)
             ]
             if not calendar.empty
@@ -978,6 +1275,7 @@ def _render_event_filters(
     )
     return RenderedEventFilters(
         championship=championship,
+        league_id=league_id,
         round_number=round_number,
         gp_name=str(gp_name).strip(),
         event_type=event_type,
@@ -1030,52 +1328,29 @@ def render_race_import(
         str(reviewed_source_version).encode("utf-8")
     ).hexdigest()[:10]
     try:
+        config_tables = league_cfg.load_config_tables(workbook_path)
         filters = _render_event_filters(
             standings,
             calendar,
             lang=lang,
             source_token=source_token,
+            config_tables=config_tables,
         )
-    except ValueError:
+    except (ValueError, league_cfg.LeagueConfigError):
         st.error("No championship data is available.")
         return
     championship = filters.championship
     game, season, league = championship
+    league_id = filters.league_id
     context_key = hashlib.sha256("|".join(championship).encode("utf-8")).hexdigest()[:10]
     round_number = filters.round_number
     gp_name = filters.gp_name
     event_type = filters.event_type
     if detected_notice := st.session_state.pop("race_import_detected_notice", None):
         st.info(str(detected_notice))
+    if extraction_error := st.session_state.pop(EXTRACTION_ERROR_KEY, None):
+        st.error(str(extraction_error))
     st.caption(text(lang, "one_event"))
-    try:
-        roster = ri.derive_championship_roster(
-            standings,
-            game=game,
-            season=season,
-            league=league,
-        )
-    except ri.RosterError as exc:
-        st.error(str(exc))
-        return
-
-    try:
-        scoring = ri.infer_scoring_profile(
-            standings,
-            game=game,
-            season=season,
-            league=league,
-            event_type=event_type,
-            grid_size=len(roster),
-        )
-    except ri.ScoringProfileError as exc:
-        st.error(str(exc))
-        return
-    info_columns = st.columns(2)
-    info_columns[0].metric(text(lang, "roster"), f"{len(roster)} drivers")
-    info_columns[1].caption(text(lang, "scoring"))
-    info_columns[1].code(_display_points(scoring), language=None)
-
     metadata = rw.RaceMetadata(
         game,
         season,
@@ -1083,13 +1358,52 @@ def render_race_import(
         round_number,
         event_type,
         str(gp_name).strip(),
+        league_id,
+    )
+    try:
+        authority = league_runtime.resolve_event_authority(
+            workbook_path,
+            standings,
+            metadata,
+        )
+        roster = list(authority.roster)
+        scoring = authority.base_points
+    except league_runtime.LeagueAuthorityError as exc:
+        st.error(str(exc))
+        return
+    info_columns = st.columns(2)
+    info_columns[0].metric(text(lang, "roster"), f"{len(roster)} drivers")
+    info_columns[1].caption(text(lang, "scoring"))
+    info_columns[1].code(_display_points(scoring), language=None)
+    if authority.scoring.fastest_lap_bonus > 0:
+        eligibility = authority.scoring.fastest_lap_max_finish
+        eligible_text = (
+            f"top {eligibility}"
+            if eligibility is not None
+            else "all classified drivers"
+        )
+        info_columns[1].caption(
+            (
+                f"Fastest lap: +{authority.scoring.fastest_lap_bonus:g} point(s), {eligible_text}."
+                if lang == "en"
+                else f"Volta mais rápida: +{authority.scoring.fastest_lap_bonus:g} ponto(s), elegível: {eligible_text}."
+            )
+        )
+
+    upload_generation = int(st.session_state.get("race_import_upload_generation", 0))
+    upload_widget_key = _upload_widget_key(
+        source_token,
+        context_key,
+        round_number,
+        str(gp_name),
+        upload_generation,
     )
     uploads = st.file_uploader(
         text(lang, "screenshots"),
         type=["png", "jpg", "jpeg", "webp"],
         accept_multiple_files=True,
         help=text(lang, "screenshots_help"),
-        key=_upload_widget_key(source_token, context_key, round_number, str(gp_name)),
+        key=upload_widget_key,
     )
     upload_bytes = [upload.getvalue() for upload in uploads] if uploads else []
     upload_errors = validate_screenshot_set(upload_bytes) if uploads else []
@@ -1109,22 +1423,33 @@ def render_race_import(
                     caption=f"Screenshot {index} · {upload.name}",
                     width="stretch",
                 )
-    if not valid_screenshot_count(len(upload_bytes)):
+    if not valid_screenshot_count(len(upload_bytes)) and not existing_draft:
         st.caption(text(lang, "needs_two"))
     for upload_error in upload_errors:
         st.error(upload_error)
 
+    retained_screenshot_hashes = (
+        list(existing_draft.get("screenshot_hashes", []))
+        if isinstance(existing_draft, dict)
+        else []
+    )
+    current_screenshot_hashes = (
+        [_sha256_bytes(value) for value in upload_bytes]
+        if upload_bytes
+        else retained_screenshot_hashes
+    )
     context = {
         "game": game,
         "season": season,
         "league": league,
+        "league_id": league_id,
         "round": round_number,
         "type": event_type,
         "gp": str(gp_name).strip(),
         "mode": "hosted" if hosted else "local",
         "workbook_sha256": workbook_sha,
         "source_version": reviewed_source_version,
-        "screenshots": [_sha256_bytes(value) for value in upload_bytes],
+        "screenshots": current_screenshot_hashes,
     }
     current_context_digest = _context_digest(context)
     action_columns = st.columns(2)
@@ -1158,6 +1483,7 @@ def render_race_import(
             st.error("The screenshot set did not pass validation.")
             st.stop()
             return
+        extraction_error: str | None = None
         try:
             with st.spinner(
                 "Reading screenshots locally…" if lang == "en" else "A ler as capturas localmente…"
@@ -1175,14 +1501,6 @@ def render_race_import(
             if session_changed:
                 event_type = str(detected_type)
                 st.session_state[filters.session_override_key] = event_type
-                scoring = ri.infer_scoring_profile(
-                    standings,
-                    game=game,
-                    season=season,
-                    league=league,
-                    event_type=event_type,
-                    grid_size=len(roster),
-                )
                 metadata = rw.RaceMetadata(
                     game,
                     season,
@@ -1190,7 +1508,15 @@ def render_race_import(
                     round_number,
                     event_type,
                     str(gp_name).strip(),
+                    league_id,
                 )
+                authority = league_runtime.resolve_event_authority(
+                    workbook_path,
+                    standings,
+                    metadata,
+                )
+                roster = list(authority.roster)
+                scoring = authority.base_points
                 context["type"] = event_type
                 current_context_digest = _context_digest(context)
             st.session_state["race_import_draft"] = {
@@ -1198,6 +1524,9 @@ def render_race_import(
                 "workbook_sha256": workbook_sha,
                 "source_version": reviewed_source_version,
                 "rows": ocr_draft.rows,
+                # Only non-reversible digests remain after successful OCR;
+                # raw screenshots are removed from the uploader state.
+                "screenshot_hashes": list(context["screenshots"]),
                 "token_count": ocr_draft.token_count,
                 "draft_id": ri.review_digest(ocr_draft.rows, context)[:12],
             }
@@ -1210,21 +1539,36 @@ def render_race_import(
                 ).format(
                     session=text(lang, "sprint" if event_type == "SR" else "race")
                 )
-                st.rerun()
         except race_ocr.InvalidScreenshotError as exc:
-            st.error(str(exc))
-        except ri.ScoringProfileError as exc:
-            st.error(str(exc))
+            extraction_error = str(exc)
+        except (ri.ScoringProfileError, league_runtime.LeagueAuthorityError) as exc:
+            extraction_error = str(exc)
         except (race_ocr.OcrUnavailableError, RuntimeError) as exc:
-            st.error(
+            extraction_error = (
                 (
-                    "OCR could not read these screenshots. Try clearer images or remove them to start a blank review."
+                    "OCR could not read these screenshots. Upload a fresh, clearer set or start a blank review."
                     if lang == "en"
-                    else "O OCR não conseguiu ler estas capturas. Tenta imagens mais nítidas ou remove-as para iniciar uma revisão vazia."
+                    else "O OCR não conseguiu ler estas capturas. Carrega um novo conjunto mais nítido ou inicia uma revisão vazia."
                 )
                 if hosted
                 else str(exc)
             )
+        except Exception:
+            extraction_error = (
+                "OCR could not finish reading these screenshots. Upload a fresh set and try again."
+                if lang == "en"
+                else "O OCR não conseguiu terminar a leitura destas capturas. Carrega um novo conjunto e tenta novamente."
+            )
+
+        finalize_ocr_attempt(
+            st.session_state,
+            upload_widget_key=upload_widget_key,
+            upload_generation=upload_generation,
+            error_message=extraction_error,
+        )
+        # End every attempted extraction run so UploadedFile objects and local
+        # byte lists leave scope immediately, including after OCR failures.
+        st.rerun()
 
     if manual_clicked:
         if not _require_local_admin(hosted=hosted, expired=True):
@@ -1238,6 +1582,7 @@ def render_race_import(
             "workbook_sha256": workbook_sha,
             "source_version": reviewed_source_version,
             "rows": ri.build_review_rows([], len(roster)),
+            "screenshot_hashes": [],
             "token_count": 0,
             "draft_id": ri.review_digest([], {**context, "manual": True})[:12],
         }
@@ -1337,6 +1682,16 @@ def render_race_import(
         scoring,
     )
     blockers = list(validation.blockers)
+    scored_rows = validation.rows
+    fastest_lap_award = None
+    if not blockers:
+        try:
+            scored_rows, fastest_lap_award = league_runtime.apply_configured_points(
+                validation.rows,
+                authority,
+            )
+        except league_runtime.LeagueAuthorityError as exc:
+            blockers.append(str(exc))
     if edited_for_validation[["Time", "Fastest Lap"]].replace("", pd.NA).isna().any(axis=None):
         blockers.insert(0, text(lang, "timing_required"))
     if rw.event_already_exists(standings, metadata):
@@ -1345,7 +1700,7 @@ def render_race_import(
         blockers.append(text(lang, "changed"))
 
     st.subheader(text(lang, "final"))
-    final_frame = pd.DataFrame(validation.rows).sort_values("Position", na_position="last")
+    final_frame = pd.DataFrame(scored_rows).sort_values("Position", na_position="last")
     if not final_frame.empty:
         display_frame = final_frame.copy()
         display_frame["Points"] = display_frame["Points"].map(
@@ -1359,7 +1714,7 @@ def render_race_import(
     else:
         st.success(text(lang, "hosted_ready" if hosted else "ready"))
 
-    reviewed_digest = ri.review_digest(validation.rows, context)
+    reviewed_digest = ri.review_digest(scored_rows, context)
     approved = st.checkbox(
         text(lang, "hosted_approve" if hosted else "approve"),
         key=f"race_import_approval_{reviewed_digest[:16]}",
@@ -1380,7 +1735,7 @@ def render_race_import(
                     st.write(text(lang, "publish_validate"))
                     result = hosted_publisher(
                         metadata,
-                        validation.rows,
+                        scored_rows,
                         scoring,
                         str(draft["source_version"]),
                         approved,
@@ -1395,7 +1750,7 @@ def render_race_import(
                 result = rw.commit_race_import(
                     workbook_path,
                     metadata=metadata,
-                    rows=validation.rows,
+                    rows=scored_rows,
                     scoring_profile=scoring,
                     expected_sha256=draft["workbook_sha256"],
                     approved=approved,

@@ -59,6 +59,9 @@ class ScoringProfileError(RaceImportError):
 class DriverEntry:
     driver: str
     team: str
+    # Protected league setup may add narrow, reviewed OCR spellings. They are
+    # never learned automatically from screenshots.
+    ocr_aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -803,6 +806,11 @@ def extract_results_from_tokens(
     rows: list[ExtractedResult] = []
     clusters = _line_clusters(tokens)
     timing_columns = detect_timing_columns(tokens)
+    configured_aliases = {
+        alias: entry.driver
+        for entry in roster
+        for alias in getattr(entry, "ocr_aliases", ())
+    }
     recovered_positions = (
         _recover_ordered_positions(clusters, grid_size=len(roster), columns=timing_columns)
         if timing_columns is not None
@@ -827,7 +835,12 @@ def extract_results_from_tokens(
         line_words = set(normalize_name(line_text).split())
         if position is None and "driver" in line_words and ({"pos", "team"} & line_words):
             continue
-        match = match_driver(line_text, roster, ocr_confidence=sum(token.confidence for token in cluster) / len(cluster))
+        match = match_driver(
+            line_text,
+            roster,
+            ocr_confidence=sum(token.confidence for token in cluster) / len(cluster),
+            aliases=configured_aliases,
+        )
         # Ignore obvious headings/noise. Keep a line whenever it has a valid
         # position or at least a plausible controlled-roster suggestion.
         if position is None and match.suggestion is None:
