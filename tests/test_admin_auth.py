@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import unittest
 from collections.abc import Iterator, Mapping
 from unittest.mock import patch
+
+from argon2 import PasswordHasher
 
 import admin_auth as auth
 
 
 NOW = 2_000.0
+TEST_PASSWORD = "test-only-high-entropy-password-7Cqv0w8f"
+TEST_PASSWORD_HASH = PasswordHasher(
+    time_cost=3,
+    memory_cost=65_536,
+    parallelism=1,
+    hash_len=32,
+    salt_len=16,
+).hash(TEST_PASSWORD)
 
 
 def configured_secrets(*, email: str | None = None) -> dict[str, object]:
     section: dict[str, object] = {
+        "mode": "oidc",
         "allowed_issuer": "https://issuer.example",
         "allowed_subject": "admin-subject-123",
     }
@@ -27,6 +40,18 @@ def configured_secrets(*, email: str | None = None) -> dict[str, object]:
             "client_secret": "oidc-client-secret",
             "server_metadata_url": "https://issuer.example/.well-known/openid-configuration",
         },
+        "admin_auth": section,
+    }
+
+
+def password_secrets(**overrides: object) -> dict[str, object]:
+    section: dict[str, object] = {
+        "mode": "password",
+        "password_hash": TEST_PASSWORD_HASH,
+    }
+    section.update(overrides)
+    return {
+        auth.FEATURE_FLAG: True,
         "admin_auth": section,
     }
 
@@ -72,12 +97,16 @@ class FakeStreamlit:
         self.session_state = {} if session_state is None else session_state
         self.login_calls = 0
         self.logout_calls = 0
+        self.rerun_calls = 0
 
     def login(self) -> None:
         self.login_calls += 1
 
     def logout(self) -> None:
         self.logout_calls += 1
+
+    def rerun(self) -> None:
+        self.rerun_calls += 1
 
 
 class BrokenSecretsStreamlit:
@@ -113,6 +142,20 @@ class ConfigParsingTests(unittest.TestCase):
             ],
         )
 
+    def test_authentication_mode_must_be_explicit_and_exact(self):
+        self.assertIs(
+            auth.load_auth_mode({"admin_auth": {"mode": "oidc"}}),
+            auth.AdminAuthMode.OIDC,
+        )
+        self.assertIs(
+            auth.load_auth_mode({"admin_auth": {"mode": "password"}}),
+            auth.AdminAuthMode.PASSWORD,
+        )
+        for mode in (None, "", "OIDC", " oidc", "password ", True, "fallback"):
+            section = {} if mode is None else {"mode": mode}
+            with self.subTest(mode=mode):
+                self.assertIsNone(auth.load_auth_mode({"admin_auth": section}))
+
     def test_loads_required_exact_identity_and_optional_email(self):
         without_email = auth.load_admin_config(configured_secrets())
         self.assertEqual(without_email, valid_config())
@@ -120,36 +163,42 @@ class ConfigParsingTests(unittest.TestCase):
         with_email = auth.load_admin_config(configured_secrets(email="admin@example.com"))
         self.assertEqual(with_email, valid_config(email="admin@example.com"))
 
-    def test_missing_or_malformed_config_fails_closed(self):
+    def test_missing_malformed_or_wrong_mode_oidc_config_fails_closed(self):
         invalid_sections: list[object] = [
             {},
             {"admin_auth": None},
             {"admin_auth": "not-a-table"},
-            {"admin_auth": {"allowed_subject": "admin-subject-123"}},
-            {"admin_auth": {"allowed_issuer": "https://issuer.example"}},
+            {"admin_auth": {"allowed_issuer": "https://issuer.example", "allowed_subject": "x"}},
+            {"admin_auth": {"mode": "password", "allowed_issuer": "https://issuer.example", "allowed_subject": "x"}},
+            {"admin_auth": {"mode": "oidc", "allowed_subject": "admin-subject-123"}},
+            {"admin_auth": {"mode": "oidc", "allowed_issuer": "https://issuer.example"}},
             {
                 "admin_auth": {
+                    "mode": "oidc",
                     "allowed_issuer": "",
                     "allowed_subject": "admin-subject-123",
                 }
             },
             {
                 "admin_auth": {
+                    "mode": "oidc",
                     "allowed_issuer": " https://issuer.example",
                     "allowed_subject": "admin-subject-123",
                 }
             },
             {
                 "admin_auth": {
+                    "mode": "oidc",
                     "allowed_issuer": "https://issuer.example",
                     "allowed_subject": 123,
                 }
             },
             {
                 "admin_auth": {
+                    "mode": "oidc",
                     "allowed_issuer": "https://issuer.example",
                     "allowed_subject": "admin-subject-123",
-                    "allowed_email": " ",
+                    "allowed_email": "YOUR-ADMIN-EMAIL",
                 }
             },
         ]
@@ -173,6 +222,59 @@ class ConfigParsingTests(unittest.TestCase):
         for secrets in invalid_sections:
             with self.subTest(secrets=secrets):
                 self.assertFalse(auth.oidc_is_configured(secrets))
+
+    def test_password_config_accepts_secure_argon2id_and_policy_defaults(self):
+        config = auth.load_password_config(password_secrets())
+        self.assertIsNotNone(config)
+        assert config is not None
+        self.assertEqual(config.session_ttl_seconds, 1_800)
+        self.assertEqual(config.idle_ttl_seconds, 900)
+        self.assertEqual(config.max_failed_attempts, 5)
+        self.assertEqual(config.failure_window_seconds, 900)
+        self.assertEqual(config.lockout_seconds, 900)
+        self.assertNotIn(TEST_PASSWORD_HASH, repr(config))
+
+    def test_password_config_rejects_missing_placeholder_wrong_mode_and_weak_hash(self):
+        weak_memory_hash = TEST_PASSWORD_HASH.replace("m=65536", "m=8192", 1)
+        invalid = [
+            {"admin_auth": {"mode": "password"}},
+            {"admin_auth": {"mode": "password", "password_hash": "YOUR-ARGON2ID-HASH"}},
+            {"admin_auth": {"mode": "oidc", "password_hash": TEST_PASSWORD_HASH}},
+            {"admin_auth": {"mode": "password", "password_hash": TEST_PASSWORD_HASH + " "}},
+            {"admin_auth": {"mode": "password", "password_hash": weak_memory_hash}},
+            {"admin_auth": {"mode": "password", "password_hash": TEST_PASSWORD_HASH.replace("argon2id", "argon2i", 1)}},
+        ]
+        for secrets in invalid:
+            with self.subTest(secrets=secrets):
+                self.assertIsNone(auth.load_password_config(secrets))
+
+    def test_password_policy_values_are_bounded_and_idle_cannot_exceed_absolute(self):
+        accepted = password_secrets(
+            session_ttl_seconds=300,
+            idle_ttl_seconds=300,
+            max_failed_attempts=3,
+            failure_window_seconds=60,
+            lockout_seconds=60,
+        )
+        self.assertIsNotNone(auth.load_password_config(accepted))
+
+        invalid_overrides = [
+            {"session_ttl_seconds": 299},
+            {"session_ttl_seconds": 28_801},
+            {"idle_ttl_seconds": 59},
+            {"session_ttl_seconds": 300, "idle_ttl_seconds": 301},
+            {"max_failed_attempts": 2},
+            {"max_failed_attempts": 11},
+            {"failure_window_seconds": 59},
+            {"failure_window_seconds": 3_601},
+            {"lockout_seconds": 59},
+            {"lockout_seconds": 3_601},
+            {"session_ttl_seconds": "1800"},
+            {"max_failed_attempts": True},
+        ]
+        for overrides in invalid_overrides:
+            with self.subTest(overrides=overrides):
+                self.assertIsNone(auth.load_password_config(password_secrets(**overrides)))
 
     def test_feature_flag_must_be_explicitly_enabled(self):
         false_values: list[object] = [None, False, 0, 2, -1, "", "0", "false", "enabled", 1.0]
@@ -318,7 +420,92 @@ class AuthorizationDecisionTests(unittest.TestCase):
         self.assertIs(self.evaluate(claims), auth.AdminState.AUTHORIZED)
 
 
+class PasswordRateLimiterTests(unittest.TestCase):
+    def config(self, **changes: object) -> auth.PasswordAuthConfig:
+        base = auth.PasswordAuthConfig(password_hash=TEST_PASSWORD_HASH)
+        return replace(base, **changes)
+
+    def test_threshold_locks_and_skips_verification_until_deadline(self):
+        limiter = auth._PasswordRateLimiter()
+        now = [NOW]
+        calls: list[int] = []
+
+        def rejected() -> bool:
+            calls.append(1)
+            return False
+
+        config = self.config(max_failed_attempts=3, lockout_seconds=60)
+        self.assertFalse(limiter.attempt(config=config, clock=lambda: now[0], verifier=rejected).locked)
+        self.assertFalse(limiter.attempt(config=config, clock=lambda: now[0], verifier=rejected).locked)
+        threshold = limiter.attempt(config=config, clock=lambda: now[0], verifier=rejected)
+        self.assertTrue(threshold.locked)
+        self.assertEqual(threshold.retry_after_seconds, 60)
+
+        now[0] += 10
+        blocked = limiter.attempt(config=config, clock=lambda: now[0], verifier=lambda: True)
+        self.assertTrue(blocked.locked)
+        self.assertEqual(blocked.retry_after_seconds, 50)
+        self.assertEqual(len(calls), 3)
+
+        now[0] += 50
+        accepted = limiter.attempt(config=config, clock=lambda: now[0], verifier=lambda: True)
+        self.assertTrue(accepted.authenticated)
+
+    def test_failure_window_success_and_config_rotation_reset_history(self):
+        limiter = auth._PasswordRateLimiter()
+        now = [NOW]
+        config = self.config(
+            max_failed_attempts=3,
+            failure_window_seconds=60,
+            lockout_seconds=60,
+        )
+        reject = lambda: False
+        limiter.attempt(config=config, clock=lambda: now[0], verifier=reject)
+        now[0] += 61
+        limiter.attempt(config=config, clock=lambda: now[0], verifier=reject)
+        self.assertFalse(limiter.attempt(config=config, clock=lambda: now[0], verifier=reject).locked)
+
+        self.assertTrue(
+            limiter.attempt(config=config, clock=lambda: now[0], verifier=lambda: True).authenticated
+        )
+        limiter.attempt(config=config, clock=lambda: now[0], verifier=reject)
+        self.assertFalse(limiter.attempt(config=config, clock=lambda: now[0], verifier=reject).locked)
+
+        limiter.attempt(config=config, clock=lambda: now[0], verifier=reject)
+        self.assertTrue(limiter.attempt(config=config, clock=lambda: now[0], verifier=reject).locked)
+        rotated = replace(config, password_hash=TEST_PASSWORD_HASH + "rotated")
+        self.assertTrue(
+            limiter.attempt(config=rotated, clock=lambda: now[0], verifier=lambda: True).authenticated
+        )
+
+    def test_parallel_attempts_are_serialized_under_one_global_threshold(self):
+        limiter = auth._PasswordRateLimiter()
+        config = self.config(max_failed_attempts=3, lockout_seconds=60)
+        verifier_calls: list[int] = []
+
+        def rejected() -> bool:
+            verifier_calls.append(1)
+            return False
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(
+                executor.map(
+                    lambda _: limiter.attempt(
+                        config=config,
+                        clock=lambda: NOW,
+                        verifier=rejected,
+                    ),
+                    range(8),
+                )
+            )
+        self.assertEqual(len(verifier_calls), 3)
+        self.assertEqual(sum(result.locked for result in results), 6)
+
+
 class StreamlitWrapperTests(unittest.TestCase):
+    def setUp(self) -> None:
+        auth._password_rate_limiter.cache_clear()
+
     def test_current_claims_returns_detached_claims_and_login_attribute(self):
         original = {"iss": "https://issuer.example", "sub": "admin-subject-123"}
         fake = FakeStreamlit(user=FakeUser(original, logged_in=True))
@@ -330,7 +517,7 @@ class StreamlitWrapperTests(unittest.TestCase):
         claims["iss"] = "changed"
         self.assertEqual(original["iss"], "https://issuer.example")
 
-    def test_current_state_reads_feature_and_allow_list_from_server_config(self):
+    def test_current_oidc_state_reads_feature_and_allow_list_from_server_config(self):
         secrets = configured_secrets()
         fake = FakeStreamlit(
             secrets=secrets,
@@ -356,24 +543,23 @@ class StreamlitWrapperTests(unittest.TestCase):
         ):
             self.assertIs(auth.current_admin_state(), auth.AdminState.AUTHORIZED)
 
-    def test_current_state_is_disabled_when_flag_is_absent(self):
-        fake = FakeStreamlit(
-            secrets=configured_secrets(),
-            user=FakeUser(valid_claims(exp=4_000_000_000), logged_in=True),
-        )
-        with (
-            patch.dict(os.environ, {}, clear=True),
-            patch("admin_auth._streamlit", return_value=fake),
+    def test_disabled_and_unconfigured_states_clear_sensitive_server_state(self):
+        for secrets, environ, expected in (
+            (configured_secrets(), {}, auth.AdminState.DISABLED),
+            ({auth.FEATURE_FLAG: True}, {}, auth.AdminState.UNCONFIGURED),
         ):
-            self.assertIs(auth.current_admin_state(), auth.AdminState.DISABLED)
-
-    def test_current_state_is_unconfigured_when_enabled_without_allow_list(self):
-        fake = FakeStreamlit(secrets={})
-        with (
-            patch.dict(os.environ, {auth.FEATURE_FLAG: "true"}, clear=True),
-            patch("admin_auth._streamlit", return_value=fake),
-        ):
-            self.assertIs(auth.current_admin_state(), auth.AdminState.UNCONFIGURED)
+            state = {
+                auth.PASSWORD_GRANT_KEY: {"secret": "stale"},
+                "race_import_remote_workbook": b"sensitive",
+                "public_language": "pt",
+            }
+            fake = FakeStreamlit(secrets=secrets, session_state=state)
+            with (
+                patch.dict(os.environ, environ, clear=True),
+                patch("admin_auth._streamlit", return_value=fake),
+            ):
+                self.assertIs(auth.current_admin_state(), expected)
+            self.assertEqual(state, {"public_language": "pt"})
 
     def test_current_state_is_unconfigured_when_oidc_settings_are_incomplete(self):
         secrets = configured_secrets()
@@ -399,42 +585,172 @@ class StreamlitWrapperTests(unittest.TestCase):
         ):
             self.assertIs(auth.current_admin_state(), auth.AdminState.UNCONFIGURED)
 
-    def test_login_uses_streamlit_native_oidc(self):
-        fake = FakeStreamlit()
+    def test_login_uses_streamlit_native_oidc_only_when_fully_configured(self):
+        secrets = configured_secrets()
+        secrets[auth.FEATURE_FLAG] = True
+        fake = FakeStreamlit(secrets=secrets)
         with patch("admin_auth._streamlit", return_value=fake):
             auth.login()
         self.assertEqual(fake.login_calls, 1)
 
-    def test_clear_state_removes_every_importer_key_only(self):
+        password_fake = FakeStreamlit(secrets=password_secrets())
+        with (
+            patch("admin_auth._streamlit", return_value=password_fake),
+            self.assertRaisesRegex(RuntimeError, "not configured"),
+        ):
+            auth.login()
+        self.assertEqual(password_fake.login_calls, 0)
+
+    def test_password_mode_enabled_requires_feature_mode_hash_and_policy(self):
+        for secrets, expected in (
+            (password_secrets(), True),
+            ({**password_secrets(), auth.FEATURE_FLAG: False}, False),
+            ({auth.FEATURE_FLAG: True, "admin_auth": {"mode": "password"}}, False),
+            ({auth.FEATURE_FLAG: True, "admin_auth": {"mode": "oidc", "password_hash": TEST_PASSWORD_HASH}}, False),
+        ):
+            fake = FakeStreamlit(secrets=secrets)
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("admin_auth._streamlit", return_value=fake),
+            ):
+                self.assertIs(auth.password_mode_enabled(), expected)
+
+    def test_password_authentication_installs_no_plaintext_or_hash_in_session(self):
+        fake = FakeStreamlit(
+            secrets=password_secrets(),
+            session_state={"race_import_draft": {"sensitive": True}},
+        )
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("admin_auth._streamlit", return_value=fake),
+            patch("admin_auth._monotonic_time", return_value=NOW),
+        ):
+            result = auth.authenticate_password(TEST_PASSWORD)
+            self.assertTrue(result.authenticated)
+            self.assertIs(auth.current_admin_state(), auth.AdminState.AUTHORIZED)
+
+        serialized = repr(fake.session_state)
+        self.assertNotIn(TEST_PASSWORD, serialized)
+        self.assertNotIn(TEST_PASSWORD_HASH, serialized)
+        self.assertNotIn("race_import_draft", fake.session_state)
+        self.assertIn(auth.PASSWORD_GRANT_KEY, fake.session_state)
+
+    def test_wrong_password_is_generic_clears_stale_grant_and_rate_limits(self):
+        secrets = password_secrets(
+            max_failed_attempts=3,
+            lockout_seconds=60,
+        )
+        fake = FakeStreamlit(
+            secrets=secrets,
+            session_state={
+                auth.PASSWORD_GRANT_KEY: {"stale": True},
+                "race_import_files": [b"sensitive"],
+            },
+        )
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("admin_auth._streamlit", return_value=fake),
+            patch("admin_auth._monotonic_time", return_value=NOW),
+        ):
+            first = auth.authenticate_password("wrong-one")
+            second = auth.authenticate_password("wrong-two")
+            third = auth.authenticate_password("wrong-three")
+            blocked_correct = auth.authenticate_password(TEST_PASSWORD)
+
+        self.assertEqual(first, auth.PasswordAuthResult(False, False, 0))
+        self.assertEqual(second, auth.PasswordAuthResult(False, False, 0))
+        self.assertTrue(third.locked)
+        self.assertTrue(blocked_correct.locked)
+        self.assertFalse(blocked_correct.authenticated)
+        self.assertNotIn(auth.PASSWORD_GRANT_KEY, fake.session_state)
+        self.assertFalse(any(str(key).startswith("race_import_") for key in fake.session_state))
+        self.assertNotIn("wrong", repr((first, second, third, blocked_correct)))
+
+    def test_password_sessions_are_isolated(self):
+        first = FakeStreamlit(secrets=password_secrets())
+        second = FakeStreamlit(secrets=password_secrets())
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("admin_auth._monotonic_time", return_value=NOW),
+            patch("admin_auth._streamlit", return_value=first),
+        ):
+            self.assertTrue(auth.authenticate_password(TEST_PASSWORD).authenticated)
+            self.assertIs(auth.current_admin_state(), auth.AdminState.AUTHORIZED)
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("admin_auth._monotonic_time", return_value=NOW),
+            patch("admin_auth._streamlit", return_value=second),
+        ):
+            self.assertIs(auth.current_admin_state(), auth.AdminState.ANONYMOUS)
+
+    def test_password_grant_idle_absolute_and_config_rotation_expire_and_clear(self):
+        cases = (
+            (password_secrets(session_ttl_seconds=300, idle_ttl_seconds=60), 60.0),
+            (password_secrets(session_ttl_seconds=300, idle_ttl_seconds=300), 300.0),
+        )
+        for secrets, elapsed in cases:
+            with self.subTest(elapsed=elapsed):
+                auth._password_rate_limiter.cache_clear()
+                fake = FakeStreamlit(secrets=secrets)
+                with (
+                    patch.dict(os.environ, {}, clear=True),
+                    patch("admin_auth._streamlit", return_value=fake),
+                    patch("admin_auth._monotonic_time", return_value=NOW),
+                ):
+                    self.assertTrue(auth.authenticate_password(TEST_PASSWORD).authenticated)
+                fake.session_state["race_import_remote_workbook"] = b"sensitive"
+                with (
+                    patch.dict(os.environ, {}, clear=True),
+                    patch("admin_auth._streamlit", return_value=fake),
+                    patch("admin_auth._monotonic_time", return_value=NOW + elapsed),
+                ):
+                    self.assertIs(auth.current_admin_state(), auth.AdminState.EXPIRED)
+                self.assertEqual(fake.session_state, {})
+
+        auth._password_rate_limiter.cache_clear()
+        fake = FakeStreamlit(secrets=password_secrets())
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("admin_auth._streamlit", return_value=fake),
+            patch("admin_auth._monotonic_time", return_value=NOW),
+        ):
+            self.assertTrue(auth.authenticate_password(TEST_PASSWORD).authenticated)
+        fake.secrets = password_secrets(idle_ttl_seconds=600)
+        fake.session_state["race_import_draft"] = {"sensitive": True}
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("admin_auth._streamlit", return_value=fake),
+            patch("admin_auth._monotonic_time", return_value=NOW + 1),
+        ):
+            self.assertIs(auth.current_admin_state(), auth.AdminState.EXPIRED)
+        self.assertEqual(fake.session_state, {})
+
+    def test_clear_state_helpers_remove_owned_keys_only(self):
         state: dict[object, object] = {
             "race_import_files": ["one.png"],
             "race_import_review": {"approved": False},
-            "race_import_": "prefix itself",
+            auth.PASSWORD_GRANT_KEY: {"issued_at": NOW},
+            "admin_auth_form": "owned",
             "dashboard_filter": "2026",
             7: "non-string-key",
         }
-        removed = auth.clear_race_import_state(state)
-        self.assertCountEqual(
-            removed,
-            ("race_import_files", "race_import_review", "race_import_"),
-        )
+        removed_imports = auth.clear_race_import_state(state)
+        removed_auth = auth.clear_admin_session_state(state)
+        self.assertCountEqual(removed_imports, ("race_import_files", "race_import_review"))
+        self.assertCountEqual(removed_auth, (auth.PASSWORD_GRANT_KEY, "admin_auth_form"))
         self.assertEqual(state, {"dashboard_filter": "2026", 7: "non-string-key"})
 
-    def test_logout_clears_importer_state_before_native_logout(self):
-        session_state: dict[object, object] = {
+    def test_oidc_logout_clears_all_sensitive_state_before_native_logout(self):
+        secrets = configured_secrets()
+        state: dict[object, object] = {
             "race_import_files": [b"sensitive screenshot"],
-            "race_import_draft": {"driver": "Alice"},
+            auth.PASSWORD_GRANT_KEY: {"stale": True},
             "public_language": "pt",
         }
-        fake = FakeStreamlit(session_state=session_state)
+        fake = FakeStreamlit(secrets=secrets, session_state=state)
 
         def assert_cleared_then_logout() -> None:
-            self.assertFalse(
-                any(
-                    isinstance(key, str) and key.startswith(auth.SESSION_STATE_PREFIX)
-                    for key in fake.session_state
-                )
-            )
+            self.assertEqual(fake.session_state, {"public_language": "pt"})
             fake.logout_calls += 1
 
         fake.logout = assert_cleared_then_logout  # type: ignore[method-assign]
@@ -442,7 +758,22 @@ class StreamlitWrapperTests(unittest.TestCase):
             auth.logout()
 
         self.assertEqual(fake.logout_calls, 1)
+        self.assertEqual(fake.rerun_calls, 0)
+
+    def test_password_logout_clears_grant_importer_and_reruns_without_oidc(self):
+        state: dict[object, object] = {
+            auth.PASSWORD_GRANT_KEY: {"issued_at": NOW},
+            "admin_auth_transient": "owned",
+            "race_import_remote_workbook": b"sensitive",
+            "public_language": "pt",
+        }
+        fake = FakeStreamlit(secrets=password_secrets(), session_state=state)
+        with patch("admin_auth._streamlit", return_value=fake):
+            auth.logout()
+
         self.assertEqual(fake.session_state, {"public_language": "pt"})
+        self.assertEqual(fake.rerun_calls, 1)
+        self.assertEqual(fake.logout_calls, 0)
 
 
 if __name__ == "__main__":
