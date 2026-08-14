@@ -1,8 +1,9 @@
 """Protected, phone-friendly Admin route for hosted race imports.
 
 Only Streamlit and the small authorization module are imported before the
-server-side OIDC decision.  GitHub access, OCR, workbook reads, and workbook
-writes are therefore unreachable from an anonymous or forbidden direct route.
+server-side authentication decision.  GitHub access, OCR, workbook reads, and
+workbook writes are therefore unreachable from an anonymous or forbidden
+direct route.
 """
 
 from __future__ import annotations
@@ -28,11 +29,11 @@ COPY = {
     ),
     "unconfigured": (
         "Admin is unavailable",
-        "Authentication or the exact administrator allowlist is not configured. The area is closed by default.",
+        "Authentication is not fully configured. The area is closed by default.",
     ),
     "anonymous": (
         "Admin sign-in",
-        "Sign in with the configured identity provider to manage race results.",
+        "Sign in to manage race results.",
     ),
     "forbidden": (
         "Access denied",
@@ -45,12 +46,42 @@ COPY = {
 }
 
 
+def _render_password_sign_in() -> None:
+    with st.form("admin_password_sign_in", clear_on_submit=True):
+        password = st.text_input(
+            "Admin password",
+            type="password",
+            autocomplete="current-password",
+        )
+        submitted = st.form_submit_button("Sign in", type="primary")
+
+    if not submitted:
+        return
+
+    result = admin_auth.authenticate_password(password)
+    if result.authenticated:
+        # The helper installs the short-lived server-side grant.  Start a
+        # fresh script run so the authoritative state check above is repeated
+        # before any protected capability is imported.
+        st.rerun()
+    elif result.locked:
+        seconds = max(1, result.retry_after_seconds)
+        st.error(
+            f"Too many failed attempts. Try again in {seconds} seconds.",
+            icon=":material/lock_clock:",
+        )
+    else:
+        st.error("Incorrect password.", icon=":material/error:")
+
+
 def _render_closed_state(state: admin_auth.AdminState) -> None:
     title, message = COPY[state.value]
     st.title(title)
     st.info(message, icon=":material/lock:")
     if state is admin_auth.AdminState.ANONYMOUS:
-        if st.button("Sign in", type="primary", icon=":material/login:"):
+        if admin_auth.password_mode_enabled():
+            _render_password_sign_in()
+        elif st.button("Sign in", type="primary", icon=":material/login:"):
             admin_auth.login()
     elif state in {
         admin_auth.AdminState.FORBIDDEN,
@@ -68,8 +99,11 @@ if state is not admin_auth.AdminState.AUTHORIZED:
     st.stop()
 
 with st.sidebar:
-    claims = admin_auth.current_claims()
-    identity = claims.get("email") or claims.get("name") or "Administrator"
+    if admin_auth.password_mode_enabled():
+        identity = "Administrator"
+    else:
+        claims = admin_auth.current_claims()
+        identity = claims.get("email") or claims.get("name") or "Administrator"
     st.caption(f"Signed in as {identity}")
     if st.button("Sign out", icon=":material/logout:", key="admin_logout"):
         admin_auth.logout()
@@ -169,7 +203,7 @@ def github_config_from_secrets() -> github_store.GitHubAppConfig:
 
 
 def _require_current_admin() -> None:
-    """Recheck OIDC authorization immediately before a protected callback."""
+    """Recheck authorization immediately before a protected callback."""
 
     if not admin_auth.is_current_admin():
         st.error("Admin authorization expired. Sign out, then sign in again.")

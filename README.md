@@ -29,43 +29,97 @@ python -m streamlit run app.py
 
 ## Configure the Admin area once
 
-Admin uses Streamlit's server-side OpenID Connect (OIDC) authentication. There
-is no application password to leak or brute-force: the identity provider owns
-sign-in, throttling, and optional MFA, while this app checks the verified token
-against one exact administrator identity on every protected action.
+Admin supports two server-side authentication modes: a password for a simple
+single-administrator deployment, or OpenID Connect (OIDC). Select exactly one
+with `admin_auth.mode`; there is no automatic fallback between them. Missing,
+placeholder, or malformed selected-mode configuration leaves Admin closed;
+settings for the inactive mode are ignored.
 
-1. Create an OIDC web application with Google, Microsoft Entra ID, Auth0, Okta,
-   or another OIDC provider. Register `https://YOUR-DOMAIN/oauth2callback` as
-   its redirect URI (`http://localhost:8501/oauth2callback` for local use).
-2. Create a GitHub App, install it only on the workbook repository, disable
-   webhooks, and grant only **Repository contents: Read and write**. Generate a
-   private key and note the App and installation IDs.
-3. Copy `.streamlit/secrets.example.toml` to `.streamlit/secrets.toml` locally,
-   or paste it into the deployment platform's server-side secret settings.
-4. Fill all fields in `[auth]`, `[admin_auth]`, and `[github]`. Generate a strong
-   random `auth.cookie_secret`; set the exact provider issuer and the admin's
-   immutable OIDC `sub` claim. An optional `allowed_email` adds an exact match
-   and requires the provider's `email_verified` claim to be boolean `true`.
-5. Set `F1_ENABLE_RACE_IMPORT = "1"` in deployment secrets or the server
-   environment. Leaving it absent or malformed disables Admin fail-closed.
-   Restart the service after changing authentication or GitHub credentials.
+First, create a GitHub App, install it only on the workbook repository, disable
+webhooks, and grant only **Repository contents: Read and write**. Generate a
+private key and note the App and installation IDs. Then copy
+`.streamlit/secrets.example.toml` to `.streamlit/secrets.toml` locally, or paste
+it into the deployment platform's server-side secret settings. Never commit
+the real file; it is ignored by Git. For Streamlit Community Cloud, use
+**App settings → Secrets**.
 
-Never commit `.streamlit/secrets.toml`; it is ignored by Git. For Streamlit
-Community Cloud, use **App settings → Secrets**. Keep token exposure disabled.
-Use a single-tenant/test-user allowlist and enable MFA at the provider when
-available.
+### Password mode
+
+Generate a long, unique password and store only its Argon2id hash. With the
+project dependencies installed, this command prompts without echoing the
+password and prints the value to place in deployment secrets:
+
+```powershell
+python -c "from getpass import getpass; from argon2 import PasswordHasher; p=getpass('Admin password: '); print(PasswordHasher(time_cost=3, memory_cost=65536, parallelism=1, hash_len=32, salt_len=16).hash(p))"
+```
+
+Configure:
+
+```toml
+[admin_auth]
+mode = "password"
+password_hash = "$argon2id$..."
+```
+
+Do not store the plaintext password. Authentication, the expiring session
+grant, and an application-wide repeated-failure lockout are enforced
+server-side. Sessions last 30 minutes by default and expire after 15 minutes of
+inactivity. Five failed attempts within 15 minutes lock password attempts for
+15 minutes across browser sessions on the running application instance.
+Changing the configured hash invalidates existing grants.
+
+Optional policy overrides are bounded: `session_ttl_seconds` accepts 300–28800,
+`idle_ttl_seconds` accepts 60 through the configured session lifetime,
+`max_failed_attempts` accepts 3–10, and `failure_window_seconds` and
+`lockout_seconds` each accept 60–3600. Values outside these ranges fail closed.
+
+### OIDC mode (recommended upgrade)
+
+Create an OIDC web application with Google, Microsoft Entra ID, Auth0, Okta, or
+another provider. Register `https://YOUR-DOMAIN/oauth2callback` as its redirect
+URI (`http://localhost:8501/oauth2callback` locally), then configure:
+
+```toml
+[admin_auth]
+mode = "oidc"
+allowed_issuer = "https://accounts.google.com"
+allowed_subject = "THE-ADMIN-IMMUTABLE-SUBJECT"
+# allowed_email = "admin@example.com"
+
+[auth]
+redirect_uri = "https://YOUR-DOMAIN/oauth2callback"
+cookie_secret = "A-LONG-RANDOM-SECRET-OF-AT-LEAST-32-CHARACTERS"
+expose_tokens = false
+client_id = "YOUR-OIDC-CLIENT-ID"
+client_secret = "YOUR-OIDC-CLIENT-SECRET"
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
+```
+
+The identity provider owns sign-in throttling and optional MFA. The app checks
+the verified issuer and immutable `sub` claim on every protected action. An
+optional `allowed_email` adds an exact match and requires the provider's
+`email_verified` claim to be boolean `true`. Keep token exposure disabled and
+enable MFA at the provider when available.
+
+For either mode, fill every `[github]` value from the example and set
+`F1_ENABLE_RACE_IMPORT = "1"` in deployment secrets or the server environment.
+Leaving the flag absent or malformed disables Admin. It is safe to set the flag
+before the remaining configuration: incomplete authentication or publisher
+settings stop the page before upload, OCR, workbook access, or publication.
+Restart the service after changing authentication or GitHub credentials.
 
 The app's left menu remains collapsed by default. The public Dashboard route
 still contains the same four tabs. The `/admin` route shows no upload, GitHub,
-OCR, review, or write capability until the current OIDC identity passes the
-exact server-side allowlist. GitHub configuration is also required; incomplete
-or placeholder values close the updater. Logout clears the identity cookie,
-remote workbook snapshot, approvals, uploads, and all staged import data.
+OCR, review, or write capability until the current session passes the selected
+server-side authentication gate. GitHub configuration is also required;
+incomplete or placeholder values close the updater. Logout clears the password
+grant or OIDC identity session, remote workbook snapshot, approvals, uploads,
+and all staged import data.
 
 `admin_app.py` remains available as a phone-friendly compatibility entrypoint
 for a separate Streamlit deployment. It routes to the same protected Admin page
-and does not bypass OIDC. Configure that deployment's own callback URL and the
-same server-side secrets.
+and does not bypass authentication. Give that deployment its own server-side
+secrets; in OIDC mode, register its own callback URL as well.
 
 ### Import race screenshots
 
@@ -146,7 +200,7 @@ The GitHub Actions workflow runs these checks and performs a minimal Streamlit s
 - `dashboard_page.py` — unchanged public dashboard presentation
 - `admin_page.py` — fail-closed hosted Admin controller and phone-friendly UI
 - `admin_app.py` — compatibility entrypoint to the same protected Admin route
-- `admin_auth.py` — OIDC claim authorization and logout-state clearing
+- `admin_auth.py` — password/OIDC authorization, lockout, sessions, and logout-state clearing
 - `dashboard_core.py` — workbook validation, normalization, and standings calculations
 - `race_import.py` — controlled matching, reconciliation, and review validation
 - `race_ocr.py` — lazy OCR and bounded raster-image validation
