@@ -118,6 +118,17 @@ Google login, unauthorized direct access, logout, and screenshot review on the
 host before relying on it. Preview and production credentials are separate;
 never weaken preview protection to make an OAuth test work.
 
+The Vercel launcher also installs `vercel_upload_gate.py` before starting the
+pinned Streamlit 1.59.2 server. Native screenshot PUT/DELETE requests must have
+both a live, server-authenticated Admin session and a valid signed Google login
+cookie for this exact origin, before their body is read. Native XSRF/CORS and
+size checks still apply. Missing, expired, forbidden, or logged-out identities
+cannot upload even by calling the underlying HTTP route. The wrapper is
+OIDC-only and stops startup on incompatible Streamlit versions; re-audit it
+before upgrading. Standard `streamlit run app.py` and manual workbook editing
+are unaffected. Session affinity and hosted upload-size limits still need to
+be verified on the actual deployment; this gate does not bypass those limits.
+
 ## Configure the Admin area once
 
 Admin supports two server-side authentication modes: a password for a simple

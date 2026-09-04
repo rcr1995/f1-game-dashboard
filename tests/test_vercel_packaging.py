@@ -14,7 +14,7 @@ RUNTIME_MODULES = {
     "dashboard_page", "dashboard_core", "puskas_html", "league_config",
     "league_runtime", "league_workbook", "race_correction", "race_github",
     "race_import", "race_import_ui", "race_metadata", "race_ocr", "race_workbook",
-    "ui_preferences", "public_workbook", "hosted_settings", "vercel_start",
+    "ui_preferences", "public_workbook", "hosted_settings", "vercel_start", "vercel_upload_gate",
 }
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",

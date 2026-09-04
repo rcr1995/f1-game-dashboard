@@ -186,7 +186,7 @@ def prepare_launch(environ: MutableMapping[str, str] | None = None) -> LaunchPla
     command = [
         sys.executable,
         "-m",
-        "streamlit",
+        "vercel_upload_gate",
         "run",
         str(SOURCE_ROOT / "app.py"),
         "--server.address=0.0.0.0",

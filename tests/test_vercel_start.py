@@ -138,7 +138,7 @@ class VercelStartTests(unittest.TestCase):
                 self.assertEqual(launcher.main(), 0)
                 executable, command, child_environment = execute.call_args.args
                 self.assertEqual(executable, launcher.sys.executable)
-                self.assertEqual(command[:4], (executable, "-m", "streamlit", "run"))
+                self.assertEqual(command[:4], (executable, "-m", "vercel_upload_gate", "run"))
                 self.assertNotIn(launcher.SECRETS_ENV, os.environ)
                 self.assertNotIn(launcher.SECRETS_ENV, child_environment)
                 self.assertNotIn(FAKE_SECRET, str(command))
