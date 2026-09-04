@@ -1,4 +1,5 @@
 import streamlit as st
+import ui_preferences
 
 import pandas as pd
 
@@ -71,7 +72,7 @@ MOBILE_DASHBOARD_CSS = """
 
 # -----------------------------
 
-LANGS = {"English": "en", "Português (Portugal)": "pt"}
+LANGS = ui_preferences.LANGUAGES
 
 T = {
 
@@ -1073,8 +1074,8 @@ def render_movers_chart(df: pd.DataFrame, entity_col: str, top_n: int = 6):
     )
     st.plotly_chart(fig_m, width="stretch")
 
-@st.cache_data(show_spinner=False)
-def load_dashboard_data(workbook_path: str, mtime: float):
+@st.cache_data(show_spinner=False, max_entries=4)
+def load_dashboard_data(workbook_path: str, revision: str):
     """Validate and load the workbook once per file revision."""
     warnings = core.validate_workbook(workbook_path)
     standings = core.load_standings_data(workbook_path)
@@ -1084,21 +1085,19 @@ def load_dashboard_data(workbook_path: str, mtime: float):
 
 if "theme_mode" not in st.session_state:
     st.session_state["theme_mode"] = "Dark"
-if "app_lang" not in st.session_state:
-    st.session_state["app_lang"] = "Português (Portugal)"
-
 # Select language early in the sidebar
 with st.sidebar:
-    st.session_state["app_lang"] = st.selectbox(
+    st.session_state["app_lang_selector"] = ui_preferences.language_name(st.session_state)
+    st.selectbox(
         "Language / Idioma",
         options=list(LANGS.keys()),
-        index=list(LANGS.keys()).index(st.session_state["app_lang"]) if st.session_state["app_lang"] in LANGS else 0,
-        key="app_lang_selector"
+        key="app_lang_selector",
+        on_change=ui_preferences.select_from_widget,
+        args=("app_lang_selector",),
     )
     st.divider()
 
-    lang_name = st.session_state.get("app_lang", "English")
-    lang_name = lang_name if lang_name in LANGS else "English"
+    lang_name = ui_preferences.language_name(st.session_state)
     lang = LANGS[lang_name]
 
     theme_options = ["Dark", "Light"]
@@ -1123,14 +1122,41 @@ if bundled is None:
     st.warning(tr(lang, "no_bundled"))
     st.stop()
 try:
-    workbook_mtime = Path(bundled).stat().st_mtime
-    workbook_warnings, raw, calendar_raw = load_dashboard_data(bundled, workbook_mtime)
+    import public_workbook
+
+    workbook_source = public_workbook.resolve_workbook(bundled)
+    workbook_warnings, raw, calendar_raw = load_dashboard_data(
+        str(workbook_source.path), workbook_source.fingerprint
+    )
 except core.WorkbookValidationError as exc:
     st.error(f"Workbook validation failed: {exc}")
     st.stop()
 
 for warning in workbook_warnings:
     st.warning(warning)
+
+
+@st.fragment(run_every=60)
+def _refresh_hosted_workbook(loaded_revision: str) -> None:
+    current = public_workbook.resolve_workbook(bundled)
+    if current.fingerprint != loaded_revision:
+        st.rerun(scope="app")
+    if current.warning:
+        st.warning(
+            "GitHub update unavailable. Showing the last valid workbook; check the connection or Excel structure."
+            if lang == "en" else
+            "Atualização do GitHub indisponível. A mostrar o último Excel válido; verifica a ligação ou a estrutura do ficheiro."
+        )
+    else:
+        st.caption(
+            "Excel: GitHub · updates checked every minute"
+            if lang == "en" else
+            "Excel: GitHub · atualizações verificadas a cada minuto"
+        )
+
+
+if workbook_source.mode != "local":
+    _refresh_hosted_workbook(workbook_source.fingerprint)
 
 base_all = raw.copy()
 

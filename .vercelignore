@@ -25,6 +25,10 @@
 !race_metadata.py
 !race_ocr.py
 !race_workbook.py
+!ui_preferences.py
+!public_workbook.py
+!hosted_settings.py
+!vercel_start.py
 !F1_Standings.xlsx
 !.streamlit
 .streamlit/**

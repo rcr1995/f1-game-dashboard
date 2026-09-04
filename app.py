@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+import ui_preferences
+
 
 st.set_page_config(
     page_title="F1 Game Dashboard",
@@ -11,6 +13,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+ui_preferences.mount_browser_language()
 
 dashboard = st.Page(
     "dashboard_page.py",

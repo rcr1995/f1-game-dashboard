@@ -14,6 +14,7 @@ RUNTIME_MODULES = {
     "dashboard_page", "dashboard_core", "puskas_html", "league_config",
     "league_runtime", "league_workbook", "race_correction", "race_github",
     "race_import", "race_import_ui", "race_metadata", "race_ocr", "race_workbook",
+    "ui_preferences", "public_workbook", "hosted_settings", "vercel_start",
 }
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",
@@ -83,12 +84,13 @@ class VercelPackagingTests(unittest.TestCase):
         self.assertIn("F1_ENABLE_RACE_IMPORT=0", self.dockerfile)
         command_line = next(line for line in self.dockerfile.splitlines() if line.startswith("CMD "))
         command = json.loads(command_line.removeprefix("CMD "))
-        self.assertEqual(command[:2], ["sh", "-c"])
-        self.assertTrue(command[2].startswith("exec python -m streamlit run app.py "))
-        self.assertIn("--server.address=0.0.0.0", command[2])
-        self.assertIn("--server.port=${PORT:-80}", command[2])
-        self.assertNotIn("--server.enableXsrfProtection=false", command[2])
-        self.assertNotIn("--server.enableCORS=false", command[2])
+        self.assertEqual(command, ["python", "vercel_start.py"])
+        self.assertIn("F1_PUBLIC_GITHUB_SYNC=1", self.dockerfile)
+        launcher = (ROOT / "vercel_start.py").read_text(encoding="utf-8")
+        self.assertIn("--server.address=0.0.0.0", launcher)
+        self.assertIn('--server.port={port}', launcher)
+        self.assertNotIn("--server.enableXsrfProtection=false", launcher)
+        self.assertNotIn("--server.enableCORS=false", launcher)
         for prohibited in ("PRIVATE KEY-----", "client_secret=", "password_hash=", "ARG "):
             self.assertNotIn(prohibited, self.dockerfile)
 

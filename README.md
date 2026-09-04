@@ -34,16 +34,40 @@ using Vercel's container runtime. No frontend rewrite or workbook conversion is
 involved. This trial belongs to the separate `f1puskasleague` project on the
 `styrgo` team; it does not replace the Streamlit Community Cloud deployment.
 
-The image intentionally defaults to `F1_ENABLE_RACE_IMPORT=0`. The trial has
-no production Google/GitHub credentials, so `/admin` stays closed and cannot
-upload screenshots or publish workbook changes. Its bundled Excel file is a
-read-only deployment snapshot, not an automatically synchronized production
-database. Production/manual Excel workflows are unchanged.
+The image intentionally defaults to `F1_ENABLE_RACE_IMPORT=0`. Without approved
+server-side Google/GitHub configuration, `/admin` stays closed and cannot upload
+screenshots or publish workbook changes. The public page now reads the same
+`F1_Standings.xlsx` from `rcr1995/f1-game-dashboard`, branch `main`, using anonymous
+read-only requests. It checks for updates every minute while open and on a new
+visit (with a 60-second server cache). Valid changes refresh the dashboard data
+without an app reboot. Network/GitHub delays can extend this interval.
+
+Manual editing is still supported: download the workbook, edit it in Excel, and
+upload/commit it back to the same path on `main`. Preserve required sheet names,
+column headings, and identifiers. Invalid or unavailable updates leave the last
+valid snapshot visible with a warning; the source workbook is never rewritten
+by the public reader. The bundled workbook is only a first-start fallback.
+
+`F1_PUBLIC_GITHUB_SYNC=1` enables this behavior for the container. Other deployments
+and local runs retain their original local-file workflow unless explicitly
+enabled. Optional `F1_PUBLIC_GITHUB_OWNER`, `F1_PUBLIC_GITHUB_REPOSITORY`,
+`F1_PUBLIC_GITHUB_BRANCH`, and `F1_PUBLIC_GITHUB_WORKBOOK_PATH` select another public
+workbook. Admin publishing must target exactly the same source when sync is on.
+The read cache is bounded, validated, atomically replaced, and kept outside the
+repository. No GitHub credentials or Excel write endpoint are exposed publicly.
+
+The language selector remembers only `en` or `pt` in the visitor's browser using
+the app-owned key `f1puskasleague.language.v1`. It applies to Dashboard and Admin
+on the same site. A different browser/domain, cleared storage, private browsing,
+or blocked local storage may require choosing the language again. No login or
+authentication information is stored by this preference component.
 
 The source upload and container context use strict allowlists. Local secrets,
 `.env*`, `.codex*`, private keys, temporary screenshots, Git metadata, and local
 outputs are excluded. Do not replace those allowlists with a broad copy of the
-workspace, and never copy the production GitHub App key into this test project.
+workspace. Sharing the production GitHub App key with this separate host requires
+the owner's explicit approval, because approved Admin actions will then change
+the shared workbook and affect both dashboards.
 
 To validate packaging and deploy from an authenticated Vercel CLI session:
 
@@ -64,9 +88,35 @@ filter interactions, mobile rendering, and real upload/review flows. Container
 and WebSocket support are beta, and Streamlit's session-dependent HTTP uploads
 must reach the correct instance. Admin validation requires separate test-only
 authentication and a sandbox workbook publisher or test-only GitHub repository
-and GitHub App. Do not enable production writes just to test hosting. Vercel
+and GitHub App. Do not publish fabricated results to test hosting. Vercel
 usage is charged against the existing plan; a separate project is not a promise
 of zero additional usage cost.
+
+### Enable the Vercel Admin after authorization
+
+Use Vercel's **server-side sensitive environment variables**, scoped to the
+`f1puskasleague` project's intended deployment environment, never a public/client
+variable or a build argument:
+
+1. Add `F1_STREAMLIT_SECRETS_TOML` containing the existing `[admin_auth]`, `[auth]`,
+   and `[github]` configuration described below. Retain the immutable Google
+   issuer/subject allowlist. Use a new random cookie secret for this host and set
+   `auth.redirect_uri` to `https://f1puskasleague.vercel.app/oauth2callback`.
+2. Register that additional exact callback in the Google OAuth web client,
+   keeping the original Streamlit callback. Do not change who is allowed Admin.
+3. Set `F1_ENABLE_RACE_IMPORT=1` as a separate deployment environment variable
+   and redeploy this project. A legacy root flag in the TOML is ignored; the
+   deployment flag is authoritative. `F1_PUBLIC_DASHBOARD_URL` controls return
+   links and defaults to the Vercel URL in this container image.
+
+`vercel_start.py` validates the secret bundle without logging it, writes it to a
+private runtime-only temporary file (0700 directory/0600 file on Linux), removes
+the raw bundle from the child environment, and starts Streamlit using only that
+secret file. Missing/bad configuration never grants access. Do not paste secrets
+into commands, source, screenshots, browser-local storage, or build logs. Verify
+Google login, unauthorized direct access, logout, and screenshot review on the
+host before relying on it. Preview and production credentials are separate;
+never weaken preview protection to make an OAuth test work.
 
 ## Configure the Admin area once
 

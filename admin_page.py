@@ -15,14 +15,16 @@ from tempfile import TemporaryDirectory
 import streamlit as st
 
 import admin_auth
+import hosted_settings
+import ui_preferences
 
 
 APP_VERSION = "v43"
-PUBLIC_DASHBOARD_URL = "https://f1-game-dashboard.streamlit.app/"
+PUBLIC_DASHBOARD_URL = hosted_settings.dashboard_url()
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
 
-LANGUAGE_NAMES = ("English", "Português (Portugal)")
+LANGUAGE_NAMES = ui_preferences.LANGUAGE_NAMES
 
 COPY = {
     "en": {
@@ -290,7 +292,7 @@ def github_config_from_secrets() -> github_store.GitHubAppConfig:
     if installation_id <= 0:
         raise _configuration_error()
 
-    return github_store.GitHubAppConfig(
+    config = github_store.GitHubAppConfig(
         app_id=_secret_identifier(values, "app_id"),
         installation_id=installation_id,
         private_key=_secret_text(values, "private_key"),
@@ -299,6 +301,8 @@ def github_config_from_secrets() -> github_store.GitHubAppConfig:
         branch=_secret_text(values, "branch"),
         workbook_path=_secret_text(values, "workbook_path"),
     )
+    hosted_settings.validate_publisher_target(config)
+    return config
 
 
 def _require_current_admin() -> None:
@@ -321,10 +325,7 @@ def _clear_remote_snapshot() -> None:
 
 
 def _sync_dashboard_language() -> None:
-    selected = st.session_state.get("admin_language")
-    if selected in LANGUAGE_NAMES:
-        st.session_state["app_lang"] = selected
-        st.session_state["app_lang_selector"] = selected
+    ui_preferences.select_from_widget("admin_language")
 
 
 # The public dashboard selection is authoritative on page entry. The Admin
