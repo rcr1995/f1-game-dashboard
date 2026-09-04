@@ -1,0 +1,55 @@
+# Deny by default; uploading the workspace must never upload local credentials.
+# This also excludes .codex*, outputs, Git, environments, tests/docs/scripts.
+*
+!Dockerfile.vercel
+!.dockerignore
+!.vercelignore
+!vercel.json
+!requirements.txt
+!requirements-import.txt
+!app.py
+!admin_app.py
+!admin_page.py
+!admin_auth.py
+!admin_management_ui.py
+!dashboard_page.py
+!dashboard_core.py
+!puskas_html.py
+!league_config.py
+!league_runtime.py
+!league_workbook.py
+!race_correction.py
+!race_github.py
+!race_import.py
+!race_import_ui.py
+!race_metadata.py
+!race_ocr.py
+!race_workbook.py
+!F1_Standings.xlsx
+!.streamlit
+.streamlit/**
+!.streamlit/config.toml
+!assets
+assets/**
+!assets/hero_banner.webp
+!assets/helmets
+assets/helmets/**
+!assets/helmets/*.webp
+!assets/tracks
+assets/tracks/**
+!assets/tracks/*.webp
+!assets/tracks/*.png
+!assets/tracks/*.jpg
+
+# CLI ignore@4 does not normalize Windows separators in non-ASCII filenames.
+# Include this one public asset explicitly without changing its runtime name.
+!assets\\tracks\\Portimão.webp
+
+# Explicit final exclusions remain effective even inside allowed directories.
+**/.env*
+**/secrets*
+**/*.pem
+**/*.key
+**/.codex*
+**/__pycache__
+**/*.pyc

@@ -27,6 +27,47 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
+## Isolated Vercel hosting trial
+
+`Dockerfile.vercel` and `vercel.json` run the existing Streamlit application
+using Vercel's container runtime. No frontend rewrite or workbook conversion is
+involved. This trial belongs to the separate `f1puskasleague` project on the
+`styrgo` team; it does not replace the Streamlit Community Cloud deployment.
+
+The image intentionally defaults to `F1_ENABLE_RACE_IMPORT=0`. The trial has
+no production Google/GitHub credentials, so `/admin` stays closed and cannot
+upload screenshots or publish workbook changes. Its bundled Excel file is a
+read-only deployment snapshot, not an automatically synchronized production
+database. Production/manual Excel workflows are unchanged.
+
+The source upload and container context use strict allowlists. Local secrets,
+`.env*`, `.codex*`, private keys, temporary screenshots, Git metadata, and local
+outputs are excluded. Do not replace those allowlists with a broad copy of the
+workspace, and never copy the production GitHub App key into this test project.
+
+To validate packaging and deploy from an authenticated Vercel CLI session:
+
+```powershell
+python -m unittest discover -s tests -p test_vercel_packaging.py -v
+npx --yes vercel@59.11.2 link --project f1puskasleague --scope styrgo
+npx --yes vercel@59.11.2 deploy --dry --json --scope styrgo
+npx --yes vercel@59.11.2 deploy --scope styrgo
+```
+
+Check that the dry run reports the **Container** framework and only expected
+runtime files before uploading. Vercel assigns a new project's first deployment
+to its production environment; this is still only the isolated trial project,
+not the existing live dashboard. Later CLI deployments default to previews.
+
+Before considering a hosting switch, verify cold starts, WebSocket reconnects,
+filter interactions, mobile rendering, and real upload/review flows. Container
+and WebSocket support are beta, and Streamlit's session-dependent HTTP uploads
+must reach the correct instance. Admin validation requires separate test-only
+authentication and a sandbox workbook publisher or test-only GitHub repository
+and GitHub App. Do not enable production writes just to test hosting. Vercel
+usage is charged against the existing plan; a separate project is not a promise
+of zero additional usage cost.
+
 ## Configure the Admin area once
 
 Admin supports two server-side authentication modes: a password for a simple
