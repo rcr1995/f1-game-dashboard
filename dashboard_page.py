@@ -35,7 +35,7 @@ except Exception:
 
 # -----------------------------
 
-APP_VERSION = "v43"
+APP_VERSION = "v44"
 
 MOBILE_DASHBOARD_CSS = """
 <style>
@@ -189,12 +189,6 @@ T = {
         "available_gp_rows": "Available GP rows",
 
         "chart_preset": "Chart preset",
-
-        "theme": "Theme",
-
-        "theme_dark": "Dark",
-
-        "theme_light": "Light",
 
         "all_time_title": "All‑time overview (ignores Season filter)",
 
@@ -443,12 +437,6 @@ T = {
 
         "chart_preset": "Predefinição do gráfico",
 
-        "theme": "Tema",
-
-        "theme_dark": "Escuro",
-
-        "theme_light": "Claro",
-
         "all_time_title": "Histórico (ignora filtro de Época)",
 
         "all_time_standings": "Classificação histórica",
@@ -696,46 +684,7 @@ def localized_table(df: pd.DataFrame, lang: str) -> pd.DataFrame:
     out = df.copy()
     return out.rename(columns={c: rename_map[c] for c in out.columns if c in rename_map})
 
-def theme_palette(theme_mode: str) -> dict:
-    if theme_mode == "Light":
-        return {
-            "positive": "#1f9d55",
-            "negative": "#e03131",
-            "neutral": "#6c757d",
-            "plotly_template": "plotly_white",
-            "line_palette": px.colors.qualitative.Set2 if PLOTLY_OK else [],
-            "css": """
-                <style>
-                :root {
-                    --bg-app: #f8f9fa;
-                    --bg-panel: #ffffff;
-                    --bg-card: linear-gradient(145deg, #ffffff, #f9fafb);
-                    --bg-hero: linear-gradient(135deg, #ffefef 0%, #fcfcfc 45%, #f8f9fa 100%);
-                    --bg-sidebar: #f3f4f6;
-                    --text-main: #111827;
-                    --text-muted: #4b5563;
-                    --text-faint: #9ca3af;
-                    --border-color: #e5e7eb;
-                    --pill-done-bg: #d1fae5; --pill-done-text: #059669;
-                    --pill-up-bg: #dbeafe;   --pill-up-text: #2563eb;
-                    --pill-tbd-bg: #e5e7eb;  --pill-tbd-text: #4b5563;
-                    --title-card-bg: linear-gradient(145deg, #fffbeb, #ffffff);
-                    --title-card-border: #fde68a;
-                    --h2h-bg: linear-gradient(145deg, #ffffff, #f3f4f6);
-                    --next-race-bg: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
-                    --scrollbar-track: #e5e7eb;
-                    --maths-bg: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
-                    --maths-open-bg: linear-gradient(135deg, #ecfdf5, #ffffff);
-                    --maths-closed-bg: linear-gradient(135deg, #fef2f2, #ffffff);
-                }
-                .stApp { background-color: var(--bg-app); color: var(--text-main); }
-                div[data-testid='stMetricValue'] { font-size: 1.2rem; color: var(--text-main); }
-                .stTabs [role="tab"] { color: var(--text-muted) !important; }
-                .stTabs [role="tab"][aria-selected="true"] { color: var(--text-main) !important; font-weight: 700; }
-                div[data-testid="stDataFrame"] { color: var(--text-main); }
-                </style>
-            """,
-        }
+def dark_palette() -> dict:
     return {
         "positive": "#2ecc71",
         "negative": "#ff4b4b",
@@ -791,12 +740,6 @@ GLOBAL_CSS = """
 .stMainBlockContainer {max-width:1660px;padding:3rem 1.5rem 2rem;}
 [data-testid="stHeader"] {background:transparent!important;}
 [data-testid="stAppDeployButton"], #MainMenu, footer {display:none!important;}
-.f1-shell {display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-color);padding:0 8px 18px;margin-bottom:6px;gap:12px;}
-.f1-shell-brand {font:800 17px system-ui;letter-spacing:.07em;color:var(--text-main);}
-.f1-shell-brand b {color:#f33;margin-right:8px;}
-.f1-shell small {color:var(--text-muted);font:11px system-ui;letter-spacing:.08em;text-transform:uppercase;}
-.f1-shell a {color:var(--text-main);font:600 12px system-ui;text-decoration:none;border:1px solid var(--border-color);border-radius:8px;padding:8px 12px;margin-left:16px}
-@media(max-width:700px) {.stMainBlockContainer {padding:2.8rem .5rem 1rem}.f1-shell-brand {font-size:13px;white-space:nowrap}.f1-shell small {display:none}}
 
 
 
@@ -1005,9 +948,8 @@ h2, h3 {
 def render_st_dataframe(df_or_styler):
     """Fallback renderer that converts pandas DataFrame or Styler to HTML to avoid pyarrow dependency."""
     try:
-        is_light = st.session_state.get("theme_mode", "Dark") == "Light"
-        text_color = "#333" if is_light else "#eee"
-        border_color = "#ccc" if is_light else "#333"
+        text_color = "#eee"
+        border_color = "#333"
 
         table_css = f"""
         <style>
@@ -1029,7 +971,7 @@ def render_st_dataframe(df_or_styler):
     except Exception as e:
         st.error(f"Could not render table: {e}")
 
-def style_pos_column(df: pd.DataFrame, pos_col: str = "Pos", is_light: bool = False):
+def style_pos_column(df: pd.DataFrame, pos_col: str = "Pos"):
     """Return a Pandas Styler with gold/silver/bronze on the position column."""
     def _row(row):
         try:
@@ -1038,11 +980,11 @@ def style_pos_column(df: pd.DataFrame, pos_col: str = "Pos", is_light: bool = Fa
             return [""] * len(row)
 
         if p == 1:
-            css = "background:#fef3c7;color:#b45309;font-weight:700;" if is_light else "background:#2a1f00;color:#f5c518;font-weight:700;"
+            css = "background:#2a1f00;color:#f5c518;font-weight:700;"
         elif p == 2:
-            css = "background:#f3f4f6;color:#4b5563;font-weight:700;" if is_light else "background:#161a20;color:#a8a9ad;font-weight:700;"
+            css = "background:#161a20;color:#a8a9ad;font-weight:700;"
         elif p == 3:
-            css = "background:#ffedd5;color:#9a3412;font-weight:700;" if is_light else "background:#1c1008;color:#cd7f32;font-weight:700;"
+            css = "background:#1c1008;color:#cd7f32;font-weight:700;"
         else:
             css = ""
 
@@ -1092,38 +1034,12 @@ def load_dashboard_data(workbook_path: str, revision: str):
     return warnings, standings, calendar
 
 
-if "theme_mode" not in st.session_state:
-    st.session_state["theme_mode"] = "Dark"
-# Select language early in the sidebar
-with st.sidebar:
-    st.session_state["app_lang_selector"] = ui_preferences.language_name(st.session_state)
-    st.selectbox(
-        "Language / Idioma",
-        options=list(LANGS.keys()),
-        key="app_lang_selector",
-        on_change=ui_preferences.select_from_widget,
-        args=("app_lang_selector",),
-    )
-    st.divider()
-
-    lang_name = ui_preferences.language_name(st.session_state)
-    lang = LANGS[lang_name]
-
-    theme_options = ["Dark", "Light"]
-    st.session_state["theme_mode"] = st.radio(
-        tr(lang, "theme"),
-        options=theme_options,
-        index=theme_options.index(st.session_state.get("theme_mode", "Dark")),
-        horizontal=True,
-        key="theme_mode_selector",
-    )
-    st.divider()
-
-    st.caption(tr(lang, "version"))
-
-THEME_CFG = theme_palette(st.session_state.get("theme_mode", "Dark"))
+lang_name = ui_preferences.language_name(st.session_state)
+lang = LANGS[lang_name]
+THEME_CFG = dark_palette()
 apply_theme_css(THEME_CFG)
 st.html(GLOBAL_CSS)
+ui_preferences.render_page_header()
 
 # Load data silently in background
 bundled = core.find_bundled_excel()
@@ -1211,7 +1127,6 @@ latest_df, latest_meta = core.latest_league_slice(base_all)
 latest_gp = latest_df[~latest_df["IsSeasonFinal"]].copy()
 st_tbl_latest = core.standings_table(latest_gp, entity="Drivers") if not latest_gp.empty else pd.DataFrame()
 
-st.html('<div class="f1-shell"><div class="f1-shell-brand"><b>F1</b> PUSKAS LEAGUE</div><div><small>' + ('O centro da nossa liga' if lang == 'pt' else 'Our league, every angle') + '</small><a href="/admin" target="_self">Admin</a></div></div>')
 tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(
     ["Visão geral", "Centro de corridas", "Circuitos", "Arquivo"] if lang == "pt" else
     ["Overview", "Race centre", "Circuits", "Archive"]
@@ -1220,9 +1135,7 @@ tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(
 with tab_dash:
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
     html_dashboard = html_dashboard.replace("</body>", f"{MOBILE_DASHBOARD_CSS}</body>")
-    if st.session_state.get("theme_mode") == "Light":
-        from season_insights import LIGHT_STYLE
-        html_dashboard = html_dashboard.replace("</body>", f"{LIGHT_STYLE}</body>")
+    st.html('<style>[class*="st-key-puskas-dash-container"] iframe {height:calc(100dvh - 190px)!important;min-height:400px}</style>')
     with st.container(key=f"puskas-dash-container-{lang}-{latest_meta.get('SeasonLabel', 'default')}"):
         st.iframe(html_dashboard, height=2150)
 
@@ -1264,6 +1177,25 @@ with tab_gp:
         view_canon = {tr(lang, "drivers"): "Drivers", tr(lang, "constructors"): "Constructors"}[view]
         entity_col = "Driver" if view_canon == "Drivers" else "Team"
 
+        import season_insights
+        show_round_details = st.toggle(
+            "Mostrar pontos de Corrida e Sprint" if lang == "pt" else "Show Race and Sprint points",
+            value=False, key="round_points_details",
+            help="Desativa para ver apenas os totais por Grande Prémio." if lang == "pt" else
+                 "Turn off to show only the total points per Grand Prix.",
+        )
+        # Never merge round numbers across different games or leagues in the all-time view.
+        round_tables = []
+        for identity, league_rows in df_gp.groupby(["Game", "SeasonLabel", "League Name"], sort=False):
+            table_meta = dict(zip(["Game", "SeasonLabel", "League Name"], identity))
+            round_tables.append(season_insights.render_season_insights(
+                league_rows, table_meta, lang, entity=view_canon, show_details=show_round_details,
+            ))
+        if any(round_tables):
+            st.iframe('<!doctype html><html><head><meta charset="utf-8"></head>'
+                      '<body style="margin:0;background:#0b0b0f;color:#fafafa">' +
+                      season_insights.STYLE + ''.join(round_tables) + '</body></html>', height=780)
+
         st_table = core.standings_table(df_gp, entity=view_canon)
         st.subheader(tr(lang, "standings"))
         show_form_cols = st.toggle(tr(lang, "show_form_cols"), value=False)
@@ -1272,7 +1204,7 @@ with tab_gp:
             st_table = st_table.merge(form, on=entity_col, how="left") if not form.empty else st_table
         loc_st = localized_table(st_table, lang)
         if "Pos" in loc_st.columns:
-            render_st_dataframe(style_pos_column(loc_st, is_light=(st.session_state.get("theme_mode", "Dark") == "Light")))
+            render_st_dataframe(style_pos_column(loc_st))
         else:
             render_st_dataframe(loc_st)
 
@@ -1323,11 +1255,11 @@ with tab_gp:
                     title=(tr(lang,"timeline_label") if gp_all_time else tr(lang,"gp_label")),
                     rangeslider_visible=False,
                     showgrid=True,
-                    gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                    gridcolor="rgba(255,255,255,0.05)"
                 )
                 fig.update_yaxes(
                     showgrid=True,
-                    gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                    gridcolor="rgba(255,255,255,0.05)"
                 )
                 fig.update_traces(
                     line=dict(width=3),
@@ -1380,11 +1312,11 @@ with tab_gp:
             )
             fig_tension.update_xaxes(
                 showgrid=True,
-                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                gridcolor="rgba(255,255,255,0.05)"
             )
             fig_tension.update_yaxes(
                 showgrid=True,
-                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                gridcolor="rgba(255,255,255,0.05)"
             )
             fig_tension.update_traces(
                 marker=dict(size=6)
@@ -1598,12 +1530,12 @@ with tab_all:
                 type="category",
                 title=tr(lang, "season"),
                 showgrid=True,
-                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                gridcolor="rgba(255,255,255,0.05)"
             )
 
             fig.update_yaxes(
                 showgrid=True,
-                gridcolor="rgba(255,255,255,0.05)" if st.session_state.get("theme_mode", "Dark") == "Dark" else "rgba(0,0,0,0.05)"
+                gridcolor="rgba(255,255,255,0.05)"
             )
 
             fig.update_traces(

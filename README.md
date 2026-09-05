@@ -12,7 +12,7 @@ A bilingual Streamlit dashboard for exploring Formula 1 game leagues, race resul
 - Latest-race dashboard and calendar status, with completed-Race standings on hover, focus, or tap
 - Circuit win records and all-time title counts
 - English and Portuguese interface
-- Persistent dark and light themes
+- Dark-only layout with persistent English/Portuguese flag controls
 - Explicit workbook validation with actionable error messages
 - A protected Admin area for importing race results from 2–4 screenshots
 - A protected, validation-gated download of the latest GitHub Excel workbook
@@ -59,13 +59,18 @@ not interrupt an open race review. Public and unauthorized routes never render
 this control. **Refresh latest Excel** reloads Admin data and starts a fresh
 review; it does not upload a local Excel file.
 
-The dashboard's **Points by round** section shows Race and Sprint points,
-weekend totals, season totals and grand totals for the current league. A dash
+The **Race centre → Points by round** table follows the Season — League and
+Drivers/Constructors filters. GP totals are shown by default; **Show Race and
+Sprint points** expands the event detail. Season totals and grand totals use
+the Excel points, and constructor points stay with each event's recorded team. A dash
 means no published result; zero means a published zero-point finish. Exact
 game/season/league identity and duplicate-event checks prevent inflated totals.
-Driver search, a scrollable table and selectable championship-progression lines
-support exploring the season. The page has branded navigation and grouped
-Overview, Championship, Teams, Calendar and Legacy sections in English and Portuguese.
+Driver/constructor search and a scrollable table support exploring the season.
+The Overview has a pinned section menu, restored dark location photos, and
+League Statistics below Calendar. Its championship-progression chart is removed.
+Both pages use the same dark styling and top-right language flags and page link;
+there is no sidebar or light-theme option. Language persists locally across page
+changes and later visits (when browser storage is available).
 
 `F1_PUBLIC_GITHUB_SYNC=1` enables this behavior for the container. Other deployments
 and local runs retain their original local-file workflow unless explicitly

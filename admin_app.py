@@ -13,7 +13,7 @@ import ui_preferences
 
 
 st.set_page_config(
-    page_title="F1 Race Updater",
+    page_title="F1 League Administration",
     page_icon="🏁",
     layout="wide",
     initial_sidebar_state="collapsed",

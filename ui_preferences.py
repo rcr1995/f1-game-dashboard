@@ -108,3 +108,69 @@ def mount_browser_language() -> None:
         height=0,
         width="stretch",
     )
+
+
+HEADER_JS = r"""
+export default function ({parentElement, data, setStateValue}) {
+    let root = parentElement.querySelector('.f1-header-root');
+    if (!root) {
+        root = document.createElement('div');
+        root.className = 'f1-header-root';
+        parentElement.appendChild(root);
+    }
+    root.innerHTML = `<header><strong><b>F1</b> PUSKAS LEAGUE</strong><nav aria-label="Language and pages">
+      <button data-language="pt" title="Português (Portugal)" aria-label="Português (Portugal)"><svg viewBox="0 0 30 20" aria-hidden="true"><path fill="#d71920" d="M0 0h30v20H0z"/><path fill="#006b3f" d="M0 0h12v20H0z"/><circle cx="12" cy="10" r="4.4" fill="#ffcf00"/><path fill="#fff" stroke="#c71924" stroke-width="1.8" d="M9.7 6.8h4.6v4a2.3 2.3 0 0 1-4.6 0z"/></svg></button>
+      <button data-language="en" title="English" aria-label="English"><svg viewBox="0 0 30 20" aria-hidden="true"><path fill="#012169" d="M0 0h30v20H0z"/><path stroke="#fff" stroke-width="4" d="m0 0 30 20M30 0 0 20"/><path stroke="#c8102e" stroke-width="1.5" d="m0 0 30 20M30 0 0 20"/><path stroke="#fff" stroke-width="6" d="M15 0v20M0 10h30"/><path stroke="#c8102e" stroke-width="3.5" d="M15 0v20M0 10h30"/></svg></button>
+      <a target="_self"></a></nav></header>`;
+    const link = root.querySelector('a');
+    link.href = data.admin ? '/' : '/admin';
+    link.textContent = data.admin ? 'Dashboard' : 'Admin';
+    root.querySelectorAll('button').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.language === data.language));
+        button.onclick = () => {
+            const code = button.dataset.language;
+            // Persist synchronously: immediately following the page link cannot lose this choice.
+            try { window.localStorage.setItem('f1puskasleague.language.v1', code); } catch (_) {}
+            setStateValue('selection', code);
+        };
+    });
+}
+"""
+
+HEADER_CSS = """
+header {display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:58px;border-bottom:1px solid #282c38;font-family:system-ui;color:#fafafa}
+strong {font-size:17px;letter-spacing:.07em;white-space:nowrap} strong b {color:#f33;margin-right:6px}
+nav {display:flex;align-items:center;gap:6px}
+button {background:transparent;border:1px solid transparent;border-radius:6px;padding:6px;cursor:pointer;line-height:0}
+button svg {width:25px;height:17px;border-radius:2px}
+button[aria-pressed=true] {border-color:#ff5757;background:#ffffff08}
+button:focus-visible,a:focus-visible {outline:2px solid #ff5757;outline-offset:2px}
+a {color:#fff;text-decoration:none;border:1px solid #383d49;border-radius:8px;padding:8px 12px;font:600 12px system-ui;margin-left:5px}
+a:hover {background:#272b35}
+@media(max-width:500px) {strong {font-size:12px;letter-spacing:.02em} button {padding:5px} button svg {width:22px;height:15px} nav {gap:2px} a {padding:8px;font-size:11px}}
+"""
+
+
+def _receive_header_language() -> None:
+    import streamlit as st
+    result = st.session_state.get("ui_page_header", {})
+    code = result.get("selection") if hasattr(result, "get") else None
+    for name, value in LANGUAGES.items():
+        if code == value:
+            select_language(st.session_state, name)
+            break
+
+
+def render_page_header(*, admin: bool = False) -> None:
+    """Shared public chrome; no identity, secrets or privileged data enter this component."""
+    import streamlit as st
+    st.html('''<style>
+      .stApp,[data-testid="stAppViewContainer"] {background:#0b0b0f!important;color:#fafafa!important}
+      [data-testid="stSidebar"],[data-testid="stSidebarCollapsedControl"],
+      [data-testid="stHeader"],#MainMenu,footer {display:none!important}
+      .stMainBlockContainer {max-width:1660px;padding:1rem 1.5rem 2rem}
+      @media(max-width:700px) {.stMainBlockContainer {padding:.5rem .5rem 1rem}}
+    </style>''')
+    component = st.components.v2.component("f1_page_header", js=HEADER_JS, css=HEADER_CSS)
+    component(key="ui_page_header", data={"admin": admin, "language": LANGUAGES[language_name(st.session_state)]},
+              on_selection_change=_receive_header_language, height=64, width="stretch")

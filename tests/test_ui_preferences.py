@@ -87,6 +87,27 @@ class LanguageStateTests(unittest.TestCase):
         self.assertEqual(preferences.language_name(state), "English")
         self.assertNotIn("admin", state)
 
+    def test_header_flags_change_shared_language_and_ignore_invalid_values(self):
+        state = {"ui_page_header": {"selection": "en"}}
+        with patch.dict("sys.modules", {"streamlit": SimpleNamespace(session_state=state)}):
+            preferences._receive_header_language()
+            self.assertEqual(preferences.language_name(state), "English")
+            state["ui_page_header"] = {"selection": "pt"}
+            preferences._receive_header_language()
+            self.assertEqual(preferences.language_name(state), "Português (Portugal)")
+            state["ui_page_header"] = {"selection": {"admin": True}}
+            preferences._receive_header_language()
+            self.assertNotIn("admin", state)
+
+    def test_navigation_is_hidden_and_light_theme_implementation_removed(self):
+        self.assertIn('position="hidden"', (ROOT / "app.py").read_text(encoding="utf-8"))
+        for filename in ("dashboard_page.py", "admin_page.py"):
+            source = (ROOT / filename).read_text(encoding="utf-8")
+            self.assertNotIn('with st.sidebar', source)
+            self.assertIn('ui_preferences.render_page_header', source)
+            self.assertNotIn('theme_mode', source)
+        self.assertNotIn('LIGHT_STYLE', (ROOT / 'season_insights.py').read_text(encoding='utf-8'))
+
     def test_both_entrypoints_mount_preference_before_routing(self):
         for filename in ("app.py", "admin_app.py"):
             tree = ast.parse((ROOT / filename).read_text(encoding="utf-8"))

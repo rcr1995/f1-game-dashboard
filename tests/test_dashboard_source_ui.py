@@ -17,6 +17,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import public_workbook
+import season_insights
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +76,25 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
         self.assertNotIn(expected, self.messages(app.sidebar, "caption"))
         self.assertFalse(any("GitHub update unavailable" in value for value in self.messages(app.main, "warning")))
         self.assertGreaterEqual(self.resolver.call_count, 2)
+
+    def test_race_centre_points_follow_league_entity_and_detail_filters(self):
+        with patch.object(season_insights, "render_season_insights", wraps=season_insights.render_season_insights) as render:
+            app = self.app()
+            self.assert_rendered(app)
+            self.assertFalse(app.sidebar.selectbox)
+            self.assertFalse(app.sidebar.radio)
+            self.assertEqual(render.call_args.kwargs, {"entity": "Drivers", "show_details": False})
+            app.radio(key="dash_view").set_value("Constructors").run()
+            self.assert_rendered(app)
+            self.assertEqual(render.call_args.kwargs["entity"], "Constructors")
+            app.toggle(key="round_points_details").set_value(True).run()
+            self.assertTrue(render.call_args.kwargs["show_details"])
+            selector = app.selectbox(key="gp_pair")
+            different = next(value for value in selector.options[1:] if value != selector.value)
+            selector.set_value(different).run()
+            self.assert_rendered(app)
+            selected_meta = render.call_args.args[1]
+            self.assertEqual(f'{selected_meta["SeasonLabel"]} ||| {selected_meta["League Name"]}', different)
 
     def test_stale_warning_is_visible_and_localized_without_exposing_raw_error(self):
         self.resolver.return_value = replace(

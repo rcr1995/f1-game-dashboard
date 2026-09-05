@@ -29,5 +29,5 @@ admin = st.Page(
     url_path="admin",
 )
 
-navigation = st.navigation([dashboard, admin], position="sidebar", expanded=False)
+navigation = st.navigation([dashboard, admin], position="hidden")
 navigation.run()

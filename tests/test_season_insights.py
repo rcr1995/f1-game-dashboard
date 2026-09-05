@@ -39,6 +39,42 @@ class SeasonInsightsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             season_insights.season_points(pd.DataFrame([self.row(), self.row()]), self.meta)
 
+    def test_constructor_points_follow_event_team_after_transfer(self):
+        rows = pd.DataFrame([
+            self.row(Team="Red"), self.row(Team="Red", Driver="Bob", Points=18),
+            self.row(Team="Red", Type="SR", Points=6),
+            self.row(Team="Blue", Round=2, Points=15),
+            self.row(Team="Red", Round=2, Driver="Bob", Points=10),
+        ])
+        model = season_insights.season_points(rows, self.meta, "Constructors")
+        self.assertEqual(model["drivers"], ["Red", "Blue"])
+        self.assertEqual(model["points"][("Red", 1, "R")], 43)
+        self.assertEqual(model["points"][("Red", 1, "SR")], 6)
+        self.assertEqual(model["points"][("Blue", 2, "R")], 15)
+        self.assertEqual(sum(model["points"].values()), rows.Points.sum())
+        rendered = season_insights.render_season_insights(rows, self.meta, entity="Constructors")
+        self.assertIn('Find constructor', rendered)
+        self.assertIn('>59</td>', rendered)
+
+    def test_collapsed_details_keep_identical_round_and_season_totals(self):
+        rows = pd.DataFrame([self.row(), self.row(Type="SR", Points=6), self.row(Round=2, Points=18)])
+        detailed = season_insights.render_season_insights(rows, self.meta)
+        collapsed = season_insights.render_season_insights(rows, self.meta, show_details=False)
+        for rendered in (detailed, collapsed):
+            self.assertIn('class="si-weekend">31</td>', rendered)
+            self.assertIn('class="si-total">49</td>', rendered)
+            self.assertNotIn('<svg', rendered)
+            self.assertNotIn('Championship progression', rendered)
+        self.assertIn('scope="col">Sprint</th>', detailed)
+        self.assertNotIn('scope="col">Sprint</th>', collapsed)
+        self.assertNotIn('scope="col">Race</th>', collapsed)
+
+    def test_missing_round_is_not_rendered_as_zero_when_collapsed(self):
+        rows = pd.DataFrame([self.row(), self.row(Driver="Bob", Round=2, Points=0)])
+        rendered = season_insights.render_season_insights(rows, self.meta, show_details=False)
+        self.assertIn('class="si-weekend">—</td>', rendered)
+        self.assertIn('class="si-weekend">0</td>', rendered)
+
     def test_names_are_escaped_in_table_chart_and_search(self):
         rendered = season_insights.render_season_insights(
             pd.DataFrame([self.row(Driver='<img src=x onerror=alert(1)>')]), self.meta

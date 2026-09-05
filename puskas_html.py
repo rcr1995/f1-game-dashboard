@@ -2308,11 +2308,10 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
 
     hero_html = render_puskas_hero(meta, calendar_raw, lang=lang)
-    points_html = season_insights.render_season_insights(latest_gp, meta, lang)
     sections = (
-        [('overview', 'Visão geral'), ('season-points', 'Pontos por ronda'), ('teams', 'Equipas e duelos'), ('calendar', 'Calendário'), ('legacy', 'História')]
+        [('overview', 'Visão geral'), ('teams', 'Equipas e duelos'), ('calendar', 'Calendário'), ('statistics', 'Estatísticas'), ('legacy', 'História')]
         if lang == 'pt' else
-        [('overview', 'Overview'), ('season-points', 'Points by round'), ('teams', 'Teams & battles'), ('calendar', 'Calendar'), ('legacy', 'Legacy')]
+        [('overview', 'Overview'), ('teams', 'Teams & battles'), ('calendar', 'Calendar'), ('statistics', 'Statistics'), ('legacy', 'Legacy')]
     )
     section_nav = '<nav class="p-section-nav" aria-label="Season sections">' + ''.join(
         f'<button type="button" data-section="{section_id}">{label}</button>' for section_id, label in sections
@@ -2323,7 +2322,9 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         if (!section) return;
         section.setAttribute('tabindex', '-1');
         section.focus({preventScroll:true});
-        section.scrollIntoView({block:'start', behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+        const menu = document.querySelector('.p-section-nav');
+        window.scrollTo({top:section.getBoundingClientRect().top + window.scrollY - menu.offsetHeight - 12,
+          behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
       });
     });
     </script>'''
@@ -2369,14 +2370,13 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             </div>
 
             <!-- NEXT RACE -->
-            <div class="p-card" style="{bg_style}">
+            <div class="p-card p-next-race" style="{bg_style}">
                 <div class="p-card-title" style="{bg_title_style}">{_tr(lang, "next_race")}</div>
                 {next_race_card_html}
             </div>
         </div>
 
-        {points_html}
-        <div class="p-section-label" id="teams"><span>03</span> {sections[2][1]}</div>
+        <div class="p-section-label" id="teams"><span>02</span> {sections[1][1]}</div>
         <!-- ROW 2: CONSTRUCTORS & MATHS & CHART -->
         <div class="p-grid-3">
             <!-- CONSTRUCTORS STANDINGS -->
@@ -2414,16 +2414,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             </div>
         </div>
 
-        <!-- ROW 2.5: LEAGUE STATS -->
-        <div style="padding: 0 2rem;">
-            <div class="p-card-title" style="margin-bottom:0;">{_tr(lang, "league_statistics")}</div>
-            <div class="p-stats-grid">
-                {stats_html}
-            </div>
-        </div>
-        <br>
-
-        <div class="p-section-label" id="calendar"><span>04</span> {sections[3][1]}</div>
+        <div class="p-section-label" id="calendar"><span>03</span> {sections[2][1]}</div>
         <!-- ROW 3 -->
         <div class="p-grid-2">
             <!-- CALENDAR -->
@@ -2645,7 +2636,11 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         </div>
 
         <!-- ROW 4: HOF -->
-        <div class="p-hof" id="legacy">
+        <div class="p-section-label" id="statistics"><span>04</span> {_tr(lang, "league_statistics")}</div>
+        <div style="padding: 0 2rem;">
+            <div class="p-stats-grid">{stats_html}</div>
+        </div>
+        <div class="p-hof" id="legacy" style="scroll-margin-top:85px">
             <div class="p-card-title">{_tr(lang, "hall_of_fame")}</div>
             <div class="p-hof-grid">
                 <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "most_championships")}</div>{champ_name}</div>

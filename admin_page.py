@@ -20,7 +20,7 @@ import review_draft_recovery
 import ui_preferences
 
 
-APP_VERSION = "v50"
+APP_VERSION = "v51"
 PUBLIC_DASHBOARD_URL = hosted_settings.dashboard_url()
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
@@ -205,6 +205,7 @@ def _render_closed_state(state: admin_auth.AdminState, lang: str) -> None:
 # import below it so a direct request cannot construct those capabilities.
 language_name = _preferred_language_name(st.session_state)
 lang = _language_code(language_name)
+ui_preferences.render_page_header(admin=True)
 state = admin_auth.current_admin_state()
 pending_clear_reason = review_draft_recovery.pending_clear_reason(st.session_state)
 if pending_clear_reason is not None:
@@ -221,7 +222,7 @@ if state is not admin_auth.AdminState.AUTHORIZED:
     _render_closed_state(state, lang)
     st.stop()
 
-with st.sidebar:
+with st.container():
     if admin_auth.password_mode_enabled():
         identity = _copy(lang, "administrator")
     else:
@@ -253,7 +254,7 @@ import race_github as github_store
 st.markdown(
     """
     <style>
-      .stApp { max-width: 1080px; margin: 0 auto; }
+      .stMainBlockContainer { max-width: 1280px; margin: 0 auto; }
       [data-testid="stHeader"] { background: transparent; }
       @media (max-width: 640px) {
         .block-container { padding: 1rem 0.85rem 5rem; }
@@ -374,31 +375,8 @@ def _validated_download_snapshot(
     return snapshot
 
 
-def _sync_dashboard_language() -> None:
-    ui_preferences.select_from_widget("admin_language")
-
-
-# The public dashboard selection is authoritative on page entry. The Admin
-# selector writes back to that same preference so subsequent page changes
-# remain synchronized in both directions.
-language_name = _preferred_language_name(st.session_state)
-st.session_state["admin_language"] = language_name
-language_name = st.selectbox(
-    "Idioma / Language",
-    LANGUAGE_NAMES,
-    key="admin_language",
-    on_change=_sync_dashboard_language,
-)
-lang = _language_code(language_name)
-
-header_columns = st.columns([3, 1])
-header_columns[0].title(_copy(lang, "admin_title"))
-header_columns[0].caption(_copy(lang, "private_updater"))
-header_columns[1].link_button(
-    _copy(lang, "open_dashboard"),
-    PUBLIC_DASHBOARD_URL,
-    use_container_width=True,
-)
+st.title(_copy(lang, "admin_title"))
+st.caption(_copy(lang, "private_updater"))
 
 try:
     config = github_config_from_secrets()
