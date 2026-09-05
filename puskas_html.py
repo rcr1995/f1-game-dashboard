@@ -983,8 +983,9 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
                 <div class="p-hero-sub" style="opacity: 1;">{slogans[0]}</div>
                 <div class="p-hero-season">{_tr(lang, "season_label")}: {meta.get("SeasonLabel", "2025")} - {meta.get("League Name", "")}</div>
                 <div style="margin-top: 1rem;">
-                    <div class="p-btn" id="btn-hero-circuits" style="cursor: pointer;">{_tr(lang, "circuits")}</div>
-                    <div class="p-btn dark" id="btn-hero-gpstats" style="cursor: pointer;">{_tr(lang, "gp_stats")}</div>
+                    <a class="p-btn" href="/?view=circuits&lang={lang}" target="_self">{_tr(lang, "circuits")}</a>
+                    <a class="p-btn dark" href="/?view=race-centre&lang={lang}" target="_self">{'Centro de corridas' if lang == 'pt' else 'Race Centre'}</a>
+                    <a class="p-btn dark" href="/?view=archive&lang={lang}" target="_self">{'Arquivo' if lang == 'pt' else 'Archive'}</a>
                 </div>
             </div>
             {countdown_html}
@@ -2315,7 +2316,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     )
     section_nav = '<nav class="p-section-nav" aria-label="Season sections">' + ''.join(
         f'<button type="button" data-section="{section_id}">{label}</button>' for section_id, label in sections
-    ) + '''</nav><script>
+    ) + f'<a href="/?view=race-centre&lang={lang}">{"Centro de corridas" if lang == "pt" else "Race Centre"}</a><a href="/?view=circuits&lang={lang}">{"Circuitos" if lang == "pt" else "Circuits"}</a><a href="/?view=archive&lang={lang}">{"Arquivo" if lang == "pt" else "Archive"}</a>' + '''</nav><script>
     document.querySelectorAll('.p-section-nav button').forEach(button => {
       button.addEventListener('click', () => {
         const section = document.getElementById(button.dataset.section);
@@ -2416,7 +2417,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
         <div class="p-section-label" id="calendar"><span>03</span> {sections[2][1]}</div>
         <!-- ROW 3 -->
-        <div class="p-grid-2">
+        <div class="p-grid-2 p-calendar-grid">
             <!-- CALENDAR -->
             <div class="p-card p-calendar-card">
                 <div class="p-card-title">{_tr(lang, "season_calendar")}</div>
@@ -2640,8 +2641,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         <div style="padding: 0 2rem;">
             <div class="p-stats-grid">{stats_html}</div>
         </div>
-        <div class="p-hof" id="legacy" style="scroll-margin-top:85px">
-            <div class="p-card-title">{_tr(lang, "hall_of_fame")}</div>
+        <div class="p-section-label" id="legacy" style="margin-top:36px"><span>05</span> {_tr(lang, "hall_of_fame")}</div>
+        <div class="p-hof">
             <div class="p-hof-grid">
                 <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "most_championships")}</div>{champ_name}</div>
                 <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "most_dominant_season")}</div>{dom_name}</div>

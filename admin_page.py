@@ -20,7 +20,7 @@ import review_draft_recovery
 import ui_preferences
 
 
-APP_VERSION = "v51"
+APP_VERSION = "v52"
 PUBLIC_DASHBOARD_URL = hosted_settings.dashboard_url()
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
@@ -385,7 +385,7 @@ except (github_store.GitHubConfigurationError, ValueError, TypeError):
     st.caption(f"{APP_VERSION} · {_copy(lang, 'secure_config')}")
     st.stop()
 
-workbook_actions = st.columns(2)
+workbook_actions = st.columns(3)
 refresh_clicked = workbook_actions[0].button(
     _copy(lang, "load_latest"),
     icon=":material/refresh:",
@@ -398,6 +398,14 @@ prepare_download_clicked = workbook_actions[1].button(
     help=_copy(lang, "download_help"),
     use_container_width=True,
 )
+if workbook_actions[2].button('Carregar Excel mais recente' if lang == 'pt' else 'Upload latest Excel', icon=':material/upload:',use_container_width=True):
+    st.session_state['race_import_excel_upload_open'] = not st.session_state.get('race_import_excel_upload_open',False)
+if refresh_clicked or prepare_download_clicked:
+    st.session_state['race_import_excel_upload_open'] = False
+if st.session_state.get('race_import_excel_upload_open'):
+    import workbook_upload
+    workbook_upload.render(config,lang=lang)
+    st.stop()
 if refresh_clicked:
     # Clear the remote snapshot together with drafts, approvals, upload state,
     # and other importer-owned values before constructing a fresh review.

@@ -434,6 +434,33 @@ If `Calendar` is missing, standings remain available and the app displays a sche
 
 ## Quality checks
 
+### Dashboard navigation and manual Excel adjustments
+
+The public dashboard uses one content-height surface, not a nested scrolling
+iframe. Its hero links open Race Centre, Circuits, and Archive; the overview has
+one sticky section menu. Calendar results preview on hover and stay open after a
+click (close with ×, Escape, or a click outside). Race Centre keeps its compact
+season/type/detail controls with the points table and displays every row.
+
+The language flags persist only explicit selections in browser-local storage.
+Navigation carries the selected language, and server refreshes never overwrite it.
+
+In the authenticated Admin page, **Upload latest Excel** sits beside
+**Download latest Excel**. Download the current GitHub version first, make your
+small adjustments in Excel, save, then upload the `.xlsx` (maximum 10 MB).
+Choose **Preview Excel changes**, inspect the worksheet counts and cell changes,
+then explicitly approve **Publish approved Excel**. The complete uploaded file,
+including its formulas and formatting, replaces the GitHub workbook in one
+versioned commit; it is not merged with a newer remote file. Missing existing
+worksheets, invalid data, macros, embedded objects, external workbook links,
+changed upload bytes and a GitHub version changed since preview are blocked.
+Only the first 100 changed cells are listed; worksheet counts cover all changes.
+The prior workbook remains recoverable in GitHub history. No uploaded screenshots
+are retained by this workflow, and testing the feature does not publish data.
+
+The dashboard's existing GitHub revision check picks up a published workbook;
+unchanged revisions do not trigger a full application rerun.
+
 Run the automated checks with:
 
 ```powershell

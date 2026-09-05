@@ -175,7 +175,7 @@ body {overflow:visible!important}
 .si-table-tools {display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:12px}
 .si-table-tools label {font-size:11px;color:#9fa8bb;display:flex;gap:8px;align-items:center}
 .si-table-tools input {font:12px Inter,system-ui;border:1px solid #343b4c;border-radius:8px;padding:10px;background:#0b0d14;color:#fff;width:180px}
-.si-table-scroll {max-height:620px;overflow:auto;border:1px solid #2d3444;border-radius:10px;overscroll-behavior:contain}
+.si-table-scroll {overflow-x:auto;border:1px solid #2d3444;border-radius:10px}
 .si-table-scroll:focus-visible {outline:2px solid #ff5757;outline-offset:3px}
 .si-table {border-collapse:separate;border-spacing:0;width:100%;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .si-table caption {text-align:left;padding:12px 16px;color:#aab4c9;font-size:11px;background:#151923}

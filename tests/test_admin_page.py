@@ -43,6 +43,27 @@ class AdminPageAccessTests(unittest.TestCase):
     def test_disabled_direct_route_has_no_admin_capability(self):
         self.assert_closed(admin_auth.AdminState.DISABLED)
 
+    def test_excel_upload_action_is_protected_and_next_to_download(self):
+        with patch("workbook_upload.render") as upload:
+            self.assert_closed(admin_auth.AdminState.ANONYMOUS)
+            upload.assert_not_called()
+            with (
+                patch("admin_auth.current_admin_state", return_value=admin_auth.AdminState.AUTHORIZED),
+                patch("admin_auth.current_claims", return_value={"email": "admin@example.com"}),
+                patch("admin_auth.is_current_admin", return_value=True),
+                patch("race_github.fetch_remote_workbook", return_value=race_github.RemoteWorkbook(
+                    content=(PROJECT_ROOT / "F1_Standings.xlsx").read_bytes(), blob_sha="a" * 40)),
+            ):
+                app = AppTest.from_file("admin_page.py", default_timeout=60)
+                app.secrets = GITHUB_SECRETS
+                app.run()
+                labels = [button.label for button in app.button]
+                self.assertEqual(labels.index("Upload latest Excel"), labels.index("Download latest Excel") + 1)
+                next(button for button in app.button if button.label == "Upload latest Excel").click()
+                app.run()
+                self.assertFalse(app.exception)
+                upload.assert_called_once()
+
     def test_unconfigured_direct_route_has_no_admin_capability(self):
         self.assert_closed(admin_auth.AdminState.UNCONFIGURED)
 

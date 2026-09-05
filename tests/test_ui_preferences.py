@@ -132,7 +132,7 @@ const source = JSON.parse(fs.readFileSync(0, "utf8"));
 const mount = new Function(source.replace("export default function", "return function"))();
 const key = "f1puskasleague.language.v1";
 let stored = "en", writes = [], responses = [], blocked = false;
-global.window = {localStorage: {
+global.window = {location:{search:''},localStorage: {
     getItem(name) { assert.equal(name, key); if (blocked) throw Error("blocked"); return stored; },
     setItem(name, value) { assert.equal(name, key); if (blocked) throw Error("blocked"); writes.push(value); stored = value; },
 }};
@@ -147,10 +147,19 @@ assert.deepEqual(writes, []);
 
 // A click is persisted without an unnecessary component-induced script loop.
 mount({data: {ready: true, language: "pt"}, setStateValue: send});
-assert.deepEqual(writes, ["pt"]);
+assert.deepEqual(writes, []);
 assert.deepEqual(responses, ["en"]);
+stored = "pt"; // Only an explicit flag click writes the preference.
 mount({data: {ready: false, language: null}, setStateValue: send});
 assert.equal(responses.at(-1), "pt");
+window.location.search = '?view=race-centre&lang=en';
+mount({data: {ready: false, language: null}, setStateValue: send});
+assert.equal(responses.at(-1), "pt"); // The latest explicit choice beats an older link.
+stored = null;
+mount({data: {ready: false, language: null}, setStateValue: send});
+assert.equal(responses.at(-1), "en");
+assert.deepEqual(writes, []);
+window.location.search = '';
 
 // Corrupt and absent values are neither evaluated nor sent to the server.
 for (storedValue of [null, "", "EN", "es", '<script>alert(1)</script>']) {
@@ -164,7 +173,7 @@ blocked = true;
 mount({data: {ready: false, language: null}, setStateValue: send});
 assert.equal(responses.at(-1), "pt");
 mount({data: {ready: true, language: "en"}, setStateValue: send});
-assert.deepEqual(writes, ["pt"]);
+assert.deepEqual(writes, []);
 console.log("Language component JavaScript checks passed");
 """
         result = subprocess.run(

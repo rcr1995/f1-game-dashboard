@@ -35,7 +35,7 @@ except Exception:
 
 # -----------------------------
 
-APP_VERSION = "v44"
+APP_VERSION = "v45"
 
 MOBILE_DASHBOARD_CSS = """
 <style>
@@ -1127,21 +1127,25 @@ latest_df, latest_meta = core.latest_league_slice(base_all)
 latest_gp = latest_df[~latest_df["IsSeasonFinal"]].copy()
 st_tbl_latest = core.standings_table(latest_gp, entity="Drivers") if not latest_gp.empty else pd.DataFrame()
 
-tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(
-    ["Visão geral", "Centro de corridas", "Circuitos", "Arquivo"] if lang == "pt" else
-    ["Overview", "Race centre", "Circuits", "Archive"]
-)
+import dashboard_surface
+view_page = st.query_params.get("view", "overview")
+if view_page not in {"overview", "race-centre", "circuits", "archive"}:
+    view_page = "overview"
+if view_page != "overview":
+    st.html('<nav class="page-links">' + ' '.join(
+        f'<a href="/?view={route}&lang={lang}" target="_self">{label}</a>'
+        for route, label in [("overview", "Dashboard"), ("race-centre", "Centro de corridas" if lang == "pt" else "Race Centre"),
+                             ("circuits", "Circuitos" if lang == "pt" else "Circuits"), ("archive", "Arquivo" if lang == "pt" else "Archive")]
+    ) + '</nav><style>.page-links {display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 20px}.page-links a {color:#fff;text-decoration:none;padding:8px 12px;border:1px solid #303643;border-radius:20px}</style>')
 
-with tab_dash:
+if view_page == "overview":
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
     html_dashboard = html_dashboard.replace("</body>", f"{MOBILE_DASHBOARD_CSS}</body>")
-    st.html('<style>[class*="st-key-puskas-dash-container"] iframe {height:calc(100dvh - 190px)!important;min-height:400px}</style>')
-    with st.container(key=f"puskas-dash-container-{lang}-{latest_meta.get('SeasonLabel', 'default')}"):
-        st.iframe(html_dashboard, height=2150)
+    dashboard_surface.render(html_dashboard, lang=lang, key="overview_surface")
 
 
 
-with tab_gp:
+if view_page == "race-centre":
     d_gp = base_all[~base_all["IsSeasonFinal"]].copy()
 
     gp_pairs = (
@@ -1160,25 +1164,29 @@ with tab_gp:
     default_index = 0
     if ongoing_key in options:
         default_index = options.index(ongoing_key)
-    sel_gp_pair = st.selectbox(tr(lang, "season_league_gp"), options, index=default_index, key="gp_pair")
+    points_panel = st.container(key="race_centre_points")
+    points_panel.html('<p style="color:#ff6464;font-size:11px;letter-spacing:.16em">' + ('CAMPEONATO' if lang == 'pt' else 'CHAMPIONSHIP') + '</p><h2>' + ('A época, ronda a ronda' if lang == 'pt' else 'The season, round by round') + '</h2>')
+    st.html('<style>.st-key-race_centre_points {border:1px solid #303643;border-radius:16px;padding:20px;background:#101219}</style>')
+    filters = points_panel.columns([3, 1.5, 1.5], vertical_alignment="bottom")
+    sel_gp_pair = filters[0].selectbox(tr(lang, "season_league_gp"), options, index=default_index, key="gp_pair")
 
     df_gp = d_gp.copy()
     gp_all_time = True
     if sel_gp_pair != tr(lang, "all_gp_label"):
         gp_season, gp_league = sel_gp_pair.split(" ||| ", 1)
         df_gp = df_gp[(df_gp["SeasonLabel"] == gp_season) & (df_gp["League Name"] == gp_league)].copy()
-        st.caption(f"{gp_season} • {gp_league}")
+
         gp_all_time = False
 
     if df_gp.empty:
         st.info(f"{tr(lang, 'no_rows')} {tr(lang, 'empty_hint')}")
     else:
-        view = st.radio(tr(lang, "standings_type"), [tr(lang, "drivers"), tr(lang, "constructors")], horizontal=True, key="dash_view")
+        view = filters[1].radio(tr(lang, "standings_type"), [tr(lang, "drivers"), tr(lang, "constructors")], horizontal=True, key="dash_view")
         view_canon = {tr(lang, "drivers"): "Drivers", tr(lang, "constructors"): "Constructors"}[view]
         entity_col = "Driver" if view_canon == "Drivers" else "Team"
 
         import season_insights
-        show_round_details = st.toggle(
+        show_round_details = filters[2].toggle(
             "Mostrar pontos de Corrida e Sprint" if lang == "pt" else "Show Race and Sprint points",
             value=False, key="round_points_details",
             help="Desativa para ver apenas os totais por Grande Prémio." if lang == "pt" else
@@ -1192,21 +1200,8 @@ with tab_gp:
                 league_rows, table_meta, lang, entity=view_canon, show_details=show_round_details,
             ))
         if any(round_tables):
-            st.iframe('<!doctype html><html><head><meta charset="utf-8"></head>'
-                      '<body style="margin:0;background:#0b0b0f;color:#fafafa">' +
-                      season_insights.STYLE + ''.join(round_tables) + '</body></html>', height=780)
-
-        st_table = core.standings_table(df_gp, entity=view_canon)
-        st.subheader(tr(lang, "standings"))
-        show_form_cols = st.toggle(tr(lang, "show_form_cols"), value=False)
-        if show_form_cols:
-            form = core.form_table(df_gp, entity_col=entity_col)
-            st_table = st_table.merge(form, on=entity_col, how="left") if not form.empty else st_table
-        loc_st = localized_table(st_table, lang)
-        if "Pos" in loc_st.columns:
-            render_st_dataframe(style_pos_column(loc_st))
-        else:
-            render_st_dataframe(loc_st)
+            with points_panel:
+                dashboard_surface.render(season_insights.STYLE + '<style>.si-section{margin:0;padding:12px 0;border:0;background:transparent}.si-heading{display:none}</style>' + ''.join(round_tables), lang=lang, key="round_points_surface")
 
         st.subheader(tr(lang, "gp_progression"))
         preset = st.radio(tr(lang, "chart_preset"), ["Top 5", "Top 10", "Custom"], horizontal=True, key="gp_chart_preset")
@@ -1354,7 +1349,7 @@ with tab_gp:
 
         render_movers_chart(df_gp, entity_col=entity_col)
 
-with tab_circuits:
+if view_page == "circuits":
 
     circuits = core.circuits_top3(base_all)
 
@@ -1417,7 +1412,7 @@ with tab_circuits:
         st.html(cards_html)
 
 
-with tab_all:
+if view_page == "archive":
 
     if base_all.empty:
 

@@ -15,6 +15,9 @@ st.set_page_config(
 )
 
 ui_preferences.mount_browser_language()
+if not st.session_state.get(ui_preferences.READY_KEY):
+    st.caption("Loading / A carregar…")
+    st.stop()
 
 dashboard = st.Page(
     "dashboard_page.py",

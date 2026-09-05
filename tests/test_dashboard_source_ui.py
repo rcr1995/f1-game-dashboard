@@ -54,14 +54,15 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
         self.assertEqual(WORKBOOK.stat().st_mtime_ns, self.before_modified)
         st.cache_data.clear()
 
-    def app(self, language="English"):
+    def app(self, language="English", view="overview"):
         app = AppTest.from_file(str(PAGE), default_timeout=30)
         app.session_state["app_lang"] = language
+        app.query_params['view'] = view
         return app.run()
 
     def assert_rendered(self, app):
         self.assertFalse(app.exception, [item.message for item in app.exception])
-        self.assertEqual(len(app.tabs), 4)
+        self.assertEqual(len(app.tabs), 0)
         self.assertGreater(len(app.get("html")), 0)
 
     @staticmethod
@@ -79,7 +80,7 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
 
     def test_race_centre_points_follow_league_entity_and_detail_filters(self):
         with patch.object(season_insights, "render_season_insights", wraps=season_insights.render_season_insights) as render:
-            app = self.app()
+            app = self.app(view="race-centre")
             self.assert_rendered(app)
             self.assertFalse(app.sidebar.selectbox)
             self.assertFalse(app.sidebar.radio)

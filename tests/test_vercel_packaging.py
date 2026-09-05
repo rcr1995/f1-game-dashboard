@@ -18,6 +18,7 @@ RUNTIME_MODULES = {
     "secure_image_upload",
     "review_draft_recovery",
     "browser_download", "season_insights",
+    "dashboard_surface", "workbook_upload",
 }
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",

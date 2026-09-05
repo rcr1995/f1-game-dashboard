@@ -29,6 +29,7 @@ COPY ["ui_preferences.py", "public_workbook.py", "hosted_settings.py", "vercel_s
 COPY ["vercel_upload_gate.py", "secure_image_upload.py", "./"]
 COPY ["review_draft_recovery.py", "./"]
 COPY ["browser_download.py", "season_insights.py", "./"]
+COPY ["dashboard_surface.py", "workbook_upload.py", "./"]
 COPY ["F1_Standings.xlsx", "./"]
 COPY [".streamlit/config.toml", "./.streamlit/config.toml"]
 COPY ["assets/hero_banner.webp", "./assets/hero_banner.webp"]

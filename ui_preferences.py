@@ -26,17 +26,12 @@ const valid = (value) => value === "en" || value === "pt";
 
 export default function ({ data, setStateValue }) {
     if (data?.ready === true && valid(data?.language)) {
-        try {
-            if (window.localStorage.getItem(storageKey) !== data.language) {
-                window.localStorage.setItem(storageKey, data.language);
-            }
-        } catch (_) {
-            // Private/blocked storage: keep using the live session preference.
-        }
+        // Server reruns must never overwrite a newer browser choice.
         return;
     }
 
-    let language = "pt";
+    const linked = new URLSearchParams(window.location.search).get('lang');
+    let language = valid(linked) ? linked : "pt";
     try {
         const stored = window.localStorage.getItem(storageKey);
         if (valid(stored)) language = stored;
@@ -68,6 +63,8 @@ def hydrate_language(state: MutableMapping[str, Any], code: object) -> None:
     """Accept initial browser state only once; never override a newer click."""
 
     if state.get(READY_KEY) is True:
+        return
+    if code not in ("en", "pt"):
         return
     name = next((name for name, value in LANGUAGES.items() if code == value), DEFAULT_LANGUAGE)
     select_language(state, name)
@@ -123,7 +120,7 @@ export default function ({parentElement, data, setStateValue}) {
       <button data-language="en" title="English" aria-label="English"><svg viewBox="0 0 30 20" aria-hidden="true"><path fill="#012169" d="M0 0h30v20H0z"/><path stroke="#fff" stroke-width="4" d="m0 0 30 20M30 0 0 20"/><path stroke="#c8102e" stroke-width="1.5" d="m0 0 30 20M30 0 0 20"/><path stroke="#fff" stroke-width="6" d="M15 0v20M0 10h30"/><path stroke="#c8102e" stroke-width="3.5" d="M15 0v20M0 10h30"/></svg></button>
       <a target="_self"></a></nav></header>`;
     const link = root.querySelector('a');
-    link.href = data.admin ? '/' : '/admin';
+    link.href = (data.admin ? '/' : '/admin') + '?lang=' + data.language;
     link.textContent = data.admin ? 'Dashboard' : 'Admin';
     root.querySelectorAll('button').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.language === data.language));
@@ -158,6 +155,8 @@ def _receive_header_language() -> None:
     for name, value in LANGUAGES.items():
         if code == value:
             select_language(st.session_state, name)
+            if hasattr(st, 'query_params'):
+                st.query_params['lang'] = code
             break
 
 
@@ -165,6 +164,7 @@ def render_page_header(*, admin: bool = False) -> None:
     """Shared public chrome; no identity, secrets or privileged data enter this component."""
     import streamlit as st
     st.html('''<style>
+      @import url('https://fonts.googleapis.com/css2?family=Teko:wght@400;600;700&family=Inter:wght@400;600;800&display=swap');
       .stApp,[data-testid="stAppViewContainer"] {background:#0b0b0f!important;color:#fafafa!important}
       [data-testid="stSidebar"],[data-testid="stSidebarCollapsedControl"],
       [data-testid="stHeader"],#MainMenu,footer {display:none!important}
