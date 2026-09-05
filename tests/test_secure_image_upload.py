@@ -118,6 +118,25 @@ def test_uploaded_image_is_immutable_and_streamlit_compatible():
         image.name = "changed.png"
 
 
+@pytest.mark.parametrize("name", ["race.JPG", "race.JPEG"])
+def test_server_accepts_uppercase_jpeg_extensions_with_canonical_mime(name: str):
+    _, images, _, _ = _decode(
+        _payload([_raw_file("jpeg", 1, name=name), _raw_file("png", 2)])
+    )
+
+    assert images[0].name == name
+    assert images[0].content_type == "image/jpeg"
+
+
+@pytest.mark.parametrize("browser_mime", ["", "image/jpg", "image/pjpeg", "application/octet-stream"])
+def test_server_still_rejects_noncanonical_browser_mime(browser_mime: str):
+    jpeg = _raw_file("jpeg", 1)
+    jpeg["type"] = browser_mime
+
+    with pytest.raises(upload._PayloadError, match="type"):
+        _decode(_payload([jpeg, _raw_file("png", 2)]))
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -526,7 +545,11 @@ def test_component_uses_fixed_safe_dom_and_browser_side_bounds():
     assert "data.max_images" in upload._JS
     assert "data.max_image_bytes" in upload._JS
     assert "data.max_total_bytes" in upload._JS
-    assert "validateMagic" in upload._JS
+    assert "canonicalTypeForName" in upload._JS
+    assert "detectMagicType" in upload._JS
+    assert "file.type" not in upload._JS
+    assert "type: detectedType" in upload._JS
+    assert ".jpg,.jpeg,.png,.webp" in upload._HTML
     assert "SHA-256" in upload._JS
     assert "prior.messages = messages" in upload._JS
     assert "controller.messages" in upload._JS

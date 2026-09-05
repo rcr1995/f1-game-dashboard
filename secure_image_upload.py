@@ -118,7 +118,7 @@ _HTML = """
     <span class="upload-status" aria-live="polite"></span>
   </div>
   <input id="secure-images" class="upload-input" type="file" multiple
-         accept="image/png,image/jpeg,image/webp" />
+         accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" />
   <div class="upload-error" role="alert" aria-live="assertive"></div>
   <ul class="upload-files" aria-live="polite"></ul>
 </div>
@@ -328,21 +328,30 @@ export default function(component) {
     return Array.from(bytes, (part) => part.toString(16).padStart(2, '0')).join('');
   };
 
-  const validateMagic = (bytes, type) => {
-    if (type === 'image/png') {
-      return bytes.length >= 8 &&
-        [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((v, i) => bytes[i] === v);
+  const canonicalTypeForName = (name) => {
+    const dot = name.lastIndexOf('.');
+    const extension = dot >= 0 ? name.slice(dot).toLowerCase() : '';
+    if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+    if (extension === '.png') return 'image/png';
+    if (extension === '.webp') return 'image/webp';
+    return null;
+  };
+
+  const detectMagicType = (bytes) => {
+    if (bytes.length >= 8 &&
+        [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((v, i) => bytes[i] === v)) {
+      return 'image/png';
     }
-    if (type === 'image/jpeg') {
-      return bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 &&
-        bytes[2] === 0xff && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+    if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 &&
+        bytes[2] === 0xff && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9) {
+      return 'image/jpeg';
     }
-    if (type === 'image/webp') {
-      return bytes.length >= 12 &&
+    if (bytes.length >= 12 &&
         String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' &&
-        String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP';
+        String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP') {
+      return 'image/webp';
     }
-    return false;
+    return null;
   };
 
   const showFiles = (files) => {
@@ -377,7 +386,12 @@ export default function(component) {
       showError('count');
       return;
     }
-    if (files.some((file) => !data.accepted_types.includes(file.type))) {
+    // File.type is an untrusted browser hint. Windows/Edge can report a
+    // genuine JPG as image/jpg, application/octet-stream, or an empty value.
+    // Require an allowed extension here, then identify and match the actual
+    // format from its bytes below before sending a canonical MIME to Python.
+    const expectedTypes = files.map((file) => canonicalTypeForName(file.name));
+    if (expectedTypes.some((type) => type === null)) {
       showError('type');
       return;
     }
@@ -395,10 +409,12 @@ export default function(component) {
     try {
       const encoded = [];
       const seen = new Set();
-      for (const file of files) {
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
         const bytes = await readBytes(file);
         if (controller.cancelled || selection !== controller.selection) return;
-        if (bytes.length !== file.size || !validateMagic(bytes, file.type)) {
+        const detectedType = detectMagicType(bytes);
+        if (bytes.length !== file.size || detectedType !== expectedTypes[index]) {
           showError('type');
           return;
         }
@@ -411,7 +427,7 @@ export default function(component) {
         seen.add(sha256);
         encoded.push({
           name: file.name,
-          type: file.type,
+          type: detectedType,
           size: file.size,
           sha256,
           data: bytesToBase64(bytes),
@@ -946,7 +962,6 @@ def render_uploader(
             "max_images": MAX_IMAGES,
             "max_image_bytes": MAX_IMAGE_BYTES,
             "max_total_bytes": MAX_TOTAL_BYTES,
-            "accepted_types": sorted(_MIME_EXTENSIONS),
             "label": _safe_text(label, copy["label"], limit=300),
             "help_text": _safe_text(help_text, copy["help"], limit=1000),
             "messages": copy,
