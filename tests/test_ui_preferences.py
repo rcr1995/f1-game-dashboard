@@ -117,6 +117,10 @@ class LanguageStateTests(unittest.TestCase):
             page_config = next(node for node in calls if ast.unparse(node.func) == "st.set_page_config")
             self.assertLess(page_config.lineno, preference.lineno)
             self.assertLess(preference.lineno, navigation.lineno)
+            stop = next(node for node in calls if ast.unparse(node.func) == "st.stop")
+            page_run = next(node for node in calls if ast.unparse(node.func) == "navigation.run")
+            self.assertLess(navigation.lineno, stop.lineno)
+            self.assertLess(stop.lineno, page_run.lineno)
             self.assertIn('initial_sidebar_state="collapsed"', (ROOT / filename).read_text(encoding="utf-8"))
 
 

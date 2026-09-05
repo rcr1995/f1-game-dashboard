@@ -20,9 +20,6 @@ st.set_page_config(
 )
 
 ui_preferences.mount_browser_language()
-if not st.session_state.get(ui_preferences.READY_KEY):
-    st.caption("Loading / A carregar…")
-    st.stop()
 
 admin_page = st.Page(
     "admin_page.py",
@@ -30,4 +27,8 @@ admin_page = st.Page(
     icon=":material/admin_panel_settings:",
     default=True,
 )
-st.navigation([admin_page], position="hidden").run()
+navigation = st.navigation([admin_page], position="hidden")
+if not st.session_state.get(ui_preferences.READY_KEY):
+    st.caption("Loading / A carregar…")
+    st.stop()
+navigation.run()
