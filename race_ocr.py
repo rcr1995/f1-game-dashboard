@@ -222,6 +222,12 @@ def validate_image_upload(image_bytes: bytes, source: str = "Screenshot") -> Non
                         f"{source} exceeds the 25-megapixel safety limit."
                     )
                 image.verify()
+            # ``verify`` checks container structure without decoding pixels and
+            # Pillow's JPEG verifier can therefore accept a truncated stream.
+            # Reopen and fully decode after the bounded format/dimension checks.
+            # Valid phone JPEGs with vendor metadata after EOI remain decodable.
+            with Image.open(BytesIO(image_bytes)) as decoded:
+                decoded.load()
     except InvalidScreenshotError:
         raise
     except (

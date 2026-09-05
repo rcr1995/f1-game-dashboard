@@ -112,6 +112,19 @@ class ScreenshotIntakeTests(unittest.TestCase):
             with self.subTest(image_format=image_format):
                 race_ocr.validate_image_upload(image_bytes(image_format=image_format))
 
+    def test_jpeg_validation_accepts_trailing_phone_metadata(self):
+        payload = image_bytes(image_format="JPEG") + b"Image_UTC_Data\x00SEFH\x00\x00SEFT"
+
+        race_ocr.validate_image_upload(payload)
+
+    def test_jpeg_validation_rejects_missing_eoi_and_truncated_image_data(self):
+        payload = image_bytes(image_format="JPEG")
+
+        for truncated in (payload[:-2], payload[:-100]):
+            with self.subTest(bytes_removed=len(payload) - len(truncated)):
+                with self.assertRaises(race_ocr.InvalidScreenshotError):
+                    race_ocr.validate_image_upload(truncated)
+
     def test_decompression_bomb_is_reported_as_invalid_upload(self):
         payload = image_bytes()
         with (

@@ -4,8 +4,10 @@ import base64
 import copy
 import dataclasses
 import hashlib
+from io import BytesIO
 
 import pytest
+from PIL import Image
 
 import secure_image_upload as upload
 
@@ -16,14 +18,15 @@ GENERATION = 7
 
 
 def _content(kind: str, marker: int) -> bytes:
-    body = bytes([marker]) * (marker + 1)
-    if kind == "png":
-        return b"\x89PNG\r\n\x1a\n" + body
-    if kind == "jpeg":
-        return b"\xff\xd8\xff\xe0" + body + b"\xff\xd9"
-    if kind == "webp":
-        return b"RIFF" + len(body).to_bytes(4, "little") + b"WEBP" + body
-    raise AssertionError(kind)
+    image_format = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}.get(kind)
+    if image_format is None:
+        raise AssertionError(kind)
+    output = BytesIO()
+    Image.new("RGB", (2, 2), (marker, marker * 2, marker * 3)).save(
+        output,
+        format=image_format,
+    )
+    return output.getvalue()
 
 
 def _raw_file(kind: str, marker: int, *, name: str | None = None) -> dict[str, object]:
@@ -128,6 +131,20 @@ def test_server_accepts_uppercase_jpeg_extensions_with_canonical_mime(name: str)
     assert images[0].content_type == "image/jpeg"
 
 
+def test_server_accepts_valid_jpeg_with_samsung_style_trailing_metadata():
+    jpeg = _raw_file("jpeg", 1, name="samsung-photo.jpg")
+    content = _content("jpeg", 1) + b"Image_UTC_Data\x00SEFH\x00\x00SEFT"
+    jpeg.update(
+        size=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        data=base64.b64encode(content).decode("ascii"),
+    )
+
+    _, images, _, _ = _decode(_payload([jpeg, _raw_file("png", 2)]))
+
+    assert images[0].getvalue() == content
+
+
 @pytest.mark.parametrize("browser_mime", ["", "image/jpg", "image/pjpeg", "application/octet-stream"])
 def test_server_still_rejects_noncanonical_browser_mime(browser_mime: str):
     jpeg = _raw_file("jpeg", 1)
@@ -194,7 +211,7 @@ def test_rejects_mime_extension_and_magic_mismatches():
         sha256=hashlib.sha256(content).hexdigest(),
         data=base64.b64encode(content).decode("ascii"),
     )
-    with pytest.raises(upload._PayloadError, match="type"):
+    with pytest.raises(upload._PayloadError, match="content"):
         _decode(_payload([wrong_magic, _raw_file("jpeg", 2)]))
 
 
@@ -210,8 +227,8 @@ def test_rejects_declared_size_hash_and_noncanonical_base64():
         _decode(_payload([bad_hash, _raw_file("jpeg", 2)]))
 
     # This fixture forces == padding; change only ignored padding bits.
-    noncanonical = _raw_file("png", 1)
-    content = _content("png", 1)
+    noncanonical = _raw_file("jpeg", 1)
+    content = _content("jpeg", 1)
     encoded = base64.b64encode(content).decode("ascii")
     assert encoded.endswith("==")
     replacement = "B" if encoded[-3] == "A" else "A"
@@ -221,7 +238,7 @@ def test_rejects_declared_size_hash_and_noncanonical_base64():
         data=encoded[:-3] + replacement + "==",
     )
     with pytest.raises(upload._PayloadError):
-        _decode(_payload([noncanonical, _raw_file("jpeg", 2)]))
+        _decode(_payload([noncanonical, _raw_file("png", 2)]))
 
 
 def test_rejects_per_file_and_declared_total_limits_before_decoding():
@@ -254,6 +271,11 @@ def test_client_error_is_bounded_and_must_echo_context():
     assert submission_id is None
     assert images == ()
     assert error == "count"
+
+    raw["error"] = "content"
+    _, images, error, _ = _decode(raw)
+    assert images == ()
+    assert error == "content"
 
     raw["error"] = "arbitrary"
     with pytest.raises(upload._PayloadError):
@@ -476,7 +498,8 @@ def test_render_api_uses_server_context_and_returns_localised_errors(
     assert errors == [upload._COPY["pt"]["count"]]
     data = captured["data"]
     assert data["context"] == upload._context_token("race_results", data["nonce"])
-    assert captured["key"] == "race_results:secure_component"
+    assert captured["key"] == upload._component_key("race_results")
+    assert data["implementation_revision"] == upload._IMPLEMENTATION_REVISION
     assert captured["on_payload_change"] is not None
 
 
@@ -549,6 +572,10 @@ def test_component_uses_fixed_safe_dom_and_browser_side_bounds():
     assert "detectMagicType" in upload._JS
     assert "file.type" not in upload._JS
     assert "type: detectedType" in upload._JS
+    assert "showError('content')" in upload._JS
+    assert "prior.revision === data.implementation_revision" in upload._JS
+    assert "revision: data.implementation_revision" in upload._JS
+    assert "bytes[bytes.length - 1]" not in upload._JS
     assert ".jpg,.jpeg,.png,.webp" in upload._HTML
     assert "SHA-256" in upload._JS
     assert "prior.messages = messages" in upload._JS

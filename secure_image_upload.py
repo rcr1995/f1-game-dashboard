@@ -27,6 +27,8 @@ from typing import Any
 
 import streamlit as st
 
+import race_ocr
+
 
 FEATURE_FLAG = "F1_WEBSOCKET_SCREENSHOT_UPLOAD"
 SUPPORTED_STREAMLIT_VERSION = "1.59.2"
@@ -35,7 +37,8 @@ MAX_IMAGES = 4
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 MAX_TOTAL_BYTES = 25 * 1024 * 1024
 
-_COMPONENT_NAME = "f1_secure_image_upload_v1"
+_COMPONENT_NAME = "f1_secure_image_upload_v2"
+_IMPLEMENTATION_REVISION = 2
 _PROTOCOL_VERSION = 1
 _SUBMISSION_ID_RE = re.compile(r"\A[a-f0-9]{32}\Z")
 _SHA256_RE = re.compile(r"\A[a-f0-9]{64}\Z")
@@ -57,6 +60,7 @@ _COPY = {
         "working": "Checking screenshots…",
         "count": "Select between 2 and 4 screenshots.",
         "type": "Only PNG, JPEG and WEBP screenshots are accepted.",
+        "content": "One or more selected files is not a valid PNG, JPEG or WEBP image.",
         "file_size": "Each screenshot must be 12 MB or smaller.",
         "total_size": "The screenshots must total 25 MB or less.",
         "duplicate": "Each screenshot must be different.",
@@ -72,6 +76,7 @@ _COPY = {
         "working": "A verificar as capturas…",
         "count": "Selecione entre 2 e 4 capturas de ecrã.",
         "type": "Apenas são aceites capturas PNG, JPEG e WEBP.",
+        "content": "Um ou mais ficheiros selecionados não são imagens PNG, JPEG ou WEBP válidas.",
         "file_size": "Cada captura deve ter no máximo 12 MB.",
         "total_size": "As capturas devem ter, no total, no máximo 25 MB.",
         "duplicate": "Cada captura de ecrã deve ser diferente.",
@@ -202,7 +207,13 @@ export default function(component) {
   const list = parentElement.querySelector('.upload-files');
   const messages = data.messages;
   const prior = parentElement.__f1SecureUpload;
-  if (prior && prior.generation === data.generation && prior.context === data.context) {
+  const canReusePrior = Boolean(
+    prior &&
+    prior.revision === data.implementation_revision &&
+    prior.generation === data.generation &&
+    prior.context === data.context
+  );
+  if (canReusePrior) {
     prior.messages = messages;
   }
 
@@ -213,7 +224,7 @@ export default function(component) {
   button.textContent = messages.button;
 
   const showSummaries = (files) => {
-    const activeMessages = parentElement.__f1SecureUpload?.messages || messages;
+    const activeMessages = canReusePrior ? prior.messages : messages;
     list.replaceChildren();
     for (const file of files) {
       const item = document.createElement('li');
@@ -229,7 +240,7 @@ export default function(component) {
   error.textContent = data.server_error || '';
   showSummaries(selectedFiles);
 
-  if (prior && prior.generation === data.generation && prior.context === data.context) {
+  if (canReusePrior) {
     if (prior.processing) {
       error.textContent = '';
       showSummaries(prior.pending_files || []);
@@ -245,6 +256,7 @@ export default function(component) {
 
   const controller = {
     cancelled: false,
+    revision: data.implementation_revision,
     context: data.context,
     generation: data.generation,
     selection: 0,
@@ -342,8 +354,10 @@ export default function(component) {
         [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((v, i) => bytes[i] === v)) {
       return 'image/png';
     }
+    // JPEG may legitimately contain vendor metadata after its EOI marker
+    // (for example Samsung SEF). Python performs a full bounded Pillow decode.
     if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 &&
-        bytes[2] === 0xff && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9) {
+        bytes[2] === 0xff) {
       return 'image/jpeg';
     }
     if (bytes.length >= 12 &&
@@ -415,7 +429,7 @@ export default function(component) {
         if (controller.cancelled || selection !== controller.selection) return;
         const detectedType = detectMagicType(bytes);
         if (bytes.length !== file.size || detectedType !== expectedTypes[index]) {
-          showError('type');
+          showError('content');
           return;
         }
         const sha256 = await digestHex(bytes);
@@ -497,7 +511,7 @@ def _state_key(key: str) -> str:
 
 
 def _component_key(key: str) -> str:
-    return f"{key}:secure_component"
+    return f"{key}:secure_component:{_IMPLEMENTATION_REVISION}"
 
 
 def _session_state() -> MutableMapping[str, Any]:
@@ -574,11 +588,10 @@ def _valid_magic(content: bytes, content_type: str) -> bool:
     if content_type == "image/png":
         return content.startswith(b"\x89PNG\r\n\x1a\n")
     if content_type == "image/jpeg":
-        return (
-            len(content) >= 4
-            and content.startswith(b"\xff\xd8\xff")
-            and content.endswith(b"\xff\xd9")
-        )
+        # Samsung and other phone vendors can append legitimate metadata after
+        # the JPEG EOI marker. Full bounded decoding below distinguishes a real
+        # image from a spoofed or corrupt payload.
+        return len(content) >= 4 and content.startswith(b"\xff\xd8\xff")
     if content_type == "image/webp":
         return (
             len(content) >= 12
@@ -647,11 +660,15 @@ def _decode_file(raw: Any) -> UploadedImage:
     if len(content) != size:
         raise _PayloadError("file_size")
     if not _valid_magic(content, content_type):
-        raise _PayloadError("type")
+        raise _PayloadError("content")
 
     actual_sha256 = hashlib.sha256(content).hexdigest()
     if not hmac.compare_digest(actual_sha256, expected_sha256):
         raise _PayloadError()
+    try:
+        race_ocr.validate_image_upload(content, name)
+    except race_ocr.InvalidScreenshotError as exc:
+        raise _PayloadError("content") from exc
     return UploadedImage(name, content_type, size, actual_sha256, content)
 
 
@@ -688,6 +705,7 @@ def _decode_payload(
         if not isinstance(error, str) or error not in {
             "count",
             "type",
+            "content",
             "file_size",
             "total_size",
             "duplicate",
@@ -955,6 +973,7 @@ def render_uploader(
         key=component_key,
         data={
             "version": _PROTOCOL_VERSION,
+            "implementation_revision": _IMPLEMENTATION_REVISION,
             "context": context,
             "nonce": nonce,
             "generation": generation,
