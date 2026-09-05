@@ -90,7 +90,7 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
             self.assertEqual(render.call_args.kwargs["entity"], "Constructors")
             app.toggle(key="round_points_details").set_value(True).run()
             self.assertTrue(render.call_args.kwargs["show_details"])
-            app.selectbox(key="round_metric").set_value("positions").run()
+            app.selectbox(key="round_metric").set_value("Finishing positions").run()
             self.assert_rendered(app)
             self.assertEqual(render.call_args.kwargs["metric"], "positions")
             selector = app.selectbox(key="gp_pair")
@@ -99,6 +99,11 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
             self.assert_rendered(app)
             selected_meta = render.call_args.args[1]
             self.assertEqual(f'{selected_meta["SeasonLabel"]} ||| {selected_meta["League Name"]}', different)
+            app.session_state['app_lang'] = 'Português (Portugal)'
+            app.run()
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='round_metric').value, 'Posições finais')
+            self.assertEqual(render.call_args.kwargs['metric'], 'positions')
 
     def test_stale_warning_is_visible_and_localized_without_exposing_raw_error(self):
         self.resolver.return_value = replace(

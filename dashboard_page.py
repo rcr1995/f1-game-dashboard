@@ -1186,10 +1186,13 @@ if view_page == "race-centre":
         entity_col = "Driver" if view_canon == "Drivers" else "Team"
 
         import season_insights
-        round_metric = filters[2].selectbox(
-            'Mostrar' if lang == 'pt' else 'Show', ['points', 'positions'], key='round_metric',
-            format_func=lambda value: ({'points':'Pontos','positions':'Posições finais'} if lang == 'pt' else {'points':'Points','positions':'Finishing positions'})[value],
+        metric_labels = {'points':'Pontos','positions':'Posições finais'} if lang == 'pt' else {'points':'Points','positions':'Finishing positions'}
+        selected_metric = filters[2].selectbox(
+            'Mostrar' if lang == 'pt' else 'Show', list(metric_labels.values()), key='round_metric',
+            index=1 if st.session_state.get('round_metric_code') == 'positions' else 0,
         )
+        round_metric = next(code for code,label in metric_labels.items() if label == selected_metric)
+        st.session_state['round_metric_code'] = round_metric
         detail_label = ('Incluir posições Sprint' if lang == 'pt' else 'Include Sprint positions') if round_metric == 'positions' else ('Mostrar pontos de Corrida e Sprint' if lang == 'pt' else 'Show Race and Sprint points')
         show_round_details = filters[3].toggle(
             detail_label,
