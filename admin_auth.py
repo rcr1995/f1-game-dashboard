@@ -128,6 +128,18 @@ class PasswordAuthResult:
     retry_after_seconds: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class AdminRecoveryBinding:
+    """Opaque identity and key material for an authorized browser recovery copy.
+
+    The key material is derived only on the server and must never be sent to a
+    component or included in a persisted draft.
+    """
+
+    identity: str
+    key_material: bytes = field(repr=False)
+
+
 def _mapping_value(mapping: object, key: str, default: Any = _MISSING) -> Any:
     """Read a mapping-like Streamlit secrets object without attribute access."""
 
@@ -537,6 +549,50 @@ def current_claims() -> dict[str, object]:
     except Exception:
         return {}
     return _claims_from_user(user)
+
+
+def current_admin_recovery_binding() -> AdminRecoveryBinding | None:
+    """Return a stable, identity-bound recovery key for the current Admin.
+
+    Recovery is deliberately unavailable unless the normal authorization gate
+    succeeds.  OIDC mode derives its key from Streamlit's private cookie secret
+    and the exact allowed identity. Password mode derives it from the validated
+    Argon2 verifier. Neither source value is exposed to the browser.
+    """
+
+    if current_admin_state() is not AdminState.AUTHORIZED:
+        return None
+
+    st = _streamlit()
+    secrets = _runtime_secrets(st)
+    mode = load_auth_mode(secrets)
+    if mode is AdminAuthMode.OIDC:
+        config = load_admin_config(secrets)
+        auth_section = _mapping_value(secrets, "auth")
+        cookie_secret = _mapping_value(auth_section, "cookie_secret")
+        if config is None or not isinstance(cookie_secret, str) or not cookie_secret:
+            return None
+        identity_source = (
+            f"oidc\0{config.allowed_issuer}\0{config.allowed_subject}"
+        ).encode("utf-8")
+        secret_source = cookie_secret.encode("utf-8")
+    elif mode is AdminAuthMode.PASSWORD:
+        config = load_password_config(secrets)
+        if config is None:
+            return None
+        fingerprint = _password_config_fingerprint(config)
+        identity_source = f"password\0{fingerprint}".encode("ascii")
+        secret_source = config.password_hash.encode("utf-8")
+    else:
+        return None
+
+    identity = sha256(
+        b"f1-admin-review-identity-v1\0" + identity_source
+    ).hexdigest()
+    key_material = sha256(
+        b"f1-admin-review-encryption-v1\0" + secret_source
+    ).digest()
+    return AdminRecoveryBinding(identity=identity, key_material=key_material)
 
 
 def clear_race_import_state(

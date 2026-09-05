@@ -539,6 +539,10 @@ class AdminDefaultUiTests(unittest.TestCase):
 
         self.assertEqual(state["race_import_success"], {"message": "Saved"})
         self.assertEqual(state["admin_language"], "English")
+        self.assertEqual(
+            ui.review_draft_recovery.pending_clear_reason(state),
+            "published",
+        )
         self.assertFalse(
             any(key.startswith("race_import_") and key != "race_import_success" for key in state)
         )
@@ -602,6 +606,57 @@ class AdminDefaultUiTests(unittest.TestCase):
 
 
 class SessionAutoDetectionTests(unittest.TestCase):
+    def test_checkpointed_edits_do_not_replace_original_ocr_evidence(self):
+        details, editor = ui._draft_review_frames(
+            {
+                "rows": [
+                    {
+                        "Position": 1,
+                        "Driver": "OCR Driver",
+                        "Time": "+1.000",
+                        "Fastest Lap": "1:35.000",
+                        "OCR text": "raw recognized line",
+                        "Confidence": 0.91,
+                    }
+                ],
+                "edited_rows": [
+                    {
+                        "Position": 1,
+                        "Driver": "Reviewed Driver",
+                        "Time": "+0.999",
+                        "Fastest Lap": "1:34.999",
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(editor.loc[0, "Driver"], "Reviewed Driver")
+        self.assertEqual(editor.loc[0, "Time"], "+0.999")
+        self.assertEqual(details.loc[0, "OCR text"], "raw recognized line")
+        self.assertEqual(details.loc[0, "Confidence"], 0.91)
+
+    def test_recovery_context_allows_saved_sprint_to_restore_from_race_default(self):
+        base = {
+            "game": "F1 26",
+            "season": "2026-T02",
+            "league": "League",
+            "league_id": "league-id",
+            "round": 5,
+            "gp": "Australian GP",
+            "mode": "hosted",
+            "workbook_sha256": "a" * 64,
+            "source_version": "b" * 40,
+        }
+
+        race = {**base, "type": "R", "screenshots": []}
+        saved_sprint = {**base, "type": "SR", "screenshots": ["c" * 64, "d" * 64]}
+
+        self.assertEqual(
+            ui._recovery_context_digest(race),
+            ui._recovery_context_digest(saved_sprint),
+        )
+        self.assertNotEqual(ui._context_digest(race), ui._context_digest(saved_sprint))
+
     def test_prepare_draft_uses_unanimous_sprint_tab_instead_of_race_default(self):
         uploads = [b"one", b"two"]
         token_sets = [[], []]

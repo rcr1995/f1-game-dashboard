@@ -16,6 +16,7 @@ RUNTIME_MODULES = {
     "race_import", "race_import_ui", "race_metadata", "race_ocr", "race_workbook",
     "ui_preferences", "public_workbook", "hosted_settings", "vercel_start", "vercel_upload_gate",
     "secure_image_upload",
+    "review_draft_recovery",
 }
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",

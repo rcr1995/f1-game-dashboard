@@ -188,8 +188,59 @@ class ControlledDriverMatchingTests(unittest.TestCase):
         self.assertTrue(match.needs_review)
         self.assertIn("Low OCR confidence", match.reason)
 
+    def test_joined_ai_badge_and_driver_name_remain_an_exact_roster_match(self):
+        roster = [
+            race.DriverEntry("Franco Colapinto", "Alpine"),
+            race.DriverEntry("Max Verstappen", "Red Bull"),
+            race.DriverEntry("Nico Hülkenberg", "Audi"),
+        ]
+
+        for raw_text, expected in (
+            ("AIFrancoCOLAPINTO Alpine", "Franco Colapinto"),
+            ("AIMaxVERSTAPPEN Oracle Red Bull Racing", "Max Verstappen"),
+            ("AINICOHULKENBERG Audi Revolut F1 Team", "Nico Hülkenberg"),
+        ):
+            with self.subTest(raw_text=raw_text):
+                match = race.match_driver(raw_text, roster)
+                self.assertEqual(match.canonical, expected)
+                self.assertEqual(match.method, "exact")
+                self.assertFalse(match.needs_review)
+
+    def test_game_display_names_use_only_controlled_roster_aliases(self):
+        roster = [
+            race.DriverEntry("Carlos Sainz Jr.", "Williams"),
+            race.DriverEntry("Arvid Lidblad", "Racing Bulls"),
+        ]
+
+        carlos = race.match_driver("AI Carlos SAINZ Williams", roster)
+        arvid = race.match_driver("AI Arvid LINDBLAD Racing Bulls", roster)
+
+        self.assertEqual((carlos.canonical, carlos.method), ("Carlos Sainz Jr.", "alias"))
+        self.assertEqual((arvid.canonical, arvid.method), ("Arvid Lidblad", "alias"))
+
+    def test_joined_name_still_obeys_low_confidence_blocking(self):
+        roster = [race.DriverEntry("Max Verstappen", "Red Bull")]
+
+        match = race.match_driver(
+            "AIMaxVERSTAPPEN Oracle Red Bull Racing",
+            roster,
+            ocr_confidence=0.4,
+        )
+
+        self.assertIsNone(match.canonical)
+        self.assertEqual(match.suggestion, "Max Verstappen")
+        self.assertTrue(match.needs_review)
+
 
 class ScreenshotMergeTests(unittest.TestCase):
+    def test_decimal_like_position_ocr_is_not_silently_truncated(self):
+        tokens = [
+            race.OcrToken("1.7", 0.99, 10, 100, 35, 120, "Screenshot 1"),
+            race.OcrToken("AI Liam LAWSON", 0.99, 50, 100, 180, 120, "Screenshot 1"),
+        ]
+
+        self.assertIsNone(race._position_from_line(tokens, 22))
+
     def test_column_header_tokens_are_ignored_during_row_extraction(self):
         roster = [
             race.DriverEntry("TomasRodri21", "McLaren"),

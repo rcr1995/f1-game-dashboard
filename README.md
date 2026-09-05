@@ -277,6 +277,16 @@ image bytes are discarded. A successful attempt retains only screenshot hashes
 and review rows; a failed attempt retains only a one-shot text error and clears
 any older review. Screenshots and credentials are never committed.
 
+While an authenticated Admin corrects a result, the four editable fields are
+also checkpointed for seven days as one encrypted, integrity-protected token in
+that browser. This lets the same authorized identity recover after a websocket
+disconnect or container restart without retaining screenshots. The token is
+bound to the exact workbook version and event context, cannot restore for a
+different identity, and contains no OCR text or publication approval. It is
+cleared after publication, an explicit discard, workbook refresh, or logout
+from an active Admin session. Signing out only to renew an expired/forbidden
+identity session preserves the encrypted draft for the same authorized Admin.
+
 ### League setup, roster changes, and corrections
 
 The protected Admin task selector renders only one workflow at a time. **League
@@ -428,6 +438,7 @@ The GitHub Actions workflow runs these checks and performs a minimal Streamlit s
 - `workbook_simplify.py` — deterministic, recovery-backed removal of obsolete Pivot artifacts
 - `race_github.py` — short-lived GitHub App authentication and optimistic workbook publication
 - `race_import_ui.py` — protected local/hosted 2–4 screenshot review workflow
+- `review_draft_recovery.py` — encrypted browser-local recovery for unfinished reviews
 - `puskas_html.py` — custom dashboard HTML rendering
 - `tests/` — calculation and workbook regression tests
 - `assets/` — optimized WebP dashboard imagery

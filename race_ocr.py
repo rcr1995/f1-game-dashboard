@@ -10,6 +10,7 @@ import re
 from typing import Literal, Sequence
 import warnings
 
+import race_import as _race_import
 from race_import import OcrToken, detect_timing_columns
 
 
@@ -49,6 +50,11 @@ _TAB_WORDS: dict[str, _TabKind] = {
 _MIN_SELECTED_RED_FRACTION = 0.12
 _MIN_RED_FRACTION_MARGIN = 0.08
 _MIN_TAB_OCR_CONFIDENCE = 0.55
+_RAPIDOCR_MAX_SIDE = 2000
+_DETAIL_VALUE_RE = re.compile(
+    r"(?:\d{1,3}:[0-5]\d[.,]\d{3}|\+\s*\d|\b(?:DNF|DNS|DSQ|RET)\b)",
+    re.IGNORECASE,
+)
 
 
 def _words(value: object) -> set[str]:
@@ -324,16 +330,14 @@ def _engine():
     return RapidOCR(params={"Rec.lang_type": LangRec.EN})
 
 
-def extract_tokens(image_bytes: bytes, source: str) -> Sequence[OcrToken]:
-    """Extract positioned text while retaining per-line model confidence."""
-    validate_image_upload(image_bytes, source)
-    try:
-        result = _engine()(image_bytes)
-    except OcrUnavailableError:
-        raise
-    except Exception as exc:
-        raise RuntimeError(f"OCR could not read {source}: {exc}") from exc
-
+def _tokens_from_result(
+    result: object,
+    source: str,
+    *,
+    offset_x: float = 0.0,
+    offset_y: float = 0.0,
+) -> list[OcrToken]:
+    """Convert one RapidOCR result to tokens in original-image coordinates."""
     boxes = getattr(result, "boxes", None)
     texts = getattr(result, "txts", None)
     scores = getattr(result, "scores", None)
@@ -343,8 +347,8 @@ def extract_tokens(image_bytes: bytes, source: str) -> Sequence[OcrToken]:
     tokens: list[OcrToken] = []
     for box, text, confidence in zip(boxes, texts, scores):
         points = list(box)
-        x_values = [float(point[0]) for point in points]
-        y_values = [float(point[1]) for point in points]
+        x_values = [float(point[0]) + offset_x for point in points]
+        y_values = [float(point[1]) + offset_y for point in points]
         tokens.append(
             OcrToken(
                 text=str(text),
@@ -357,3 +361,189 @@ def extract_tokens(image_bytes: bytes, source: str) -> Sequence[OcrToken]:
             )
         )
     return tokens
+
+
+def _header_token(
+    tokens: Sequence[OcrToken],
+    header_y: float,
+    word: str,
+) -> OcrToken | None:
+    candidates = [
+        token
+        for token in tokens
+        if token.confidence >= _MIN_TAB_OCR_CONFIDENCE
+        and word in _words(token.text)
+        and abs(token.y_center - header_y) <= max(45.0, token.height * 1.75)
+    ]
+    return min(candidates, key=lambda token: abs(token.y_center - header_y)) if candidates else None
+
+
+def _detail_crop_geometry(
+    image_size: tuple[int, int],
+    tokens: Sequence[OcrToken],
+) -> tuple[tuple[int, int, int, int], float, float] | None:
+    """Locate a bounded detail table from its already-verified header."""
+    columns = detect_timing_columns(tokens)
+    if columns is None:
+        return None
+    position_header = _header_token(tokens, columns.header_y, "POS")
+    driver_header = _header_token(tokens, columns.header_y, "DRIVER")
+    points_header = _header_token(tokens, columns.header_y, "PTS")
+    if position_header is None or driver_header is None or points_header is None:
+        return None
+    if not (
+        position_header.x_min < driver_header.x_min
+        < columns.fastest_lap_x
+        < columns.time_x
+        < points_header.x_max
+    ):
+        return None
+
+    image_width, image_height = image_size
+    table_width = points_header.x_max - position_header.x_min
+    if table_width < image_width * 0.20 or table_width > image_width * 0.85:
+        return None
+    pad_x = min(100.0, max(24.0, table_width * 0.05))
+    header_height = max(position_header.height, driver_header.height, points_header.height)
+    top = max(0, int(min(position_header.y_min, driver_header.y_min, points_header.y_min) - header_height))
+    left = max(0, int(position_header.x_min - pad_x))
+    right = min(image_width, int(points_header.x_max + pad_x + 0.999))
+
+    timing_values = [
+        token
+        for token in tokens
+        if token.y_center > columns.header_y
+        and columns.fastest_lap_min_x <= token.x_center <= columns.time_max_x
+        and _DETAIL_VALUE_RE.search(token.text)
+    ]
+    if timing_values:
+        bottom = int(max(token.y_max for token in timing_values) + max(32.0, header_height * 1.5))
+    else:
+        # A normal upload page contains at most 14 visible result rows. This
+        # fallback remains bounded and is used only when the first pass saw a
+        # credible detail header but no readable timing value.
+        bottom = int(columns.header_y + min(1200.0, max(500.0, table_width * 0.70)))
+    bottom = min(image_height, bottom)
+    if right - left < 320 or bottom - top < 160:
+        return None
+    return (left, top, right, bottom), driver_header.x_min, columns.header_y
+
+
+def _base_row_positions(
+    tokens: Sequence[OcrToken],
+    grid_size: int,
+) -> list[tuple[float, float, int]]:
+    """Return explicit or forced first-pass row positions with their bounds."""
+    columns = detect_timing_columns(tokens)
+    if columns is None:
+        return []
+    clusters = _race_import._line_clusters(tokens)
+    recovered = _race_import._recover_ordered_positions(
+        clusters,
+        grid_size=grid_size,
+        columns=columns,
+    )
+    evidence: list[tuple[float, float, int]] = []
+    for index, cluster in enumerate(clusters):
+        if not _race_import._is_detail_result_cluster(cluster, columns):
+            continue
+        position = _race_import._position_from_line(cluster, grid_size) or recovered.get(index)
+        if position is None:
+            continue
+        center = _race_import._cluster_y_center(cluster)
+        height = max(token.height for token in cluster)
+        evidence.append((center, height, position))
+    return evidence
+
+
+def _enhance_detail_region(
+    image_bytes: bytes,
+    source: str,
+    base_tokens: Sequence[OcrToken],
+    *,
+    grid_size: int,
+) -> list[OcrToken]:
+    """Re-read only the table at native detail and remap it to the source.
+
+    RapidOCR reduces images whose longest side exceeds 2000 pixels. Phone
+    photos are commonly 4000 pixels wide, so the first pass is ideal for page
+    classification but can halve already-small table lettering. The second
+    pass crops only the verified POS..PTS table; no arbitrary enlargement is
+    performed, and first-pass position evidence wins any crop disagreement.
+    """
+    from PIL import Image
+
+    with Image.open(BytesIO(image_bytes)) as opened:
+        image = opened.convert("RGB")
+        if max(image.size) <= _RAPIDOCR_MAX_SIDE:
+            return list(base_tokens)
+        geometry = _detail_crop_geometry(image.size, base_tokens)
+        if geometry is None:
+            return list(base_tokens)
+        (left, top, right, bottom), driver_x, header_y = geometry
+        crop = image.crop((left, top, right, bottom))
+        try:
+            result = _engine()(crop)
+        except Exception:
+            # Detail enhancement is optional: retain the already-validated
+            # first pass if the bounded crop cannot be read.
+            return list(base_tokens)
+
+    enhanced = _tokens_from_result(result, source, offset_x=left, offset_y=top)
+    if detect_timing_columns(enhanced) is None:
+        return list(base_tokens)
+
+    row_evidence = _base_row_positions(base_tokens, grid_size)
+    filtered_enhanced: list[OcrToken] = []
+    for token in enhanced:
+        if token.y_center > header_y and token.x_center < driver_x:
+            crop_position = _race_import._position_from_line([token], grid_size)
+            if crop_position is not None:
+                nearby = [
+                    (height, position)
+                    for center, height, position in row_evidence
+                    if abs(center - token.y_center) <= max(height, token.height) * 0.85
+                ]
+                # A readable or mathematically forced full-frame position is
+                # independent evidence. Never let a crop silently overwrite
+                # it (for example, a photographed 9 misread as 6).
+                if nearby:
+                    continue
+        filtered_enhanced.append(token)
+
+    retained_base = [
+        token
+        for token in base_tokens
+        if not (left <= token.x_center <= right and token.y_center >= top)
+        or (
+            header_y < token.y_center <= bottom
+            and token.x_center < driver_x
+        )
+    ]
+    return retained_base + filtered_enhanced
+
+
+def extract_tokens(
+    image_bytes: bytes,
+    source: str,
+    *,
+    grid_size: int | None = None,
+) -> Sequence[OcrToken]:
+    """Extract positioned text, with a bounded native-detail table pass."""
+    validate_image_upload(image_bytes, source)
+    try:
+        result = _engine()(image_bytes)
+    except OcrUnavailableError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"OCR could not read {source}: {exc}") from exc
+
+    tokens = _tokens_from_result(result, source)
+    if grid_size is None or not tokens:
+        return tokens
+    return _enhance_detail_region(
+        image_bytes,
+        source,
+        tokens,
+        grid_size=grid_size,
+    )

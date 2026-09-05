@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
@@ -106,6 +108,158 @@ def replace_tab_text(tokens: list[OcrToken], kind: str, text: str) -> None:
         original.y_max,
         original.source,
     )
+
+
+def ocr_result(tokens: list[OcrToken]) -> SimpleNamespace:
+    return SimpleNamespace(
+        boxes=[
+            [
+                [item.x_min, item.y_min],
+                [item.x_max, item.y_min],
+                [item.x_max, item.y_max],
+                [item.x_min, item.y_max],
+            ]
+            for item in tokens
+        ],
+        txts=[item.text for item in tokens],
+        scores=[item.confidence for item in tokens],
+    )
+
+
+def large_detail_image() -> bytes:
+    image = Image.new("RGB", (4000, 1800), (24, 31, 47))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def detail_pass_tokens(source: str = "Screenshot 1") -> list[OcrToken]:
+    def item(text: str, box: tuple[int, int, int, int]) -> OcrToken:
+        return OcrToken(text, 0.99, *box, source)
+
+    return [
+        item("RESULTS (OVERALL)", (900, 200, 1200, 240)),
+        item("AUSTRALIAN GRAND PRIX - RACE", (950, 300, 1600, 340)),
+        item("POS.", (1500, 490, 1570, 525)),
+        item("DRIVER", (1600, 490, 1720, 525)),
+        item("TEAM", (2000, 490, 2100, 525)),
+        item("GRID", (2350, 490, 2430, 525)),
+        item("STOPS BEST", (2470, 490, 2640, 525)),
+        item("TIME", (2730, 490, 2810, 525)),
+        item("PTS.", (2990, 490, 3060, 525)),
+        item("9", (1500, 570, 1525, 602)),
+        item("unreadable", (1650, 570, 1850, 602)),
+        item("1:26.614", (2560, 570, 2670, 602)),
+        item("+1 Lap", (2740, 570, 2830, 602)),
+        item("View Super Licence", (2500, 900, 2830, 940)),
+    ]
+
+
+class NativeDetailCropTests(unittest.TestCase):
+    def test_large_photo_replaces_table_at_native_detail_and_remaps_coordinates(self):
+        base = detail_pass_tokens()
+        geometry = race_ocr._detail_crop_geometry((4000, 1800), base)
+        self.assertIsNotNone(geometry)
+        (left, top, _, _), _, _ = geometry
+        enhanced_global = detail_pass_tokens()[:-1]
+        enhanced_global[10] = OcrToken("6", 0.99, 1500, 570, 1525, 602, "Screenshot 1")
+        enhanced_global[11] = OcrToken(
+            "AI Fernando ALONSO",
+            0.99,
+            1650,
+            570,
+            1950,
+            602,
+            "Screenshot 1",
+        )
+        enhanced_local = [
+            OcrToken(
+                item.text,
+                item.confidence,
+                item.x_min - left,
+                item.y_min - top,
+                item.x_max - left,
+                item.y_max - top,
+                item.source,
+            )
+            for item in enhanced_global[2:]
+        ]
+
+        class FakeEngine:
+            def __init__(self) -> None:
+                self.calls: list[object] = []
+
+            def __call__(self, image):
+                self.calls.append(image)
+                return ocr_result(base if len(self.calls) == 1 else enhanced_local)
+
+        engine = FakeEngine()
+        with patch("race_ocr._engine", return_value=engine):
+            tokens = race_ocr.extract_tokens(
+                large_detail_image(),
+                "Screenshot 1",
+                grid_size=22,
+            )
+
+        self.assertEqual(len(engine.calls), 2)
+        self.assertLess(max(engine.calls[1].size), race_ocr._RAPIDOCR_MAX_SIDE)
+        self.assertIn("AI Fernando ALONSO", [item.text for item in tokens])
+        self.assertNotIn("unreadable", [item.text for item in tokens])
+        self.assertNotIn("View Super Licence", [item.text for item in tokens])
+        # The crop's conflicting 6 may not overwrite first-pass position 9.
+        position_tokens = [
+            item.text
+            for item in tokens
+            if item.y_center > 540 and item.x_center < 1600
+        ]
+        self.assertIn("9", position_tokens)
+        self.assertNotIn("6", position_tokens)
+        remapped = next(item for item in tokens if item.text == "AI Fernando ALONSO")
+        self.assertEqual((remapped.x_min, remapped.y_min), (1650, 570))
+
+    def test_small_image_uses_only_the_original_ocr_pass(self):
+        image_bytes, base = synthetic_overall("AUSTRALIAN GRAND PRIX - RACE")
+
+        class FakeEngine:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def __call__(self, _image):
+                self.calls += 1
+                return ocr_result(base)
+
+        engine = FakeEngine()
+        with patch("race_ocr._engine", return_value=engine):
+            tokens = race_ocr.extract_tokens(
+                image_bytes,
+                "Screenshot 1",
+                grid_size=22,
+            )
+
+        self.assertEqual(engine.calls, 1)
+        self.assertEqual([item.text for item in tokens], [item.text for item in base])
+
+    def test_large_image_without_a_verified_detail_header_is_not_cropped(self):
+        base = [token("unrelated menu", (900, 200, 1200, 240))]
+
+        class FakeEngine:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def __call__(self, _image):
+                self.calls += 1
+                return ocr_result(base)
+
+        engine = FakeEngine()
+        with patch("race_ocr._engine", return_value=engine):
+            tokens = race_ocr.extract_tokens(
+                large_detail_image(),
+                "Screenshot 1",
+                grid_size=22,
+            )
+
+        self.assertEqual(engine.calls, 1)
+        self.assertEqual([item.text for item in tokens], ["unrelated menu"])
 
 
 class SelectedResultsTabTests(unittest.TestCase):

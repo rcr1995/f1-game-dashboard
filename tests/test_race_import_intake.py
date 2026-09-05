@@ -83,7 +83,8 @@ class ScreenshotIntakeTests(unittest.TestCase):
         uploads = [image_bytes(color=color) for color in ("red", "green", "blue", "yellow")]
         calls: list[str] = []
 
-        def fake_extract(_value: bytes, source: str):
+        def fake_extract(_value: bytes, source: str, *, grid_size: int | None = None):
+            self.assertEqual(grid_size, len(roster))
             calls.append(source)
             return []
 

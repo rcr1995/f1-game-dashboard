@@ -30,6 +30,12 @@ DEFAULT_DRIVER_ALIASES = {
     "tomas rodri2i": "TomasRodri21",
     "poli ngua": "Polingua",
     "fata cuida": "Fatacuida",
+    # The game omits the workbook suffix and spells this built-in driver's
+    # surname correctly while the legacy workbook retained its old spelling.
+    # Targets remain inert unless that exact canonical driver is on the
+    # selected controlled roster.
+    "carlos sainz": "Carlos Sainz Jr.",
+    "arvid lindblad": "Arvid Lidblad",
 }
 
 POSITION_RE = re.compile(r"^(?:p\s*)?(\d{1,2})(?:st|nd|rd|th)?[.):\-]?$", re.IGNORECASE)
@@ -173,6 +179,35 @@ def _phrase_similarity(needle: str, haystack: str) -> float:
     return max(SequenceMatcher(None, needle, candidate).ratio() for candidate in candidates)
 
 
+def _ocr_name_variants(raw_normalized: str) -> tuple[str, ...]:
+    """Return narrowly normalized variants for the game's ``AI`` badge.
+
+    On photographed result screens OCR sometimes joins the fixed ``AI``
+    marker to the first name (for example ``AIFranco``).  Splitting only that
+    known two-letter UI prefix lets an otherwise exact controlled-roster name
+    remain exact without relaxing fuzzy-match approval rules.
+    """
+    tokens = raw_normalized.split()
+    without_ai_prefix = [
+        token[2:] if token.startswith("ai") and len(token) > 4 else token
+        for token in tokens
+    ]
+    variants = [raw_normalized, " ".join(without_ai_prefix)]
+    return tuple(dict.fromkeys(value for value in variants if value))
+
+
+def _exact_compact_name_token(needle: str, haystack: str) -> bool:
+    """Match a full roster name joined into one OCR token, never a substring."""
+    compact_needle = "".join(needle.split())
+    if len(compact_needle) < 6:
+        return False
+    for token in haystack.split():
+        candidate = token[2:] if token.startswith("ai") and len(token) > 4 else token
+        if candidate == compact_needle:
+            return True
+    return False
+
+
 def match_driver(
     raw_text: str,
     roster: Sequence[DriverEntry] | Sequence[str],
@@ -192,9 +227,18 @@ def match_driver(
     roster_names = [entry.driver if isinstance(entry, DriverEntry) else str(entry) for entry in roster]
     normalized_roster = {normalize_name(name): name for name in roster_names}
     raw_normalized = normalize_name(raw_text)
+    raw_variants = _ocr_name_variants(raw_normalized)
     low_confidence = float(ocr_confidence) < minimum_ocr_confidence
 
-    exact = [name for normalized, name in normalized_roster.items() if _phrase_similarity(normalized, raw_normalized) == 1.0]
+    exact = [
+        name
+        for normalized, name in normalized_roster.items()
+        if any(
+            _phrase_similarity(normalized, variant) == 1.0
+            or _exact_compact_name_token(normalized, variant)
+            for variant in raw_variants
+        )
+    ]
     if len(exact) == 1:
         canonical = exact[0]
         return DriverMatch(
@@ -216,7 +260,11 @@ def match_driver(
         if target not in roster_names:
             continue
         normalized_alias = normalize_name(alias)
-        if _phrase_similarity(normalized_alias, raw_normalized) == 1.0:
+        if any(
+            _phrase_similarity(normalized_alias, variant) == 1.0
+            or _exact_compact_name_token(normalized_alias, variant)
+            for variant in raw_variants
+        ):
             alias_hits.append(target)
     alias_hits = sorted(set(alias_hits))
     if len(alias_hits) == 1:
@@ -233,7 +281,10 @@ def match_driver(
         )
 
     scored = sorted(
-        ((_phrase_similarity(normalized, raw_normalized), name) for normalized, name in normalized_roster.items()),
+        (
+            (max(_phrase_similarity(normalized, variant) for variant in raw_variants), name)
+            for normalized, name in normalized_roster.items()
+        ),
         reverse=True,
     )
     best_score, best_name = scored[0] if scored else (0.0, None)
@@ -677,7 +728,11 @@ def _position_from_line(tokens: Sequence[OcrToken], grid_size: int) -> int | Non
         match = POSITION_RE.match(token.text.strip())
         if match and 1 <= int(match.group(1)) <= grid_size:
             return int(match.group(1))
-    leading = re.match(r"^\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s|[.):\-])", " ".join(token.text for token in tokens), re.IGNORECASE)
+    leading = re.match(
+        r"^\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s|[.):\-](?!\d))",
+        " ".join(token.text for token in tokens),
+        re.IGNORECASE,
+    )
     if leading and 1 <= int(leading.group(1)) <= grid_size:
         return int(leading.group(1))
     return None

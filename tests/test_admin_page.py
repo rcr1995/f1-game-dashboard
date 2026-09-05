@@ -9,6 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 import admin_auth
 import race_github
+import review_draft_recovery
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -203,17 +204,39 @@ class AdminPageAccessTests(unittest.TestCase):
         self.assertEqual(1, len(app.get("file_uploader")))
 
     def test_authorized_admin_can_logout_from_sidebar(self):
+        events: list[str] = []
+
+        def acknowledge_clear(state: object) -> bool:
+            self.assertEqual(
+                review_draft_recovery.pending_clear_reason(state),  # type: ignore[arg-type]
+                "logout",
+            )
+            events.append("browser-cleared")
+            return True
+
+        def logout_after_clear() -> None:
+            events.append("logout")
+
         with (
             patch("admin_auth.current_admin_state", return_value=admin_auth.AdminState.AUTHORIZED),
             patch("admin_auth.current_claims", return_value={"email": "admin@example.com"}),
             patch("admin_auth.is_current_admin", return_value=True),
-            patch("admin_auth.logout") as logout,
+            patch("admin_auth.logout", side_effect=logout_after_clear) as logout,
+            patch(
+                "review_draft_recovery.render_pending_clear",
+                side_effect=acknowledge_clear,
+            ),
         ):
             app = AppTest.from_file("admin_page.py", default_timeout=60).run()
             sign_out = next(button for button in app.button if button.label == "Sign out")
             sign_out.click().run()
 
         logout.assert_called_once_with()
+        self.assertEqual(events, ["browser-cleared", "logout"])
+        self.assertNotIn(
+            review_draft_recovery.CLEAR_PENDING_KEY,
+            app.session_state,
+        )
 
     def test_password_admin_can_logout_from_sidebar(self):
         authenticated = True
@@ -236,6 +259,7 @@ class AdminPageAccessTests(unittest.TestCase):
             patch("admin_auth.current_admin_state", side_effect=current_state),
             patch("admin_auth.password_mode_enabled", return_value=True),
             patch("admin_auth.logout", side_effect=logout_and_rerun) as logout,
+            patch("review_draft_recovery.render_pending_clear", return_value=True),
         ):
             app = AppTest.from_file("admin_page.py", default_timeout=30).run()
             sign_out = next(button for button in app.button if button.label == "Sign out")
@@ -250,12 +274,17 @@ class AdminPageAccessTests(unittest.TestCase):
         with (
             patch("admin_auth.current_admin_state", return_value=admin_auth.AdminState.FORBIDDEN),
             patch("admin_auth.logout") as logout,
+            patch("review_draft_recovery.request_browser_clear") as clear_recovery,
         ):
             app = AppTest.from_file("admin_page.py", default_timeout=30).run()
             sign_out = next(button for button in app.button if button.label == "Sign out")
             sign_out.click().run()
 
         logout.assert_called_once_with()
+        # This closed-state button renews an expired/forbidden identity. The
+        # opaque browser token stays available to the same allowed Admin, while
+        # identity binding prevents the current unauthorized identity using it.
+        clear_recovery.assert_not_called()
 
 
 if __name__ == "__main__":

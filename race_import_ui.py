@@ -23,6 +23,7 @@ import race_import as ri
 import race_metadata
 import race_ocr
 import race_workbook as rw
+import review_draft_recovery
 import secure_image_upload
 
 
@@ -97,6 +98,11 @@ _TEXT = {
         "defaults_uncertain": "The workbook could not identify one expected event safely. Check these editable details before uploading.",
         "auto_selected": "Pre-selected: {season} · {league} · Round {round} · {gp} · {session}{date}",
         "detected_session": "The screenshots show {session}; the Session filter was updated automatically.",
+        "recovery_restored": "Recovered your unfinished review from this browser. Nothing has been published.",
+        "recovery_saved": "Review edits are saved securely in this browser for 7 days.",
+        "recovery_saving": "Saving a recovery copy of this review…",
+        "recovery_unavailable": "Browser recovery is unavailable. Keep this page open until the review is finished.",
+        "discard_review": "Discard this review",
     },
     "pt": {
         "tab": "📥 Importar evento",
@@ -157,6 +163,11 @@ _TEXT = {
         "defaults_uncertain": "O Excel não conseguiu identificar um único evento esperado com segurança. Confirma estes dados editáveis antes de carregar.",
         "auto_selected": "Pré-selecionado: {season} · {league} · Ronda {round} · {gp} · {session}{date}",
         "detected_session": "As capturas mostram {session}; o filtro Sessão foi atualizado automaticamente.",
+        "recovery_restored": "A revisão inacabada foi recuperada deste navegador. Nada foi publicado.",
+        "recovery_saved": "As alterações da revisão ficam guardadas com segurança neste navegador durante 7 dias.",
+        "recovery_saving": "A guardar uma cópia de recuperação desta revisão…",
+        "recovery_unavailable": "A recuperação no navegador não está disponível. Mantém esta página aberta até terminares a revisão.",
+        "discard_review": "Eliminar esta revisão",
     },
 }
 
@@ -250,6 +261,35 @@ def _context_digest(context: dict) -> str:
     return ri.review_digest([], context)
 
 
+def _recovery_context_digest(context: dict) -> str:
+    """Bind recovery to one event while allowing safe Race/Sprint restoration."""
+
+    return _context_digest(
+        {
+            key: value
+            for key, value in context.items()
+            if key not in {"screenshots", "type"}
+        }
+    )
+
+
+def _draft_review_frames(draft: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Keep immutable OCR evidence separate from the editable checkpoint."""
+
+    detail_frame = pd.DataFrame(draft.get("rows", []))
+    editable_rows = draft.get("edited_rows", draft.get("rows", []))
+    editor_frame = pd.DataFrame(editable_rows)
+    if "Position" not in editor_frame:
+        editor_frame["Position"] = pd.Series(dtype="Int64")
+    if "Driver" not in editor_frame:
+        editor_frame["Driver"] = ""
+    for timing_column in ("Time", "Fastest Lap"):
+        if timing_column not in editor_frame:
+            editor_frame[timing_column] = ""
+        editor_frame[timing_column] = editor_frame[timing_column].fillna("").astype(str)
+    return detail_frame, editor_frame
+
+
 def _upload_widget_key(
     source_token: str,
     context_key: str,
@@ -324,6 +364,7 @@ def reset_import_state_after_success(
     """Discard stale filters/uploads/drafts while preserving the result notice."""
     admin_auth.clear_race_import_state(session_state)
     session_state["race_import_success"] = success
+    review_draft_recovery.request_browser_clear(session_state, "published")
 
 
 def _championship_options(
@@ -1040,7 +1081,11 @@ def _prepare_ocr_draft(
     token_count = 0
     for index, image_bytes in enumerate(upload_bytes, start=1):
         source = f"Screenshot {index}"
-        tokens = race_ocr.extract_tokens(image_bytes, source)
+        tokens = race_ocr.extract_tokens(
+            image_bytes,
+            source,
+            grid_size=len(roster),
+        )
         token_count += len(tokens)
         token_sets.append(tokens)
     detected_event_type: str | None = None
@@ -1492,6 +1537,7 @@ def render_race_import(
         "screenshots": current_screenshot_hashes,
     }
     current_context_digest = _context_digest(context)
+    recovery_context_digest = _recovery_context_digest(context)
     action_columns = st.columns(2)
     extract_clicked = action_columns[0].button(
         text(lang, "extract"),
@@ -1559,10 +1605,13 @@ def render_race_import(
                 scoring = authority.base_points
                 context["type"] = event_type
                 current_context_digest = _context_digest(context)
+                recovery_context_digest = _recovery_context_digest(context)
             st.session_state["race_import_draft"] = {
                 "context_digest": current_context_digest,
+                "recovery_context_digest": recovery_context_digest,
                 "workbook_sha256": workbook_sha,
                 "source_version": reviewed_source_version,
+                "event_type": event_type,
                 "rows": ocr_draft.rows,
                 # Only non-reversible digests remain after successful OCR;
                 # raw screenshots are removed from the uploader state.
@@ -1621,8 +1670,10 @@ def render_race_import(
             return
         st.session_state["race_import_draft"] = {
             "context_digest": current_context_digest,
+            "recovery_context_digest": recovery_context_digest,
             "workbook_sha256": workbook_sha,
             "source_version": reviewed_source_version,
+            "event_type": event_type,
             "rows": ri.build_review_rows([], len(roster)),
             "screenshot_hashes": [],
             "token_count": 0,
@@ -1631,22 +1682,46 @@ def render_race_import(
 
     draft = st.session_state.get("race_import_draft")
     if not draft:
+        restored_draft = review_draft_recovery.restore_browser_draft(
+            expected_context_digest=recovery_context_digest,
+            expected_workbook_sha256=workbook_sha,
+            expected_source_version=str(reviewed_source_version),
+        )
+        if restored_draft is not None:
+            st.session_state["race_import_draft"] = restored_draft
+            draft = restored_draft
+            restored_event_type = restored_draft.get("event_type")
+            if restored_event_type in {"R", "SR"}:
+                st.session_state[filters.session_override_key] = restored_event_type
+            st.session_state["race_import_recovery_notice"] = True
+            st.rerun()
+    if not draft:
         _render_safety_note(lang, hosted=hosted)
         return
+    if isinstance(draft, dict):
+        # Let an already-open pre-recovery review begin checkpointing on the
+        # first rerun after this feature is introduced.
+        draft.setdefault("recovery_context_digest", recovery_context_digest)
+        draft.setdefault("event_type", event_type)
     if draft["context_digest"] != current_context_digest:
         st.warning(text(lang, "stale"))
+        if st.button(
+            text(lang, "discard_review"),
+            key=f"race_import_discard_stale_{draft.get('draft_id', 'unknown')}",
+        ):
+            admin_auth.clear_race_import_state(st.session_state)
+            review_draft_recovery.request_browser_clear(st.session_state, "discard")
+            st.rerun()
         _render_safety_note(lang, hosted=hosted)
         return
 
     st.subheader(text(lang, "review"))
+    if st.session_state.pop("race_import_recovery_notice", False):
+        st.success(text(lang, "recovery_restored"), icon=":material/restore:")
     st.caption(text(lang, "review_help"))
     unselected_driver = "— Selecionar piloto —" if lang == "pt" else "— Select driver —"
-    editor_frame = pd.DataFrame(draft["rows"])
+    detail_frame, editor_frame = _draft_review_frames(draft)
     editor_frame["Driver"] = editor_frame["Driver"].replace("", unselected_driver)
-    for timing_column in ("Time", "Fastest Lap"):
-        if timing_column not in editor_frame:
-            editor_frame[timing_column] = ""
-        editor_frame[timing_column] = editor_frame[timing_column].fillna("").astype(str)
     compact_editor = editor_frame[["Position", "Driver", "Time", "Fastest Lap"]].copy()
     edited_compact = st.data_editor(
         compact_editor,
@@ -1705,7 +1780,7 @@ def render_race_import(
             "Fastest Lap Notes",
         ]
         st.dataframe(
-            editor_frame[[column for column in detail_columns if column in editor_frame]],
+            detail_frame[[column for column in detail_columns if column in detail_frame]],
             width="stretch",
             hide_index=True,
         )
@@ -1715,6 +1790,26 @@ def render_race_import(
         unselected_driver,
         "",
     )
+    edited_rows = edited_for_validation.to_dict("records")
+    draft["edited_rows"] = edited_rows
+    recovery_status = review_draft_recovery.persist_browser_draft(draft)
+    recovery_columns = st.columns([3, 1])
+    if recovery_status == "saved":
+        recovery_columns[0].caption(text(lang, "recovery_saved"))
+    elif recovery_status == "pending":
+        recovery_columns[0].caption(text(lang, "recovery_saving"))
+    else:
+        recovery_columns[0].warning(text(lang, "recovery_unavailable"))
+    discard_clicked = recovery_columns[1].button(
+        text(lang, "discard_review"),
+        key=f"race_import_discard_{draft['draft_id']}",
+        use_container_width=True,
+    )
+    if discard_clicked:
+        admin_auth.clear_race_import_state(st.session_state)
+        review_draft_recovery.request_browser_clear(st.session_state, "discard")
+        st.rerun()
+
     # Admin publications always carry the result detail fields. OCR suggestions
     # are advisory; every value must be confirmed in this controlled editor.
     edited_for_validation["Timing Expected"] = True

@@ -530,6 +530,62 @@ class StreamlitWrapperTests(unittest.TestCase):
             self.assertIs(auth.current_admin_state(), auth.AdminState.AUTHORIZED)
             self.assertTrue(auth.is_current_admin())
 
+    def test_recovery_binding_is_stable_opaque_and_authorized_identity_bound(self):
+        secrets = configured_secrets()
+        secrets[auth.FEATURE_FLAG] = True
+        first = FakeStreamlit(
+            secrets=secrets,
+            user=FakeUser(valid_claims(exp=4_000_000_000), logged_in=True),
+        )
+        second = FakeStreamlit(
+            secrets=secrets,
+            user=FakeUser(valid_claims(exp=4_000_000_000), logged_in=True),
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch("admin_auth._streamlit", return_value=first):
+                first_binding = auth.current_admin_recovery_binding()
+            with patch("admin_auth._streamlit", return_value=second):
+                second_binding = auth.current_admin_recovery_binding()
+
+        self.assertIsNotNone(first_binding)
+        self.assertEqual(first_binding, second_binding)
+        assert first_binding is not None
+        self.assertRegex(first_binding.identity, r"^[0-9a-f]{64}$")
+        self.assertEqual(len(first_binding.key_material), 32)
+        self.assertNotIn(secrets["auth"]["cookie_secret"], repr(first_binding))
+        self.assertNotIn(first_binding.key_material.hex(), repr(first_binding))
+
+        forbidden = FakeStreamlit(
+            secrets=secrets,
+            user=FakeUser(
+                valid_claims(sub="another-identity", exp=4_000_000_000),
+                logged_in=True,
+            ),
+        )
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("admin_auth._streamlit", return_value=forbidden),
+        ):
+            self.assertIsNone(auth.current_admin_recovery_binding())
+
+    def test_password_recovery_binding_survives_new_authorized_server_session(self):
+        first = FakeStreamlit(secrets=password_secrets())
+        second = FakeStreamlit(secrets=password_secrets())
+
+        bindings = []
+        for fake in (first, second):
+            with (
+                patch.dict(os.environ, {}, clear=True),
+                patch("admin_auth._streamlit", return_value=fake),
+                patch("admin_auth._monotonic_time", return_value=NOW),
+            ):
+                self.assertTrue(auth.authenticate_password(TEST_PASSWORD).authenticated)
+                bindings.append(auth.current_admin_recovery_binding())
+
+        self.assertIsNotNone(bindings[0])
+        self.assertEqual(bindings[0], bindings[1])
+
     def test_current_state_accepts_top_level_secret_feature_flag(self):
         secrets = configured_secrets()
         secrets[auth.FEATURE_FLAG] = True

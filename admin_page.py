@@ -16,10 +16,11 @@ import streamlit as st
 
 import admin_auth
 import hosted_settings
+import review_draft_recovery
 import ui_preferences
 
 
-APP_VERSION = "v47"
+APP_VERSION = "v48"
 PUBLIC_DASHBOARD_URL = hosted_settings.dashboard_url()
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
@@ -62,6 +63,7 @@ COPY = {
         "workbook_load_error": "The GitHub workbook could not be loaded. Try again later; no data was changed.",
         "workbook_validation_error": "The remote workbook did not pass validation. No data can be published.",
         "footer": "private updater",
+        "clearing_review": "Clearing the saved review securely…",
     },
     "pt": {
         "disabled": (
@@ -101,6 +103,7 @@ COPY = {
         "workbook_load_error": "Não foi possível carregar o Excel do GitHub. Tenta novamente mais tarde; nenhum dado foi alterado.",
         "workbook_validation_error": "O Excel remoto não passou a validação. Nenhum dado pode ser publicado.",
         "footer": "atualizador privado",
+        "clearing_review": "A eliminar com segurança a revisão guardada…",
     },
 }
 
@@ -184,6 +187,17 @@ def _render_closed_state(state: admin_auth.AdminState, lang: str) -> None:
 language_name = _preferred_language_name(st.session_state)
 lang = _language_code(language_name)
 state = admin_auth.current_admin_state()
+pending_clear_reason = review_draft_recovery.pending_clear_reason(st.session_state)
+if pending_clear_reason is not None:
+    st.caption(_copy(lang, "clearing_review"))
+    clear_complete = review_draft_recovery.render_pending_clear(st.session_state)
+    if clear_complete:
+        review_draft_recovery.finish_pending_clear(st.session_state)
+        if pending_clear_reason == "logout":
+            admin_auth.logout()
+        st.rerun()
+    st.stop()
+
 if state is not admin_auth.AdminState.AUTHORIZED:
     _render_closed_state(state, lang)
     st.stop()
@@ -196,7 +210,8 @@ with st.sidebar:
         identity = claims.get("email") or claims.get("name") or _copy(lang, "administrator")
     st.caption(_copy(lang, "signed_in").format(identity=identity))
     if st.button(_copy(lang, "sign_out"), icon=":material/logout:", key="admin_logout"):
-        admin_auth.logout()
+        review_draft_recovery.request_browser_clear(st.session_state, "logout")
+        st.rerun()
 
 # These modules construct the remote publication, OCR, and workbook-write
 # capabilities.  They must remain after the authorization boundary above.
@@ -365,6 +380,8 @@ if refresh_clicked:
     # Clear the remote snapshot together with drafts, approvals, upload state,
     # and other importer-owned values before constructing a fresh review.
     admin_auth.clear_race_import_state(st.session_state)
+    review_draft_recovery.request_browser_clear(st.session_state, "refresh")
+    st.rerun()
 
 try:
     if REMOTE_STATE_KEY not in st.session_state:
