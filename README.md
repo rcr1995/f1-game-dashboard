@@ -9,12 +9,13 @@ A bilingual Streamlit dashboard for exploring Formula 1 game leagues, race resul
 - Driver and constructor standings with F1-style tie-breakers
 - Sprint points included in totals while race-only statistics remain accurate
 - Championship progression, lead changes, momentum, and form tables
-- Latest-race dashboard and calendar status
+- Latest-race dashboard and calendar status, with completed-Race standings on hover, focus, or tap
 - Circuit win records and all-time title counts
 - English and Portuguese interface
 - Persistent dark and light themes
 - Explicit workbook validation with actionable error messages
 - A protected Admin area for importing race results from 2–4 screenshots
+- A protected, validation-gated download of the latest GitHub Excel workbook
 
 ## Run locally
 
@@ -47,6 +48,11 @@ upload/commit it back to the same path on `main`. Preserve required sheet names,
 column headings, and identifiers. Invalid or unavailable updates leave the last
 valid snapshot visible with a warning; the source workbook is never rewritten
 by the public reader. The bundled workbook is only a first-start fallback.
+
+In the authenticated Admin area, **Get latest Excel** performs a new server-side
+GitHub fetch and validates that exact snapshot before presenting its download.
+It does not change or publish the workbook and does not interrupt an open race
+review. Public and unauthorized routes never render this control.
 
 `F1_PUBLIC_GITHUB_SYNC=1` enables this behavior for the container. Other deployments
 and local runs retain their original local-file workflow unless explicitly

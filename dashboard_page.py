@@ -35,7 +35,7 @@ except Exception:
 
 # -----------------------------
 
-APP_VERSION = "v41"
+APP_VERSION = "v42"
 
 MOBILE_DASHBOARD_CSS = """
 <style>

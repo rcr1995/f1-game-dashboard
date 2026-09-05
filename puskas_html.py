@@ -1,5 +1,6 @@
 import pandas as pd
 import base64
+import html
 import re
 from pathlib import Path
 from functools import lru_cache
@@ -97,6 +98,9 @@ _T = {
         "style_Wildcard": "Wildcard",
         "round_label": "Round",
         "Coming soon": "Coming soon",
+        "race_standings": "Race standings",
+        "view_race_standings": "View race standings for {gp_name}",
+        "standings_interaction_hint": "Hover, focus or tap the track name",
     },
     "pt": {
         "days": "DIAS",
@@ -191,6 +195,9 @@ _T = {
         "style_Wildcard": "Imprevisível",
         "round_label": "Ronda",
         "Coming soon": "Em breve",
+        "race_standings": "Classificação da corrida",
+        "view_race_standings": "Ver classificação da corrida de {gp_name}",
+        "standings_interaction_hint": "Passe o rato, foque ou toque no nome da pista",
     }
 }
 
@@ -204,21 +211,79 @@ def _js_escape(s: str) -> str:
     return "".join(f"\\u{ord(c):04x}" if ord(c) > 127 else c for c in s)
 
 
+def _html_escape(value: object) -> str:
+    """Escape workbook-provided values before inserting them into dashboard HTML."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return ""
+    return html.escape(str(value), quote=True)
+
+
 def get_calendar_for_league(calendar_df: pd.DataFrame, meta: dict) -> pd.DataFrame:
     if calendar_df is None or calendar_df.empty or not isinstance(meta, dict):
         return pd.DataFrame()
-    league_name = meta.get("League Name", "")
-    season_label = meta.get("SeasonLabel", "")
-    # 1. Exact match on League Name
-    cal = calendar_df[calendar_df["League Name"].astype(str).str.strip().str.lower() == str(league_name).strip().lower()]
-    if not cal.empty:
-        return cal
-    # 2. Try substring match (e.g. "2026" is in "2026-T02")
-    for cal_league in calendar_df["League Name"].dropna().unique():
-        cal_league_str = str(cal_league).strip().lower()
-        if cal_league_str and (cal_league_str in str(season_label).lower() or cal_league_str in str(league_name).lower()):
-            return calendar_df[calendar_df["League Name"] == cal_league]
-    return pd.DataFrame()
+    if "League Name" not in calendar_df.columns:
+        return pd.DataFrame()
+
+    def normalized(column: str) -> pd.Series:
+        if column not in calendar_df.columns:
+            return pd.Series("", index=calendar_df.index, dtype="object")
+        return calendar_df[column].fillna("").astype(str).str.strip().str.casefold()
+
+    # A managed calendar has an immutable League ID. Honour it whenever the
+    # caller can provide it; never fall back to a display name after an ID miss.
+    expected_id = str(meta.get("League ID", "")).strip().casefold()
+    if expected_id:
+        by_id = calendar_df[normalized("League ID").eq(expected_id)]
+        return by_id if not by_id.empty else pd.DataFrame()
+
+    expected_name = str(meta.get("League Name", "")).strip().casefold()
+    if not expected_name:
+        return pd.DataFrame()
+    named = calendar_df[normalized("League Name").eq(expected_name)]
+    if named.empty:
+        return pd.DataFrame()
+
+    # New workbooks carry Game + Season on every calendar row. This lets a
+    # familiar league display name be reused in another season without mixing
+    # schedules. A partly managed or mismatched block fails closed.
+    named_game = normalized("Game").loc[named.index]
+    named_season = normalized("Season").loc[named.index]
+    named_ids = normalized("League ID").loc[named.index]
+    has_managed_identity = (
+        named_game.ne("") | named_season.ne("") | named_ids.ne("")
+    ).any()
+    if has_managed_identity:
+        expected_game = str(meta.get("Game", "")).strip().casefold()
+        expected_season = (
+            str(meta.get("SeasonLabel", meta.get("Season", "")))
+            .strip()
+            .casefold()
+        )
+        if not expected_game or not expected_season:
+            return pd.DataFrame()
+        matched = named[
+            named_game.eq(expected_game)
+            & named_season.eq(expected_season)
+        ]
+        if matched.empty:
+            return pd.DataFrame()
+        matched_ids = normalized("League ID").loc[matched.index]
+        nonblank_ids = matched_ids[matched_ids.ne("")].unique().tolist()
+        if matched_ids.eq("").any() or len(nonblank_ids) != 1:
+            return pd.DataFrame()
+        return matched
+
+    # Legacy calendars have no identity metadata. Exact League Name is the
+    # only safe compatibility fallback; fuzzy substring matches can select a
+    # different championship and are deliberately rejected. Repeated round
+    # numbers mean more than one legacy season may share this name, so that
+    # ambiguous block also fails closed.
+    if "Round" not in named.columns:
+        return pd.DataFrame()
+    legacy_rounds = pd.to_numeric(named["Round"], errors="coerce")
+    if legacy_rounds.isna().any() or legacy_rounds.duplicated().any():
+        return pd.DataFrame()
+    return named
 
 
 def _tr_gp(lang: str, gp_name: str) -> str:
@@ -512,6 +577,146 @@ def _format_time(t_val, mode="time") -> str:
             parts = t_str.split('.')
             t_str = parts[0] + '.' + parts[1][:3]
     return t_str
+
+
+def _round_identity(value: object) -> tuple[str, object]:
+    """Return a comparison key that treats workbook rounds such as 5 and 5.0 alike."""
+    try:
+        number = float(value)
+        if pd.notna(number):
+            return ("number", number)
+    except (TypeError, ValueError):
+        pass
+    return ("text", str(value).strip().casefold())
+
+
+def _calendar_race_standings(
+    results: pd.DataFrame | None,
+    round_value: object,
+    gp_name: str,
+    meta: dict | None = None,
+) -> pd.DataFrame:
+    """Select the main Race standings for one completed calendar event.
+
+    Sprint rows are deliberately excluded: a calendar GP represents the main Race.
+    Returning an empty frame is safer than showing results from a similarly named or
+    adjacent event when workbook identity fields do not match exactly.
+    """
+    if results is None or results.empty:
+        return pd.DataFrame()
+    required = {"Round", "GP Name", "Driver", "Finish Pos"}
+    if not required.issubset(results.columns):
+        return pd.DataFrame()
+
+    expected_round = _round_identity(round_value)
+    expected_gp = str(gp_name).strip().casefold()
+    mask = results["Round"].map(lambda value: _round_identity(value) == expected_round)
+    mask &= results["GP Name"].astype(str).str.strip().str.casefold().eq(expected_gp)
+
+    if meta is not None:
+        for column, metadata_key in (
+            ("Game", "Game"),
+            ("SeasonLabel", "SeasonLabel"),
+            ("League Name", "League Name"),
+        ):
+            expected_value = str(meta.get(metadata_key, "")).strip().casefold()
+            if column not in results.columns or not expected_value:
+                return pd.DataFrame()
+            mask &= results[column].astype(str).str.strip().str.casefold().eq(expected_value)
+    if "IsSeasonFinal" in results.columns:
+        mask &= ~results["IsSeasonFinal"].fillna(False).astype(bool)
+    if "Type" in results.columns:
+        mask &= results["Type"].astype(str).str.strip().str.casefold().isin({"r", "race"})
+
+    race_rows = results.loc[mask].copy()
+    if race_rows.empty:
+        return race_rows
+
+    driver_keys = race_rows["Driver"].astype(str).str.strip().str.casefold()
+    position_keys = pd.to_numeric(race_rows["Finish Pos"], errors="coerce")
+    if (
+        driver_keys.isin({"", "nan", "none", "<na>"}).any()
+        or driver_keys.duplicated().any()
+    ):
+        return pd.DataFrame()
+    if (
+        position_keys.isna().any()
+        or position_keys.le(0).any()
+        or position_keys.mod(1).ne(0).any()
+        or position_keys.duplicated().any()
+    ):
+        return pd.DataFrame()
+    race_rows["_CalendarPosition"] = pd.to_numeric(race_rows["Finish Pos"], errors="coerce")
+    race_rows = race_rows.sort_values(
+        ["_CalendarPosition", "Driver"], na_position="last", kind="stable"
+    )
+    return race_rows.drop(columns=["_CalendarPosition"])
+
+
+def _calendar_standings_popup(
+    race_rows: pd.DataFrame,
+    *,
+    gp_name: str,
+    popup_id: str,
+    lang: str,
+    reigning_champ: str = "",
+) -> str:
+    """Render an escaped, compact results table for a calendar hover/focus card."""
+    if race_rows is None or race_rows.empty:
+        return ""
+
+    result_rows = []
+    for _, row in race_rows.iterrows():
+        raw_position = row.get("Finish Pos")
+        try:
+            number = float(raw_position)
+            position = str(int(number)) if number.is_integer() else str(raw_position)
+        except (TypeError, ValueError):
+            position = "-"
+
+        driver = str(row.get("Driver", "")).strip()
+        if not driver or driver.casefold() in {"nan", "none"}:
+            driver = "-"
+        display_driver = f"{driver} ⭐" if driver == reigning_champ else driver
+        badge = _team_badge_html(str(row.get("Team", "")), 14)
+
+        raw_points = row.get("Points", 0)
+        try:
+            point_number = float(raw_points)
+            points = str(int(point_number)) if point_number.is_integer() else f"{point_number:g}"
+        except (TypeError, ValueError):
+            points = "-"
+
+        result_rows.append(
+            f"""
+            <div class="p-cal-popup-row">
+                <div class="p-cal-popup-pos">{_html_escape(position)}</div>
+                <div class="p-cal-popup-driver">{badge}<span>{_html_escape(display_driver)}</span></div>
+                <div class="p-cal-popup-time">{_html_escape(_format_time(row.get("Time", "-"), mode="time"))}</div>
+                <div class="p-cal-popup-fl">{_html_escape(_format_time(row.get("Fastest Lap", "-"), mode="fl"))}</div>
+                <div class="p-cal-popup-points">{_html_escape(points)}</div>
+            </div>
+            """
+        )
+
+    translated_gp = _tr_gp(lang, str(gp_name))
+    popup_label = _tr(lang, "view_race_standings").format(gp_name=translated_gp)
+    return f"""
+    <div class="p-cal-popup" id="{_html_escape(popup_id)}" role="group" aria-label="{_html_escape(popup_label)}">
+        <div class="p-cal-popup-title">
+            <span>{_html_escape(translated_gp)}</span>
+            <strong>{_html_escape(_tr(lang, "race_standings"))}</strong>
+        </div>
+        <div class="p-cal-popup-row p-cal-popup-head" aria-hidden="true">
+            <div class="p-cal-popup-pos">{_html_escape(_tr(lang, "pos"))}</div>
+            <div class="p-cal-popup-driver">{_html_escape(_tr(lang, "driver"))}</div>
+            <div class="p-cal-popup-time">{_html_escape(_tr(lang, "time"))}</div>
+            <div class="p-cal-popup-fl">{_html_escape(_tr(lang, "fastest_lap"))}</div>
+            <div class="p-cal-popup-points">{_html_escape(_tr(lang, "points"))}</div>
+        </div>
+        <div class="p-cal-popup-body" role="region" tabindex="0" aria-label="{_html_escape(popup_label)}">{''.join(result_rows)}</div>
+    </div>
+    """
 
 
 def _team_badge_html(team_name: str, size: int = 16) -> str:
@@ -1483,11 +1688,13 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             status = str(row.get("Status", "")).lower()
 
             winner = "–"
-            if status == "done" and not latest_gp.empty:
-                type_mask = (latest_gp["Type"] == "R") if "Type" in latest_gp.columns else True
-                r_gp = latest_gp[(latest_gp["Round"] == rnd) & (latest_gp["Finish Pos"] == 1) & type_mask]
-                if not r_gp.empty:
-                    winner = r_gp.iloc[0]["Driver"]
+            race_rows = pd.DataFrame()
+            if status == "done":
+                race_rows = _calendar_race_standings(latest_gp, rnd, gp_name, meta)
+                if not race_rows.empty:
+                    winners = race_rows[pd.to_numeric(race_rows["Finish Pos"], errors="coerce").eq(1)]
+                    if not winners.empty:
+                        winner = str(winners.iloc[0]["Driver"])
 
             disp_winner = f"{winner} ⭐" if winner == reigning_champ else winner
             status_cls = "status-done" if status == "done" else "status-up"
@@ -1503,12 +1710,39 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                         status_txt = str(date_val)
                 else:
                     status_txt = _tr(lang, "upcoming")
+
+            if not race_rows.empty:
+                popup_id = f"calendar-race-standings-{i}"
+                popup_label = _tr(lang, "view_race_standings").format(
+                    gp_name=_tr_gp(lang, gp_name)
+                )
+                popup_html = _calendar_standings_popup(
+                    race_rows,
+                    gp_name=gp_name,
+                    popup_id=popup_id,
+                    lang=lang,
+                    reigning_champ=reigning_champ,
+                )
+                track_html = f"""
+                <details class="p-cal-event">
+                    <summary class="p-cal-track p-cal-track-trigger"
+                             aria-label="{_html_escape(popup_label)}"
+                             aria-controls="{_html_escape(popup_id)}"
+                             title="{_html_escape(_tr(lang, 'standings_interaction_hint'))}">
+                        {flag_icon}<span>{_html_escape(short_trk)}</span><span class="p-cal-info" aria-hidden="true">i</span>
+                    </summary>
+                    {popup_html}
+                </details>
+                """
+            else:
+                track_html = f'<div class="p-cal-track">{flag_icon} {_html_escape(short_trk)}</div>'
+
             row_html = f"""
             <div class="p-cal-row">
-                <div class="p-cal-rnd">{rnd}</div>
-                <div class="p-cal-track">{flag_icon} {short_trk}</div>
-                <div class="p-cal-winner">{disp_winner}</div>
-                <div class="p-cal-status {status_cls}">{status_txt}</div>
+                <div class="p-cal-rnd">{_html_escape(rnd)}</div>
+                {track_html}
+                <div class="p-cal-winner">{_html_escape(disp_winner)}</div>
+                <div class="p-cal-status {status_cls}">{_html_escape(status_txt)}</div>
             </div>
             """
             if i < 8:
@@ -1669,6 +1903,127 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     .p-cal-track { flex: 2; display: flex; align-items: center; gap: 6px; font-weight: 600; color: #ddd; overflow: hidden; text-overflow: ellipsis; }
     .p-cal-winner { flex: 1.2; text-align: center; color: #aaa; font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; }
     .p-cal-status { flex: 0.8; text-align: right; font-size: 0.68rem; padding-right: 0.3rem; }
+
+    .p-calendar-card { position: relative; overflow: visible; }
+    .p-cal-event { flex: 2; min-width: 0; position: relative; }
+    .p-cal-track-trigger {
+        width: 100%;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        list-style: none;
+    }
+    .p-cal-track-trigger::-webkit-details-marker { display: none; }
+    .p-cal-track-trigger > span:not(.p-cal-info) {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .p-cal-track-trigger:focus-visible {
+        outline: 2px solid #e10600;
+        outline-offset: 3px;
+        border-radius: 2px;
+    }
+    .p-cal-info {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        flex: 0 0 14px;
+        border: 1px solid #666;
+        border-radius: 50%;
+        color: #aaa;
+        font-size: 0.58rem;
+        font-weight: 800;
+        line-height: 1;
+    }
+    .p-cal-popup {
+        display: block;
+        visibility: hidden;
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+        z-index: 60;
+        /* The calendar sits near the bottom of the fixed-height dashboard
+           iframe, so open upward and touch the trigger's box. This keeps the
+           full scrollable panel visible without resizing or page jumps. */
+        top: auto;
+        bottom: 100%;
+        left: 0;
+        width: min(500px, calc(100vw - 5rem));
+        padding: 0.75rem;
+        border: 1px solid #35353d;
+        border-top: 3px solid #e10600;
+        border-radius: 7px;
+        background: #15151a;
+        box-shadow: 0 16px 38px rgba(0, 0, 0, 0.58);
+        white-space: normal;
+        transition: opacity 90ms ease-out;
+    }
+    @media (hover: hover) and (pointer: fine) {
+        .p-cal-event:hover { z-index: 59; }
+        .p-cal-event:hover .p-cal-popup {
+            visibility: visible;
+            opacity: 1;
+            pointer-events: auto;
+        }
+    }
+    .p-cal-track-trigger:focus-visible + .p-cal-popup,
+    .p-cal-event[open] .p-cal-popup {
+        visibility: visible;
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .p-cal-event.is-dismissed .p-cal-popup {
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    .p-cal-popup-title {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0 0.15rem 0.55rem;
+        color: #fff;
+        font-size: 0.78rem;
+    }
+    .p-cal-popup-title > span { font-weight: 800; }
+    .p-cal-popup-title > strong {
+        color: #e10600;
+        font-size: 0.62rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+    .p-cal-popup-body { max-height: 18rem; overflow-y: auto; overscroll-behavior: contain; }
+    .p-cal-popup-row {
+        display: grid;
+        grid-template-columns: 2rem minmax(8rem, 1fr) 5.2rem 4.7rem 2.5rem;
+        align-items: center;
+        gap: 0.35rem;
+        min-height: 1.65rem;
+        border-bottom: 1px solid #25252b;
+        color: #ccc;
+        font-size: 0.67rem;
+        font-variant-numeric: tabular-nums;
+    }
+    .p-cal-popup-row:last-child { border-bottom: 0; }
+    .p-cal-popup-head {
+        min-height: 1.35rem;
+        color: #777;
+        font-size: 0.55rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+    }
+    .p-cal-popup-pos { text-align: center; font-weight: 800; }
+    .p-cal-popup-driver { display: flex; align-items: center; min-width: 0; color: #fff; font-weight: 600; }
+    .p-cal-popup-driver > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .p-cal-popup-time, .p-cal-popup-fl, .p-cal-popup-points { text-align: right; }
+    .p-cal-popup-points { color: #fff; font-weight: 800; padding-right: 0.15rem; }
     
     .p-drivers-flex {
         display: flex;
@@ -1840,6 +2195,14 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         .p-stats-grid { flex-direction: column; }
         .p-col { font-size: 0.75rem; }
         .p-driver { font-size: 0.8rem; }
+    }
+    @media (max-width: 600px) {
+        .p-cal-popup {
+            left: -2.35rem;
+            width: min(360px, calc(100vw - 3.8rem));
+        }
+        .p-cal-popup-row { grid-template-columns: 2rem minmax(0, 1fr) 2.5rem; }
+        .p-cal-popup-time, .p-cal-popup-fl { display: none; }
     }
     </style>
     """
@@ -2038,7 +2401,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         <!-- ROW 3 -->
         <div class="p-grid-2">
             <!-- CALENDAR -->
-            <div class="p-card">
+            <div class="p-card p-calendar-card">
                 <div class="p-card-title">{_tr(lang, "season_calendar")}</div>
                 <div class="p-cal-row" style="color:#555; font-size:0.6rem; font-weight:800; border-bottom: 1px solid #333;">
                     <div class="p-cal-rnd">{_tr(lang, "rnd")}</div>
@@ -2125,6 +2488,49 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                             }});
                         }}
                     }}
+
+                    function setupCalendarStandings() {{
+                        var events = Array.prototype.slice.call(document.querySelectorAll('.p-cal-event'));
+
+                        function setOpen(item, open, dismissed) {{
+                            item.open = !!open;
+                            item.classList.toggle('is-dismissed', !!dismissed);
+                        }}
+
+                        function closeOthers(active) {{
+                            events.forEach(function(item) {{
+                                if (item !== active) setOpen(item, false, false);
+                            }});
+                        }}
+
+                        events.forEach(function(item) {{
+                            var trigger = item.querySelector('.p-cal-track-trigger');
+                            if (!trigger) return;
+
+                            item.addEventListener('toggle', function() {{
+                                if (item.open) closeOthers(item);
+                                item.classList.remove('is-dismissed');
+                            }});
+                            item.addEventListener('pointerleave', function() {{
+                                item.classList.remove('is-dismissed');
+                            }});
+                            trigger.addEventListener('blur', function() {{
+                                item.classList.remove('is-dismissed');
+                            }});
+                            trigger.addEventListener('keydown', function(event) {{
+                                if (event.key === 'Escape') {{
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    setOpen(item, false, true);
+                                }}
+                            }});
+                        }});
+
+                        document.addEventListener('click', function(event) {{
+                            if (event.target.closest('.p-cal-event')) return;
+                            events.forEach(function(item) {{ setOpen(item, false, true); }});
+                        }});
+                    }}
                     
                     setupToggle('btn-full-standings',  'standings-extra',  '{_js_escape(_tr(lang, "full_standings"))}',  '{_js_escape(_tr(lang, "hide_standings"))}',  'block');
                     setupToggle('btn-full-c-standings','c-standings-extra','{_js_escape(_tr(lang, "full_standings"))}',  '{_js_escape(_tr(lang, "hide_standings"))}',  'block');
@@ -2132,21 +2538,17 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                     setupToggle('btn-full-results',    'race-extra',       '{_js_escape(_tr(lang, "full_results"))}',    '{_js_escape(_tr(lang, "hide_results"))}',    'block');
                     setupToggle('btn-full-calendar',   'cal-extra',        '{_js_escape(_tr(lang, "full_calendar"))}',   '{_js_escape(_tr(lang, "hide_calendar"))}',   'block');
                     setupToggle('btn-all-drivers',     'drivers-extra',    '{_js_escape(_tr(lang, "all_drivers"))}',     '{_js_escape(_tr(lang, "hide_drivers"))}',    'flex');
+                    setupCalendarStandings();
                     
-                    // Initial resize
-                    setTimeout(resizeIframe, 500);
-                    
-                    // Use ResizeObserver for accurate and safe resizing without infinite loops
-                    try {{
-                        var container = document.querySelector('.puskas-container');
-                        if (container && window.ResizeObserver) {{
-                            new ResizeObserver(function() {{
-                                resizeIframe();
-                            }}).observe(container);
-                        }} else {{
-                            window.addEventListener('resize', function() {{ setTimeout(resizeIframe, 500); }});
-                        }}
-                    }} catch(e) {{}}
+                    // Size after initial markup and again after charts/fonts settle.
+                    // Continuous observation is intentionally avoided: showing an
+                    // absolute-positioned hover panel must not resize the iframe or
+                    // move the page out from under the pointer.
+                    setTimeout(resizeIframe, 350);
+                    setTimeout(resizeIframe, 1400);
+                    window.addEventListener('resize', function() {{
+                        setTimeout(resizeIframe, 250);
+                    }});
 
                     // Attach event listeners to hero buttons (which live in the parent window)
                     setTimeout(function() {{

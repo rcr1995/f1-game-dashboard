@@ -36,6 +36,7 @@ class AdminPageAccessTests(unittest.TestCase):
         app = self.render(state)
         self.assertFalse(app.exception)
         self.assertFalse(app.get("file_uploader"))
+        self.assertFalse(app.get("download_button"))
         self.assertFalse(any(header.value in IMPORT_TITLES for header in app.header))
         return app
 
@@ -138,10 +139,15 @@ class AdminPageAccessTests(unittest.TestCase):
                     content=workbook_content,
                     blob_sha="a" * 40,
                 ),
-            ),
+            ) as fetch_remote,
         ):
             app = AppTest.from_file("admin_page.py", default_timeout=60)
             app.secrets = GITHUB_SECRETS
+            app.run()
+            self.assertFalse(app.get("download_button"))
+            next(
+                button for button in app.button if button.label == "↓ Get latest Excel"
+            ).click()
             app.run()
 
         self.assertFalse(app.exception)
@@ -152,6 +158,82 @@ class AdminPageAccessTests(unittest.TestCase):
             )
         )
         self.assertEqual(1, len(app.get("file_uploader")))
+        self.assertEqual(2, fetch_remote.call_count)
+        self.assertEqual(
+            "a" * 40,
+            app.session_state["race_import_download_workbook"]["blob_sha"],
+        )
+        downloads = app.get("download_button")
+        self.assertEqual(1, len(downloads))
+        self.assertEqual("Download F1_Standings.xlsx", downloads[0].label)
+        self.assertTrue(downloads[0].proto.ignore_rerun)
+        self.assertIn("fetched from GitHub", downloads[0].help)
+
+    def test_authorized_admin_download_label_follows_portuguese_preference(self):
+        workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()
+        with (
+            patch("admin_auth.current_admin_state", return_value=admin_auth.AdminState.AUTHORIZED),
+            patch("admin_auth.current_claims", return_value={"email": "admin@example.com"}),
+            patch("admin_auth.is_current_admin", return_value=True),
+            patch(
+                "race_github.fetch_remote_workbook",
+                return_value=race_github.RemoteWorkbook(
+                    content=workbook_content,
+                    blob_sha="c" * 40,
+                ),
+            ),
+        ):
+            app = AppTest.from_file("admin_page.py", default_timeout=60)
+            app.secrets = GITHUB_SECRETS
+            app.session_state["app_lang"] = "Português (Portugal)"
+            app.run()
+            next(
+                button
+                for button in app.button
+                if button.label == "↓ Obter Excel mais recente"
+            ).click()
+            app.run()
+
+        self.assertFalse(app.exception)
+        downloads = app.get("download_button")
+        self.assertEqual(1, len(downloads))
+        self.assertEqual("Descarregar F1_Standings.xlsx", downloads[0].label)
+        self.assertIn("versão exata", downloads[0].help)
+
+    def test_invalid_fresh_github_workbook_is_not_offered_for_download(self):
+        workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()
+        with (
+            patch("admin_auth.current_admin_state", return_value=admin_auth.AdminState.AUTHORIZED),
+            patch("admin_auth.current_claims", return_value={"email": "admin@example.com"}),
+            patch("admin_auth.is_current_admin", return_value=True),
+            patch(
+                "race_github.fetch_remote_workbook",
+                side_effect=[
+                    race_github.RemoteWorkbook(
+                        content=workbook_content,
+                        blob_sha="d" * 40,
+                    ),
+                    race_github.RemoteWorkbook(
+                        content=b"not an Excel workbook",
+                        blob_sha="e" * 40,
+                    ),
+                ],
+            ),
+        ):
+            app = AppTest.from_file("admin_page.py", default_timeout=60)
+            app.secrets = GITHUB_SECRETS
+            app.run()
+            next(
+                button for button in app.button if button.label == "↓ Get latest Excel"
+            ).click()
+            app.run()
+
+        self.assertFalse(app.exception)
+        self.assertFalse(app.get("download_button"))
+        self.assertNotIn("race_import_download_workbook", app.session_state)
+        self.assertTrue(
+            any("could not be prepared for download" in error.value for error in app.error)
+        )
 
     def test_correct_password_rechecks_state_before_reaching_importer(self):
         workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()

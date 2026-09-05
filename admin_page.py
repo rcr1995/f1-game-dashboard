@@ -20,10 +20,11 @@ import review_draft_recovery
 import ui_preferences
 
 
-APP_VERSION = "v48"
+APP_VERSION = "v49"
 PUBLIC_DASHBOARD_URL = hosted_settings.dashboard_url()
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
+DOWNLOAD_STATE_KEY = "race_import_download_workbook"
 
 LANGUAGE_NAMES = ui_preferences.LANGUAGE_NAMES
 
@@ -60,6 +61,12 @@ COPY = {
         "updates_unavailable": "Updates are temporarily unavailable. No data can be changed.",
         "secure_config": "secure GitHub configuration required",
         "load_latest": "↻ Load latest workbook",
+        "prepare_download": "↓ Get latest Excel",
+        "download_workbook": "Download {filename}",
+        "download_workbook_help": (
+            "Download the exact workbook version fetched from GitHub for this download."
+        ),
+        "download_workbook_error": "The latest GitHub workbook could not be prepared for download. No data was changed.",
         "workbook_load_error": "The GitHub workbook could not be loaded. Try again later; no data was changed.",
         "workbook_validation_error": "The remote workbook did not pass validation. No data can be published.",
         "footer": "private updater",
@@ -100,6 +107,12 @@ COPY = {
         "updates_unavailable": "As atualizações estão temporariamente indisponíveis. Nenhum dado pode ser alterado.",
         "secure_config": "configuração segura do GitHub obrigatória",
         "load_latest": "↻ Carregar Excel mais recente",
+        "prepare_download": "↓ Obter Excel mais recente",
+        "download_workbook": "Descarregar {filename}",
+        "download_workbook_help": (
+            "Descarrega a versão exata do Excel obtida do GitHub para esta transferência."
+        ),
+        "download_workbook_error": "Não foi possível preparar o Excel mais recente do GitHub para transferência. Nenhum dado foi alterado.",
         "workbook_load_error": "Não foi possível carregar o Excel do GitHub. Tenta novamente mais tarde; nenhum dado foi alterado.",
         "workbook_validation_error": "O Excel remoto não passou a validação. Nenhum dado pode ser publicado.",
         "footer": "atualizador privado",
@@ -339,6 +352,22 @@ def _clear_remote_snapshot() -> None:
     st.session_state.pop(REMOTE_STATE_KEY, None)
 
 
+def _validated_download_snapshot(
+    config: github_store.GitHubAppConfig,
+) -> dict[str, object]:
+    """Fetch and validate a fresh, read-only workbook download candidate."""
+
+    snapshot = _load_remote(config)
+    content = snapshot.get("content")
+    if not isinstance(content, (bytes, bytearray)):
+        raise TypeError("invalid download content")
+    with TemporaryDirectory(prefix="f1-workbook-download-") as temporary_directory:
+        candidate_path = Path(temporary_directory) / Path(config.workbook_path).name
+        candidate_path.write_bytes(bytes(content))
+        core.validate_workbook(candidate_path)
+    return snapshot
+
+
 def _sync_dashboard_language() -> None:
     ui_preferences.select_from_widget("admin_language")
 
@@ -372,8 +401,14 @@ except (github_store.GitHubConfigurationError, ValueError, TypeError):
     st.caption(f"{APP_VERSION} · {_copy(lang, 'secure_config')}")
     st.stop()
 
-refresh_clicked = st.button(
+workbook_actions = st.columns(2)
+refresh_clicked = workbook_actions[0].button(
     _copy(lang, "load_latest"),
+    use_container_width=True,
+)
+prepare_download_clicked = workbook_actions[1].button(
+    _copy(lang, "prepare_download"),
+    icon=":material/download:",
     use_container_width=True,
 )
 if refresh_clicked:
@@ -382,6 +417,13 @@ if refresh_clicked:
     admin_auth.clear_race_import_state(st.session_state)
     review_draft_recovery.request_browser_clear(st.session_state, "refresh")
     st.rerun()
+
+if prepare_download_clicked:
+    try:
+        st.session_state[DOWNLOAD_STATE_KEY] = _validated_download_snapshot(config)
+    except (github_store.GitHubPersistenceError, core.WorkbookValidationError, OSError, TypeError, ValueError):
+        st.session_state.pop(DOWNLOAD_STATE_KEY, None)
+        st.error(_copy(lang, "download_workbook_error"))
 
 try:
     if REMOTE_STATE_KEY not in st.session_state:
@@ -520,6 +562,30 @@ with TemporaryDirectory(prefix="f1-race-review-") as temporary_directory:
     except (core.WorkbookValidationError, OSError, ValueError):
         st.error(_copy(lang, "workbook_validation_error"))
         st.stop()
+
+    download_state = st.session_state.get(DOWNLOAD_STATE_KEY)
+    if isinstance(download_state, dict):
+        download_content = download_state.get("content")
+        download_blob_sha = download_state.get("blob_sha")
+        if (
+            isinstance(download_content, (bytes, bytearray))
+            and isinstance(download_blob_sha, str)
+        ):
+            # Register bytes only after a fresh authenticated fetch and full
+            # workbook validation. ``ignore`` avoids disturbing an in-progress
+            # result review when the browser starts the download.
+            _require_current_admin()
+            download_name = Path(config.workbook_path).name
+            st.download_button(
+                _copy(lang, "download_workbook").format(filename=download_name),
+                data=bytes(download_content),
+                file_name=download_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help=_copy(lang, "download_workbook_help"),
+                icon=":material/download:",
+                on_click="ignore",
+                use_container_width=True,
+            )
 
     admin_management_ui.render_admin_management(
         str(workbook_path),
