@@ -52,6 +52,48 @@ def synthetic_tabs(*selected: str, split: str | None = None) -> tuple[bytes, lis
     return buffer.getvalue(), tokens
 
 
+def synthetic_overall(
+    heading: str,
+    *,
+    selected: bool = True,
+    include_timing_detail: bool = True,
+) -> tuple[bytes, list[OcrToken]]:
+    """Model the photographed single-badge results layout used by newer games."""
+    image = Image.new("RGB", (1080, 180), (24, 31, 47))
+    draw = ImageDraw.Draw(image)
+    overall_box = (12, 12, 172, 42)
+    draw.rectangle(overall_box, fill=(176, 25, 48) if selected else (65, 70, 88))
+    draw.line((20, 23, 162, 23), fill=(235, 235, 238), width=2)
+    draw.line((20, 32, 150, 32), fill=(235, 235, 238), width=2)
+    tokens = [token("RESULTS (OVERALL)", (18, 17, 166, 37))]
+    tokens.append(token(heading, (20, 55, 390, 75)))
+    if include_timing_detail:
+        tokens.extend(
+            [
+                token("POS. DRIVER", (500, 100, 580, 115)),
+                token("TEAM", (650, 100, 700, 115)),
+                token("GRID", (735, 100, 775, 115)),
+                token("STOPS BEST", (790, 100, 875, 115)),
+                token("TIME", (900, 100, 940, 115)),
+                token("PTS.", (1000, 100, 1035, 115)),
+            ]
+        )
+    else:
+        tokens.extend(
+            [
+                token("POS. DRIVER", (500, 100, 580, 115)),
+                token("TEAM", (650, 100, 700, 115)),
+                token("SR", (800, 100, 820, 115)),
+                token("R", (880, 100, 890, 115)),
+                token("PTS.", (1000, 100, 1035, 115)),
+            ]
+        )
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue(), tokens
+
+
 def replace_tab_text(tokens: list[OcrToken], kind: str, text: str) -> None:
     index = next(index for index, item in enumerate(tokens) if item.text == TAB_TEXT[kind])
     original = tokens[index]
@@ -102,6 +144,69 @@ class SelectedResultsTabTests(unittest.TestCase):
         replace_tab_text(tokens, "SR", "RESULTS (SPDINT)")
         replace_tab_text(tokens, "R", "PESULTS (RACE)")
         self.assertEqual(race_ocr.detect_selected_results_tab(image_bytes, tokens), "SR")
+
+    def test_detects_race_from_selected_overall_badge_and_detail_heading(self):
+        image_bytes, tokens = synthetic_overall(
+            "AUSTRALIAN GRAND PRIX-RACE",
+        )
+
+        self.assertEqual(race_ocr.detect_selected_results_tab(image_bytes, tokens), "R")
+
+    def test_detects_sprint_from_selected_overall_badge_and_detail_heading(self):
+        image_bytes, tokens = synthetic_overall(
+            "AUSTRALIAN GRANDPRIX-SPRINT",
+        )
+
+        self.assertEqual(race_ocr.detect_selected_results_tab(image_bytes, tokens), "SR")
+
+    def test_overall_badge_requires_a_selected_red_background(self):
+        image_bytes, tokens = synthetic_overall(
+            "AUSTRALIAN GRAND PRIX-RACE",
+            selected=False,
+        )
+
+        self.assertIsNone(race_ocr.detect_selected_results_tab(image_bytes, tokens))
+
+    def test_overall_badge_does_not_trust_an_ambiguous_heading(self):
+        image_bytes, tokens = synthetic_overall(
+            "AUSTRALIAN GRAND PRIX",
+        )
+
+        self.assertIsNone(race_ocr.detect_selected_results_tab(image_bytes, tokens))
+
+    def test_overall_badge_rejects_conflicting_heading_markers(self):
+        image_bytes, tokens = synthetic_overall(
+            "AUSTRALIAN GRAND PRIX-RACE-SPRINT",
+        )
+
+        self.assertIsNone(race_ocr.detect_selected_results_tab(image_bytes, tokens))
+
+    def test_overall_badge_does_not_trust_grand_prix_text_below_detail_header(self):
+        image_bytes, tokens = synthetic_overall("TABLE DETAIL")
+        tokens.append(
+            token("AUSTRALIAN GRAND PRIX-RACE", (20, 130, 390, 150))
+        )
+
+        self.assertIsNone(race_ocr.detect_selected_results_tab(image_bytes, tokens))
+
+    def test_overall_badge_does_not_turn_a_weekend_summary_into_a_race(self):
+        image_bytes, tokens = synthetic_overall(
+            "AUSTRALIAN GRAND PRIX-RACE",
+            include_timing_detail=False,
+        )
+
+        self.assertIsNone(race_ocr.detect_selected_results_tab(image_bytes, tokens))
+
+    def test_legacy_selected_tab_remains_authoritative_over_the_heading(self):
+        image_bytes, tokens = synthetic_tabs("WEEKEND")
+        tokens.append(
+            token("AUSTRALIAN GRAND PRIX-SPRINT", (12, 48, 260, 60))
+        )
+
+        self.assertEqual(
+            race_ocr.detect_selected_results_tab(image_bytes, tokens),
+            "WEEKEND",
+        )
 
     def test_returns_none_when_two_tabs_look_selected(self):
         image_bytes, tokens = synthetic_tabs("R", "SR")

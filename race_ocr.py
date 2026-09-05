@@ -10,7 +10,7 @@ import re
 from typing import Literal, Sequence
 import warnings
 
-from race_import import OcrToken
+from race_import import OcrToken, detect_timing_columns
 
 
 class OcrUnavailableError(RuntimeError):
@@ -26,23 +26,25 @@ MAX_IMAGE_PIXELS = 25_000_000
 ALLOWED_IMAGE_FORMATS = {"PNG", "JPEG", "WEBP"}
 
 ResultsTab = Literal["R", "SR", "WEEKEND"]
+_TabKind = Literal["R", "SR", "WEEKEND", "OVERALL"]
 
 
 @dataclass(frozen=True)
 class _TabLabel:
     """One OCR-backed results-tab label and its image bounds."""
 
-    kind: ResultsTab
+    kind: _TabKind
     x_min: float
     y_min: float
     x_max: float
     y_max: float
 
 
-_TAB_WORDS: dict[str, ResultsTab] = {
+_TAB_WORDS: dict[str, _TabKind] = {
     "RACE": "R",
     "SPRINT": "SR",
     "WEEKEND": "WEEKEND",
+    "OVERALL": "OVERALL",
 }
 _MIN_SELECTED_RED_FRACTION = 0.12
 _MIN_RED_FRACTION_MARGIN = 0.08
@@ -53,7 +55,7 @@ def _words(value: object) -> set[str]:
     return set(re.findall(r"[A-Z]+", str(value or "").upper()))
 
 
-def _session_word_kind(value: object) -> ResultsTab | None:
+def _session_word_kind(value: object) -> _TabKind | None:
     words = _words(value)
     matches = {_TAB_WORDS[word] for word in words if word in _TAB_WORDS}
     if len(matches) == 1:
@@ -61,7 +63,7 @@ def _session_word_kind(value: object) -> ResultsTab | None:
     if matches:
         return None
 
-    scored: list[tuple[float, ResultsTab]] = []
+    scored: list[tuple[float, _TabKind]] = []
     for word in words:
         if word.startswith("RESULT") or len(word) < 4:
             continue
@@ -81,7 +83,7 @@ def _has_results_word(value: object) -> bool:
     return any(word.startswith("RESULT") for word in _words(value))
 
 
-def _union_label(kind: ResultsTab, *tokens: OcrToken) -> _TabLabel:
+def _union_label(kind: _TabKind, *tokens: OcrToken) -> _TabLabel:
     return _TabLabel(
         kind,
         min(token.x_min for token in tokens),
@@ -165,16 +167,73 @@ def _red_fraction(image, label: _TabLabel) -> float:
     return red_pixels / len(pixels)
 
 
+def _same_text_line(left: OcrToken, right: OcrToken) -> bool:
+    """Return whether two OCR boxes plausibly belong to one heading line."""
+    if left.source != right.source:
+        return False
+    vertical_overlap = min(left.y_max, right.y_max) - max(left.y_min, right.y_min)
+    return vertical_overlap >= min(left.height, right.height) * 0.45
+
+
+def _overall_heading_kind(
+    tokens: Sequence[OcrToken],
+    overall_label: _TabLabel,
+    detail_header_y: float,
+) -> ResultsTab | None:
+    """Read the event kind from a new-layout Grand Prix heading.
+
+    Recent game screens expose one selected ``RESULTS (OVERALL)`` badge rather
+    than the three legacy session tabs. In that layout only, the detailed-table
+    heading is the available independent Race/Sprint discriminator.
+    """
+    eligible = [
+        token
+        for token in tokens
+        if token.confidence >= _MIN_TAB_OCR_CONFIDENCE
+        and token.y_center > overall_label.y_max
+        and token.y_center < detail_header_y
+        and not _has_results_word(token.text)
+    ]
+    candidates: set[ResultsTab] = set()
+    for anchor in eligible:
+        line = sorted(
+            (token for token in eligible if _same_text_line(anchor, token)),
+            key=lambda token: token.x_min,
+        )
+        compact = re.sub(
+            r"[^A-Z]",
+            "",
+            " ".join(token.text for token in line).upper(),
+        )
+        if "GRANDPRIX" not in compact:
+            continue
+        heading_tail = compact.split("GRANDPRIX", 1)[1]
+        exact_kinds = {
+            kind
+            for word, kind in _TAB_WORDS.items()
+            if word != "OVERALL" and word in heading_tail
+        }
+        if len(exact_kinds) == 1:
+            kind = next(iter(exact_kinds))
+        elif exact_kinds:
+            kind = None
+        else:
+            kind = _session_word_kind(heading_tail)
+        if kind in {"R", "SR", "WEEKEND"}:
+            candidates.add(kind)
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def detect_selected_results_tab(
     image_bytes: bytes,
     tokens: Sequence[OcrToken],
 ) -> ResultsTab | None:
-    """Identify the uniquely red ``RESULTS`` tab, or fail closed.
+    """Identify a detailed Race/Sprint screen or selected legacy tab.
 
-    The event title is intentionally ignored: the game can retain ``- RACE``
-    while the Sprint results tab is selected, and ``- SPRINT`` while the
-    Weekend summary tab is selected. OCR supplies the tab-label bounds; image
-    pixels decide which of those labels has the red selected background.
+    Legacy Race/Sprint/Weekend tabs are authoritative because their title can
+    describe a different session than the selected tab. The newer single
+    ``RESULTS (OVERALL)`` layout may use its heading only after the red badge,
+    absence of legacy tabs, and detailed BEST/TIME schema are all verified.
     """
     validate_image_upload(image_bytes)
     labels = _tab_labels(tokens)
@@ -185,7 +244,7 @@ def detect_selected_results_tab(
 
     with Image.open(BytesIO(image_bytes)) as opened:
         image = opened.convert("RGB")
-        scores: dict[ResultsTab, float] = {}
+        scores: dict[_TabKind, float] = {}
         for label in labels:
             scores[label.kind] = max(scores.get(label.kind, 0.0), _red_fraction(image, label))
 
@@ -198,7 +257,19 @@ def detect_selected_results_tab(
         required_margin = max(_MIN_RED_FRACTION_MARGIN, selected_score * 0.30)
         if selected_score - runner_up_score < required_margin:
             return None
-    return selected_kind
+    if selected_kind != "OVERALL":
+        return selected_kind
+
+    # Never use the heading fallback when any legacy Race/Sprint/Weekend tab
+    # was recognized. Those explicit tabs remain authoritative because their
+    # screen title can describe a different session than the selected tab.
+    if any(label.kind != "OVERALL" for label in labels):
+        return None
+    timing_columns = detect_timing_columns(tokens)
+    if timing_columns is None:
+        return None
+    overall_label = next(label for label in labels if label.kind == "OVERALL")
+    return _overall_heading_kind(tokens, overall_label, timing_columns.header_y)
 
 
 def validate_image_upload(image_bytes: bytes, source: str = "Screenshot") -> None:
