@@ -2903,7 +2903,8 @@ def _render_replace_correction(
     )
     import secure_image_upload
 
-    if hosted_publisher is not None and secure_image_upload.enabled():
+    secure_upload = hosted_publisher is not None and secure_image_upload.enabled()
+    if secure_upload:
         uploads, transport_errors = secure_image_upload.render_uploader(
             _text(lang, "corrected_uploads"),
             help_text=_text(lang, "replace_help"),
@@ -2923,7 +2924,7 @@ def _render_replace_correction(
     upload_errors = list(transport_errors)
     if uploads:
         upload_errors.extend(race_import_ui.validate_screenshot_set(upload_bytes))
-    if uploads and not upload_errors:
+    if uploads and not upload_errors and not secure_upload:
         with st.expander(
             _format_text(lang, "view_screenshots", count=len(uploads))
         ):

@@ -134,8 +134,9 @@ sides. Limits are 12 MiB per image and 25 MiB per set. Bytes remain only in the
 Admin session and are removed after OCR, errors, context changes and logout;
 normal Streamlit session expiry handles abandoned browser sessions. Standard
 `streamlit run app.py` keeps the native uploader, and manual workbook editing
-is unaffected. Both version-pinned paths fail closed; re-audit them before
-upgrading Streamlit.
+is unaffected. The Vercel picker shows verified filenames and sizes instead of
+Streamlit's instance-local image preview URLs. Both version-pinned paths fail
+closed; re-audit them before upgrading Streamlit.
 
 ## Configure the Admin area once
 

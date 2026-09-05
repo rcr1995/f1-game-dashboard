@@ -1426,7 +1426,8 @@ def render_race_import(
         st.session_state,
         current_upload_key=upload_widget_key,
     )
-    if hosted and secure_image_upload.enabled():
+    secure_upload = hosted and secure_image_upload.enabled()
+    if secure_upload:
         uploads, transport_errors = secure_image_upload.render_uploader(
             text(lang, "screenshots"),
             help_text=text(lang, "screenshots_help"),
@@ -1448,7 +1449,7 @@ def render_race_import(
         upload_errors.extend(validate_screenshot_set(upload_bytes))
 
     existing_draft = st.session_state.get("race_import_draft")
-    if uploads and not upload_errors:
+    if uploads and not upload_errors and not secure_upload:
         preview_container = st.expander(
             text(lang, "view_screenshots").format(count=len(uploads)),
             expanded=not bool(existing_draft),
