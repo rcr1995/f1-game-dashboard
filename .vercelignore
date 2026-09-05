@@ -32,6 +32,8 @@
 !vercel_upload_gate.py
 !secure_image_upload.py
 !review_draft_recovery.py
+!browser_download.py
+!season_insights.py
 !F1_Standings.xlsx
 !.streamlit
 .streamlit/**

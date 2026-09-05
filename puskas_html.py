@@ -2,6 +2,7 @@ import pandas as pd
 import base64
 import html
 import re
+import season_insights
 from pathlib import Path
 from functools import lru_cache
 _T = {
@@ -2307,6 +2308,25 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
 
     hero_html = render_puskas_hero(meta, calendar_raw, lang=lang)
+    points_html = season_insights.render_season_insights(latest_gp, meta, lang)
+    sections = (
+        [('overview', 'Visão geral'), ('season-points', 'Pontos por ronda'), ('teams', 'Equipas e duelos'), ('calendar', 'Calendário'), ('legacy', 'História')]
+        if lang == 'pt' else
+        [('overview', 'Overview'), ('season-points', 'Points by round'), ('teams', 'Teams & battles'), ('calendar', 'Calendar'), ('legacy', 'Legacy')]
+    )
+    section_nav = '<nav class="p-section-nav" aria-label="Season sections">' + ''.join(
+        f'<button type="button" data-section="{section_id}">{label}</button>' for section_id, label in sections
+    ) + '''</nav><script>
+    document.querySelectorAll('.p-section-nav button').forEach(button => {
+      button.addEventListener('click', () => {
+        const section = document.getElementById(button.dataset.section);
+        if (!section) return;
+        section.setAttribute('tabindex', '-1');
+        section.focus({preventScroll:true});
+        section.scrollIntoView({block:'start', behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+      });
+    });
+    </script>'''
 
     html = f"""<!DOCTYPE html>
     <html>
@@ -2316,8 +2336,11 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     </head>
     <body>
     {css}
+    {season_insights.STYLE}
     <div class="puskas-container">
         {hero_html}
+        {section_nav}
+        <div class="p-section-label" id="overview"><span>01</span> {sections[0][1]}</div>
         <!-- ROW 1 -->
         <div class="p-grid">
             <!-- STANDINGS -->
@@ -2352,6 +2375,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             </div>
         </div>
 
+        {points_html}
+        <div class="p-section-label" id="teams"><span>03</span> {sections[2][1]}</div>
         <!-- ROW 2: CONSTRUCTORS & MATHS & CHART -->
         <div class="p-grid-3">
             <!-- CONSTRUCTORS STANDINGS -->
@@ -2398,6 +2423,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         </div>
         <br>
 
+        <div class="p-section-label" id="calendar"><span>04</span> {sections[3][1]}</div>
         <!-- ROW 3 -->
         <div class="p-grid-2">
             <!-- CALENDAR -->
@@ -2619,7 +2645,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         </div>
 
         <!-- ROW 4: HOF -->
-        <div class="p-hof">
+        <div class="p-hof" id="legacy">
             <div class="p-card-title">{_tr(lang, "hall_of_fame")}</div>
             <div class="p-hof-grid">
                 <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "most_championships")}</div>{champ_name}</div>

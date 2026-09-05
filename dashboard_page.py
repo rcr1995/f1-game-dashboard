@@ -35,7 +35,7 @@ except Exception:
 
 # -----------------------------
 
-APP_VERSION = "v42"
+APP_VERSION = "v43"
 
 MOBILE_DASHBOARD_CSS = """
 <style>
@@ -745,7 +745,7 @@ def theme_palette(theme_mode: str) -> dict:
         "css": """
             <style>
             :root {
-                --bg-app: #0a0d14;
+                --bg-app: #0b0b0f;
                 --bg-panel: #10151c;
                 --bg-card: linear-gradient(145deg, #161b22, #0f1117);
                 --bg-hero: linear-gradient(135deg, #1a0000 0%, #0e1117 45%, #0a0d14 100%);
@@ -788,6 +788,15 @@ GLOBAL_CSS = """
 
 /* ── App shell ────────────────────────────────────────────── */
 .stApp { background: var(--bg-app); }
+.stMainBlockContainer {max-width:1660px;padding:3rem 1.5rem 2rem;}
+[data-testid="stHeader"] {background:transparent!important;}
+[data-testid="stAppDeployButton"], #MainMenu, footer {display:none!important;}
+.f1-shell {display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-color);padding:0 8px 18px;margin-bottom:6px;gap:12px;}
+.f1-shell-brand {font:800 17px system-ui;letter-spacing:.07em;color:var(--text-main);}
+.f1-shell-brand b {color:#f33;margin-right:8px;}
+.f1-shell small {color:var(--text-muted);font:11px system-ui;letter-spacing:.08em;text-transform:uppercase;}
+.f1-shell a {color:var(--text-main);font:600 12px system-ui;text-decoration:none;border:1px solid var(--border-color);border-radius:8px;padding:8px 12px;margin-left:16px}
+@media(max-width:700px) {.stMainBlockContainer {padding:2.8rem .5rem 1rem}.f1-shell-brand {font-size:13px;white-space:nowrap}.f1-shell small {display:none}}
 
 
 
@@ -1202,11 +1211,18 @@ latest_df, latest_meta = core.latest_league_slice(base_all)
 latest_gp = latest_df[~latest_df["IsSeasonFinal"]].copy()
 st_tbl_latest = core.standings_table(latest_gp, entity="Drivers") if not latest_gp.empty else pd.DataFrame()
 
-tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(tr(lang, "tabs"))
+st.html('<div class="f1-shell"><div class="f1-shell-brand"><b>F1</b> PUSKAS LEAGUE</div><div><small>' + ('O centro da nossa liga' if lang == 'pt' else 'Our league, every angle') + '</small><a href="/admin" target="_self">Admin</a></div></div>')
+tab_dash, tab_gp, tab_circuits, tab_all = st.tabs(
+    ["Visão geral", "Centro de corridas", "Circuitos", "Arquivo"] if lang == "pt" else
+    ["Overview", "Race centre", "Circuits", "Archive"]
+)
 
 with tab_dash:
     html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
     html_dashboard = html_dashboard.replace("</body>", f"{MOBILE_DASHBOARD_CSS}</body>")
+    if st.session_state.get("theme_mode") == "Light":
+        from season_insights import LIGHT_STYLE
+        html_dashboard = html_dashboard.replace("</body>", f"{LIGHT_STYLE}</body>")
     with st.container(key=f"puskas-dash-container-{lang}-{latest_meta.get('SeasonLabel', 'default')}"):
         st.iframe(html_dashboard, height=2150)
 

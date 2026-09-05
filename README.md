@@ -49,10 +49,23 @@ column headings, and identifiers. Invalid or unavailable updates leave the last
 valid snapshot visible with a warning; the source workbook is never rewritten
 by the public reader. The bundled workbook is only a first-start fallback.
 
-In the authenticated Admin area, **Get latest Excel** performs a new server-side
+In **F1 League Administration**, **Download latest Excel** performs a new server-side
 GitHub fetch and validates that exact snapshot before presenting its download.
-It does not change or publish the workbook and does not interrupt an open race
-review. Public and unauthorized routes never render this control.
+The download link receives bytes over the authenticated page session and creates
+a browser Blob with the `.xlsx` filename. It does not depend on instance-local
+Streamlit media URLs, which can be missing when Vercel routes an HTTP download to
+another container. Downloading does not change or publish the workbook and does
+not interrupt an open race review. Public and unauthorized routes never render
+this control. **Refresh latest Excel** reloads Admin data and starts a fresh
+review; it does not upload a local Excel file.
+
+The dashboard's **Points by round** section shows Race and Sprint points,
+weekend totals, season totals and grand totals for the current league. A dash
+means no published result; zero means a published zero-point finish. Exact
+game/season/league identity and duplicate-event checks prevent inflated totals.
+Driver search, a scrollable table and selectable championship-progression lines
+support exploring the season. The page has branded navigation and grouped
+Overview, Championship, Teams, Calendar and Legacy sections in English and Portuguese.
 
 `F1_PUBLIC_GITHUB_SYNC=1` enables this behavior for the container. Other deployments
 and local runs retain their original local-file workflow unless explicitly

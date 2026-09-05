@@ -133,6 +133,7 @@ class AdminPageAccessTests(unittest.TestCase):
             patch("admin_auth.current_admin_state", return_value=admin_auth.AdminState.AUTHORIZED),
             patch("admin_auth.current_claims", return_value={"email": "admin@example.com"}),
             patch("admin_auth.is_current_admin", return_value=True),
+            patch("browser_download.render_excel_download") as download,
             patch(
                 "race_github.fetch_remote_workbook",
                 return_value=race_github.RemoteWorkbook(
@@ -146,7 +147,7 @@ class AdminPageAccessTests(unittest.TestCase):
             app.run()
             self.assertFalse(app.get("download_button"))
             next(
-                button for button in app.button if button.label == "↓ Get latest Excel"
+                button for button in app.button if button.label == "Download latest Excel"
             ).click()
             app.run()
 
@@ -163,11 +164,11 @@ class AdminPageAccessTests(unittest.TestCase):
             "a" * 40,
             app.session_state["race_import_download_workbook"]["blob_sha"],
         )
-        downloads = app.get("download_button")
-        self.assertEqual(1, len(downloads))
-        self.assertEqual("Download F1_Standings.xlsx", downloads[0].label)
-        self.assertTrue(downloads[0].proto.ignore_rerun)
-        self.assertIn("fetched from GitHub", downloads[0].help)
+        download.assert_called_once()
+        self.assertEqual((workbook_content, "F1_Standings.xlsx"), download.call_args.args)
+        self.assertEqual("Download F1_Standings.xlsx", download.call_args.kwargs["label"])
+        self.assertIn("fetched from GitHub", download.call_args.kwargs["help_text"])
+        self.assertFalse(app.get("download_button"))
 
     def test_authorized_admin_download_label_follows_portuguese_preference(self):
         workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()
@@ -175,6 +176,7 @@ class AdminPageAccessTests(unittest.TestCase):
             patch("admin_auth.current_admin_state", return_value=admin_auth.AdminState.AUTHORIZED),
             patch("admin_auth.current_claims", return_value={"email": "admin@example.com"}),
             patch("admin_auth.is_current_admin", return_value=True),
+            patch("browser_download.render_excel_download") as download,
             patch(
                 "race_github.fetch_remote_workbook",
                 return_value=race_github.RemoteWorkbook(
@@ -190,15 +192,14 @@ class AdminPageAccessTests(unittest.TestCase):
             next(
                 button
                 for button in app.button
-                if button.label == "↓ Obter Excel mais recente"
+                if button.label == "Descarregar Excel mais recente"
             ).click()
             app.run()
 
         self.assertFalse(app.exception)
-        downloads = app.get("download_button")
-        self.assertEqual(1, len(downloads))
-        self.assertEqual("Descarregar F1_Standings.xlsx", downloads[0].label)
-        self.assertIn("versão exata", downloads[0].help)
+        download.assert_called_once()
+        self.assertEqual("Descarregar F1_Standings.xlsx", download.call_args.kwargs["label"])
+        self.assertIn("versão exata", download.call_args.kwargs["help_text"])
 
     def test_invalid_fresh_github_workbook_is_not_offered_for_download(self):
         workbook_content = (PROJECT_ROOT / "F1_Standings.xlsx").read_bytes()
@@ -224,7 +225,7 @@ class AdminPageAccessTests(unittest.TestCase):
             app.secrets = GITHUB_SECRETS
             app.run()
             next(
-                button for button in app.button if button.label == "↓ Get latest Excel"
+                button for button in app.button if button.label == "Download latest Excel"
             ).click()
             app.run()
 

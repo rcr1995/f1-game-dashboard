@@ -17,6 +17,7 @@ RUNTIME_MODULES = {
     "ui_preferences", "public_workbook", "hosted_settings", "vercel_start", "vercel_upload_gate",
     "secure_image_upload",
     "review_draft_recovery",
+    "browser_download", "season_insights",
 }
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",

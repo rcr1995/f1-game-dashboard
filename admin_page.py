@@ -20,7 +20,7 @@ import review_draft_recovery
 import ui_preferences
 
 
-APP_VERSION = "v49"
+APP_VERSION = "v50"
 PUBLIC_DASHBOARD_URL = hosted_settings.dashboard_url()
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"
@@ -56,12 +56,15 @@ COPY = {
         "signed_in": "Signed in as {identity}",
         "authorization_expired": "Admin authorization expired. Sign out, then sign in again.",
         "loading_latest": "Loading the latest workbook from GitHub…",
-        "private_updater": "Private updater · phone or computer",
+        "admin_title": "F1 League Administration",
+        "private_updater": "Manage results, leagues and your Excel data",
         "open_dashboard": "Open dashboard",
         "updates_unavailable": "Updates are temporarily unavailable. No data can be changed.",
         "secure_config": "secure GitHub configuration required",
-        "load_latest": "↻ Load latest workbook",
-        "prepare_download": "↓ Get latest Excel",
+        "load_latest": "Refresh latest Excel",
+        "prepare_download": "Download latest Excel",
+        "refresh_help": "Reload the latest Excel from GitHub into Admin. This starts a fresh review; it does not upload a file.",
+        "download_help": "Prepare the latest Excel from GitHub, then save it to your device using the download link below.",
         "download_workbook": "Download {filename}",
         "download_workbook_help": (
             "Download the exact workbook version fetched from GitHub for this download."
@@ -102,12 +105,15 @@ COPY = {
         "signed_in": "Sessão iniciada como {identity}",
         "authorization_expired": "A autorização de administração expirou. Termina a sessão e volta a entrar.",
         "loading_latest": "A carregar o Excel mais recente do GitHub…",
-        "private_updater": "Atualizador privado · telemóvel ou computador",
+        "admin_title": "Administração da Liga F1",
+        "private_updater": "Gere resultados, ligas e os dados do Excel",
         "open_dashboard": "Abrir dashboard",
         "updates_unavailable": "As atualizações estão temporariamente indisponíveis. Nenhum dado pode ser alterado.",
         "secure_config": "configuração segura do GitHub obrigatória",
-        "load_latest": "↻ Carregar Excel mais recente",
-        "prepare_download": "↓ Obter Excel mais recente",
+        "load_latest": "Atualizar Excel mais recente",
+        "prepare_download": "Descarregar Excel mais recente",
+        "refresh_help": "Volta a carregar o Excel mais recente do GitHub na administração. Inicia uma nova revisão; não envia um ficheiro.",
+        "download_help": "Prepara o Excel mais recente do GitHub e guarda-o no dispositivo através da ligação abaixo.",
         "download_workbook": "Descarregar {filename}",
         "download_workbook_help": (
             "Descarrega a versão exata do Excel obtida do GitHub para esta transferência."
@@ -386,7 +392,7 @@ language_name = st.selectbox(
 lang = _language_code(language_name)
 
 header_columns = st.columns([3, 1])
-header_columns[0].title("🏁 F1 Race Updater")
+header_columns[0].title(_copy(lang, "admin_title"))
 header_columns[0].caption(_copy(lang, "private_updater"))
 header_columns[1].link_button(
     _copy(lang, "open_dashboard"),
@@ -404,11 +410,14 @@ except (github_store.GitHubConfigurationError, ValueError, TypeError):
 workbook_actions = st.columns(2)
 refresh_clicked = workbook_actions[0].button(
     _copy(lang, "load_latest"),
+    icon=":material/refresh:",
+    help=_copy(lang, "refresh_help"),
     use_container_width=True,
 )
 prepare_download_clicked = workbook_actions[1].button(
     _copy(lang, "prepare_download"),
     icon=":material/download:",
+    help=_copy(lang, "download_help"),
     use_container_width=True,
 )
 if refresh_clicked:
@@ -571,20 +580,18 @@ with TemporaryDirectory(prefix="f1-race-review-") as temporary_directory:
             isinstance(download_content, (bytes, bytearray))
             and isinstance(download_blob_sha, str)
         ):
-            # Register bytes only after a fresh authenticated fetch and full
-            # workbook validation. ``ignore`` avoids disturbing an in-progress
-            # result review when the browser starts the download.
+            # Deliver bytes only after a fresh authenticated fetch and full
+            # validation. The browser saves its own Blob without a new HTTP
+            # media request or a rerun that could disturb an open review.
             _require_current_admin()
             download_name = Path(config.workbook_path).name
-            st.download_button(
-                _copy(lang, "download_workbook").format(filename=download_name),
-                data=bytes(download_content),
-                file_name=download_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help=_copy(lang, "download_workbook_help"),
-                icon=":material/download:",
-                on_click="ignore",
-                use_container_width=True,
+            from browser_download import render_excel_download
+
+            render_excel_download(
+                bytes(download_content), download_name,
+                label=_copy(lang, "download_workbook").format(filename=download_name),
+                help_text=_copy(lang, "download_workbook_help"),
+                error_text=_copy(lang, "download_workbook_error"),
             )
 
     admin_management_ui.render_admin_management(
