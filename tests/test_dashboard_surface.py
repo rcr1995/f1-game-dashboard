@@ -26,3 +26,11 @@ class DashboardSurfaceTests(unittest.TestCase):
         for route in ('race-centre','circuits','archive'):
             self.assertIn('/?view='+route, source)
         self.assertIn('<span>05</span>', source)
+
+    def test_teammate_chart_is_script_free_and_lineup_uses_explicit_columns(self):
+        source = Path('puskas_html.py').read_text(encoding='utf-8')
+        self.assertIn('p-duel-track', source)
+        self.assertNotIn('fig.to_html', source)
+        self.assertIn('repeat(4,minmax(0,1fr))', surface.CSS)
+        self.assertIn('repeat(2,minmax(0,1fr))', surface.CSS)
+        self.assertIn("id==='drivers-extra'?'grid'", surface.JS)

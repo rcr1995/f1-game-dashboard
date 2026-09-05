@@ -29,7 +29,7 @@ export default function ({parentElement, data}) {
   Object.entries(toggles).forEach(([button,id])=>{
     const btn=find(button), extra=find(id); if(!btn||!extra)return;
     const label=btn.textContent; btn.setAttribute('role','button');btn.tabIndex=0;
-    const toggle=()=>{const open=extra.style.display==='none';extra.style.display=open?(id==='drivers-extra'?'flex':'block'):'none';btn.textContent=open?(pt?'Mostrar menos':'Show less'):label;btn.setAttribute('aria-expanded',String(open));};
+    const toggle=()=>{const open=extra.style.display==='none';extra.style.display=open?(id==='drivers-extra'?'grid':'block'):'none';btn.textContent=open?(pt?'Mostrar menos':'Show less'):label;btn.setAttribute('aria-expanded',String(open));};
     listen(btn,'click',toggle);listen(btn,'keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();toggle();}});
   });
   ['race','sprint','weekend'].forEach(view=>listen(find('tab-btn-'+view),'click',()=>{
@@ -73,7 +73,20 @@ CSS = """
 .surface .p-section-nav a {font:600 12px system-ui;color:#c5cada;padding:10px 16px;text-decoration:none;border:1px solid #303643;border-radius:24px}
 .surface [id] {scroll-margin-top:95px}
 .surface .si-table-scroll {max-height:none;overflow-x:auto;overflow-y:hidden}
-.surface .p-calendar-grid {grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.surface .p-calendar-grid {grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);align-items:start}
+.surface .p-drivers-flex {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 0}
+.surface .p-driver-card-v2 {width:auto;min-width:0;max-width:none;margin:0;flex:none}
+.surface .p-drv-name,.surface .p-drv-team {overflow-wrap:anywhere}
+.surface .p-drv-stat {gap:4px;flex-wrap:wrap}
+.surface .p-duel-group {margin:0 0 18px}
+.surface .p-duel-group h4 {font:700 12px system-ui;color:#acb7ce;margin:0 0 10px}
+.surface .p-duel-row {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;font:12px system-ui;margin:10px 0;color:#f3f5fa}
+.surface .p-duel-row>span {overflow-wrap:anywhere}
+.surface .p-duel-track {grid-column:1/-1;background:#303544;border-radius:5px;height:9px;overflow:hidden}
+.surface .p-duel-track>span {display:block;height:100%;background:linear-gradient(90deg,#e10600,#ff706b);border-radius:5px}
+@media(max-width:1100px){.surface .p-calendar-grid {grid-template-columns:1fr}}
+@media(max-width:560px){.surface .p-drivers-flex {grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:340px){.surface .p-drivers-flex {grid-template-columns:1fr}}
 .surface .p-cal-track {flex:3;white-space:normal;overflow:visible}
 .surface .p-cal-track-trigger {white-space:normal;overflow:visible;text-overflow:clip;text-align:left}
 .surface .p-cal-track-trigger > span:not(.p-cal-info) {overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}

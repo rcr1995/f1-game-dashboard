@@ -461,6 +461,20 @@ are retained by this workflow, and testing the feature does not publish data.
 The dashboard's existing GitHub revision check picks up a published workbook;
 unchanged revisions do not trigger a full application rerun.
 
+Race Centre's **Show** selector switches between points and finishing positions.
+Positions show the recorded main-race finish; **Include Sprint positions** adds
+Sprint events to both the columns and the final average. Missing, non-numeric,
+non-positive or non-integer finishes are displayed as absent and excluded from
+the average, not treated as zero. Constructor cells average their drivers'
+finishes for that event; the season average weights every recorded individual
+finish equally and preserves each event's team assignment. Rows sort by the
+lowest average finish. Points mode and its Race/Sprint totals are unchanged.
+
+Teammate comparisons use script-free labelled bars. Driver profiles use a
+four-column desktop grid and two columns on phones (one on very narrow screens);
+the final row may naturally contain fewer profiles when the roster is not a
+multiple of the column count.
+
 Run the automated checks with:
 
 ```powershell

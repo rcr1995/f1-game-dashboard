@@ -9,7 +9,7 @@ import math
 import pandas as pd
 
 
-def season_points(results: pd.DataFrame, meta: dict, entity: str = "Drivers") -> dict:
+def season_points(results: pd.DataFrame, meta: dict, entity: str = "Drivers", *, _rank_points: bool = True) -> dict:
     """Preserve Race/Sprint identity, absent results and the workbook's actual points."""
     empty = {"rounds": [], "drivers": [], "events": {}, "points": {}}
     required = {"Game", "SeasonLabel", "League Name", "Driver", "Round", "Type", "Points",
@@ -58,8 +58,8 @@ def season_points(results: pd.DataFrame, meta: dict, entity: str = "Drivers") ->
               for name, rnd, kind, value in grouped.itertuples(index=False, name=None)}
     # Team points stay with the team recorded for each event, including transfers.
     import dashboard_core
-    ordered = dashboard_core.standings_table(rows, entity=entity)
-    drivers = ordered[column].tolist()
+    drivers = (dashboard_core.standings_table(rows, entity=entity)[column].tolist()
+               if _rank_points else sorted(rows[column].unique()))
     names = {}
     for rnd in rounds:
         gp_names = rows.loc[rows["Round"].eq(rnd), "GP Name"].dropna().unique() if "GP Name" in rows else []
@@ -71,8 +71,89 @@ def _number(value: float) -> str:
     return f"{value:g}"
 
 
+def season_positions(results: pd.DataFrame, meta: dict, entity: str = "Drivers", *, include_sprint: bool = False) -> dict:
+    """Recorded finishes only; constructor averages follow each result's actual team."""
+    if results is not None and 'Finish Pos' in results:
+        results = results.copy()
+        results['Finish Pos'] = pd.to_numeric(results['Finish Pos'], errors='coerce')
+    model = season_points(results, meta, entity, _rank_points=False)  # Reuse identity/duplicate guards.
+    if not model['rounds']:
+        return {**model, 'positions': {}, 'averages': {}, 'counts': {}}
+    rows = results.copy()
+    for column in ('Game', 'SeasonLabel', 'League Name'):
+        rows = rows[rows[column].fillna('').astype(str).str.strip().eq(str(meta[column]).strip())]
+    rows = rows[~rows['IsSeasonFinal'].fillna(False).astype(bool)].copy()
+    rows['Type'] = rows['Type'].astype(str).str.strip().str.upper().replace(
+        {'RACE':'R', 'SPRINT':'SR', 'SPRINT RACE':'SR'})
+    rows = rows[rows['Type'].isin(['R','SR'] if include_sprint else ['R'])].copy()
+    rows['Round'] = pd.to_numeric(rows['Round']).astype(int)
+    column = 'Driver' if entity == 'Drivers' else 'Team'
+    rows[column] = rows[column].fillna('').astype(str).str.strip()
+    values = pd.to_numeric(rows['Finish Pos'], errors='coerce')
+    valid = values.map(lambda value: pd.notna(value) and math.isfinite(value) and value > 0 and value % 1 == 0)
+    rows['Finish Pos'] = values.where(valid)
+    events = {rnd: [kind for kind in ('R','SR') if kind in set(group['Type'])]
+              for rnd, group in rows.groupby('Round')}
+    grouped = rows.groupby([column,'Round','Type'])['Finish Pos'].mean().dropna()
+    averages = rows.groupby(column)['Finish Pos'].mean().dropna().to_dict()
+    counts = rows.groupby(column)['Finish Pos'].count().to_dict()
+    drivers = sorted(rows[column].unique(), key=lambda name: (averages.get(name, math.inf), name.casefold()))
+    return {**model, 'rounds': sorted(events), 'events': events, 'drivers': drivers,
+            'positions': grouped.to_dict(), 'averages': averages, 'counts': counts}
+
+
+def _render_positions(results: pd.DataFrame, meta: dict, lang: str, entity: str, include_sprint: bool) -> str:
+    pt = lang == 'pt'
+    model = season_positions(results, meta, entity, include_sprint=include_sprint)
+    if not model['rounds']:
+        return '<section class="si-section"><p>' + ('Sem resultados de Corrida. Ativa Sprint para ver os resultados disponíveis.' if pt else 'No Race results. Enable Sprint to show available Sprint results.') + '</p></section>'
+    esc = lambda value: html.escape(str(value), quote=True)
+    label = ('Construtor' if pt else 'Constructor') if entity == 'Constructors' else ('Piloto' if pt else 'Driver')
+    title = 'Posições por ronda' if pt else 'Finishing positions by round'
+    avg_label = 'Posição média' if pt else 'Average finish'
+    heading = f'<tr><th rowspan="2" scope="col">#</th><th rowspan="2" scope="col">{label}</th>'
+    subheading = '<tr>'
+    for rnd in model['rounds']:
+        kinds = model['events'][rnd]
+        heading += f'<th colspan="{len(kinds)}" scope="colgroup">R{rnd}<span>{esc(model["names"][rnd].replace(" GP", ""))}</span></th>'
+        for kind in kinds:
+            subheading += '<th scope="col">' + ('Sprint' if kind == 'SR' else ('Corrida' if pt else 'Race')) + '</th>'
+    heading += f'<th rowspan="2" scope="col" class="si-total">{avg_label}</th></tr>'
+    subheading += '</tr>'
+    body = ''
+    for rank, name in enumerate(model['drivers'], 1):
+        body += f'<tr data-driver="{esc(name.casefold())}"><td>{rank:02d}</td><th scope="row">{esc(name)}</th>'
+        for rnd in model['rounds']:
+            for kind in model['events'][rnd]:
+                value = model['positions'].get((name,rnd,kind))
+                shown = '—' if value is None else (f'{value:.2f}' if entity == 'Constructors' else _number(value))
+                body += f'<td class="si-weekend">{shown}</td>'
+        value = model['averages'].get(name)
+        average = '—' if value is None else f'{value:.2f}'
+        body += f'<td class="si-total" title="n={model["counts"].get(name,0)}">{average}</td></tr>'
+    scope = ('Corrida e Sprint' if pt else 'Race and Sprint') if include_sprint else ('apenas Corrida' if pt else 'Race only')
+    note = ('Média dos resultados individuais registados nos eventos apresentados; posições ausentes ou não numéricas são excluídas, nunca convertidas em zero. Menor é melhor.' if pt else
+            'Average of recorded individual finishes in the displayed events; missing or non-numeric positions are excluded, never counted as zero. Lower is better.')
+    if entity == 'Constructors':
+        note += (' Cada célula é a média dos pilotos dessa equipa nesse evento; não é uma classificação inventada da equipa. A média final usa todos os resultados individuais, respeitando mudanças de equipa.' if pt else
+                 ' Each cell averages that team’s drivers in that event; it is not a team finishing rank. The final average uses all individual finishes, respecting team transfers.')
+    return f'''<section class="si-section" aria-label="{title}">
+      <div class="si-table-tools"><h3>{title}</h3><label>{'Procurar' if pt else 'Find'} {label.lower()} <input class="si-search" type="search" placeholder="{label}" /></label></div>
+      <div class="si-table-scroll" tabindex="0" role="region" aria-label="{title}"><table class="si-table">
+      <caption>{esc(meta.get('Game',''))} · {esc(meta.get('League Name',''))} · {esc(meta.get('SeasonLabel',''))} · {label} · {scope}</caption>
+      <thead>{heading}{subheading}</thead><tbody>{body}</tbody></table></div><p class="si-note">{note}</p>
+      <p class="si-empty" hidden>{'Nenhum resultado encontrado.' if pt else 'No matches found.'}</p></section>'''
+
+
 def render_season_insights(results: pd.DataFrame, meta: dict, lang: str = "en", *,
-                           entity: str = "Drivers", show_details: bool = True) -> str:
+                           entity: str = "Drivers", show_details: bool = True, metric: str = "points") -> str:
+    if metric not in ('points', 'positions'):
+        raise ValueError('Unknown round metric')
+    if metric == 'positions':
+        try:
+            return _render_positions(results, meta, lang, entity, show_details)
+        except ValueError:
+            return '<section class="si-section"><p>' + ('Corrige os resultados ambíguos no Excel.' if lang == 'pt' else 'Correct ambiguous results in Excel before viewing positions.') + '</p></section>'
     pt = lang == "pt"
     constructors = entity == "Constructors"
     entity_label = ("Construtor" if pt else "Constructor") if constructors else ("Piloto" if pt else "Driver")

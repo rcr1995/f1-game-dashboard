@@ -1572,7 +1572,6 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
 
     # 3.8 TEAMMATE BATTLE CHART
-    import plotly.express as px
     team_chart_html = ""
     team_chart_extra_html = ""
     
@@ -1585,7 +1584,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         drv = str(row.get("Driver", ""))
         disp_drv = f"{drv} ⭐" if drv == reigning_champ else drv
         tm = driver_team.get(drv, "")
-        pts = int(row.get("Points", 0))
+        pts = float(row.get("Points", 0))
         if tm:
             duel_rows.append({"Driver": disp_drv, "Team": tm, "Points": pts})
             
@@ -1598,33 +1597,30 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         plot_duel = duel_df[duel_df["Team"].isin(teams_with_2)].copy()
         
         if not plot_duel.empty:
-            max_pts = plot_duel["Points"].max() * 1.05 if not plot_duel.empty else 100
-            def _make_team_chart(df, height=250, use_cdn=True):
-                fig = px.bar(
-                    df.sort_values(["Team","Points"], ascending=[True,False]),
-                    x="Points", y="Driver", color="Team",
-                    orientation="h",
-                    color_discrete_sequence=["#E10600", "#58a6ff", "#f5c518", "#2ecc71", "#e67e22", "#9b59b6", "#1abc9c", "#34495e", "#e74c3c", "#3498db"],
-                    template="plotly_dark"
-                )
-                fig.update_layout(
-                    height=height, 
-                    margin=dict(l=10, r=20, t=10, b=10),
-                    showlegend=False,
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(range=[0, max_pts], showgrid=True, gridcolor='rgba(255,255,255,0.1)', color='#aaa', title=''),
-                    yaxis=dict(color='#ccc', title='')
-                )
-                return fig.to_html(full_html=False, include_plotlyjs='cdn' if use_cdn else False, config={'displayModeBar': False})
+            max_pts = max(float(plot_duel["Points"].max()), 1)
+            def _make_team_chart(df):
+                # Static, accessible bars work in the script-free dashboard surface.
+                markup = ''
+                for team, members in df.groupby('Team', sort=True):
+                    markup += f'<section class="p-duel-group"><h4>{_html_escape(str(team))}</h4>'
+                    for member in members.sort_values('Points', ascending=False).to_dict('records'):
+                        score = float(member['Points'])
+                        width = min(100, max(0, score / max_pts * 100))
+                        markup += (f'<div class="p-duel-row"><span>{_html_escape(str(member["Driver"]))}</span>'
+                                   f'<strong>{score:g} pts</strong><div class="p-duel-track" aria-hidden="true">'
+                                   f'<span style="width:{width:.2f}%"></span></div></div>')
+                    markup += '</section>'
+                return markup
 
             plot_top = plot_duel[plot_duel["Team"].isin(target_teams)].copy()
             if not plot_top.empty:
-                team_chart_html = _make_team_chart(plot_top, height=200, use_cdn=True)
+                team_chart_html = _make_team_chart(plot_top)
                 
             plot_extra = plot_duel[~plot_duel["Team"].isin(target_teams)].copy()
             if not plot_extra.empty:
-                team_chart_extra_html = _make_team_chart(plot_extra, height=max(200, len(plot_extra)*28), use_cdn=False)
+                team_chart_extra_html = _make_team_chart(plot_extra)
+    if not team_chart_html:
+        team_chart_html = '<p>' + ('Sem pares de colegas de equipa disponíveis.' if lang == 'pt' else 'No teammate pairs available.') + '</p>'
 
     # 4. LEAGUE STATISTICS
     stats_html = ""

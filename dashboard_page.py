@@ -35,7 +35,7 @@ except Exception:
 
 # -----------------------------
 
-APP_VERSION = "v45"
+APP_VERSION = "v46"
 
 MOBILE_DASHBOARD_CSS = """
 <style>
@@ -1167,7 +1167,7 @@ if view_page == "race-centre":
     points_panel = st.container(key="race_centre_points")
     points_panel.html('<p style="color:#ff6464;font-size:11px;letter-spacing:.16em">' + ('CAMPEONATO' if lang == 'pt' else 'CHAMPIONSHIP') + '</p><h2>' + ('A época, ronda a ronda' if lang == 'pt' else 'The season, round by round') + '</h2>')
     st.html('<style>.st-key-race_centre_points {border:1px solid #303643;border-radius:16px;padding:20px;background:#101219}</style>')
-    filters = points_panel.columns([3, 1.5, 1.5], vertical_alignment="bottom")
+    filters = points_panel.columns([2.5, 1.4, 1.4, 1.5], vertical_alignment="bottom")
     sel_gp_pair = filters[0].selectbox(tr(lang, "season_league_gp"), options, index=default_index, key="gp_pair")
 
     df_gp = d_gp.copy()
@@ -1186,18 +1186,23 @@ if view_page == "race-centre":
         entity_col = "Driver" if view_canon == "Drivers" else "Team"
 
         import season_insights
-        show_round_details = filters[2].toggle(
-            "Mostrar pontos de Corrida e Sprint" if lang == "pt" else "Show Race and Sprint points",
+        round_metric = filters[2].selectbox(
+            'Mostrar' if lang == 'pt' else 'Show', ['points', 'positions'], key='round_metric',
+            format_func=lambda value: ({'points':'Pontos','positions':'Posições finais'} if lang == 'pt' else {'points':'Points','positions':'Finishing positions'})[value],
+        )
+        detail_label = ('Incluir posições Sprint' if lang == 'pt' else 'Include Sprint positions') if round_metric == 'positions' else ('Mostrar pontos de Corrida e Sprint' if lang == 'pt' else 'Show Race and Sprint points')
+        show_round_details = filters[3].toggle(
+            detail_label,
             value=False, key="round_points_details",
-            help="Desativa para ver apenas os totais por Grande Prémio." if lang == "pt" else
-                 "Turn off to show only the total points per Grand Prix.",
+            help=(('A média inclui apenas os eventos apresentados.' if lang == 'pt' else 'The average includes only the displayed events.') if round_metric == 'positions' else
+                  ('Desativa para ver apenas os totais por Grande Prémio.' if lang == 'pt' else 'Turn off to show only the total points per Grand Prix.')),
         )
         # Never merge round numbers across different games or leagues in the all-time view.
         round_tables = []
         for identity, league_rows in df_gp.groupby(["Game", "SeasonLabel", "League Name"], sort=False):
             table_meta = dict(zip(["Game", "SeasonLabel", "League Name"], identity))
             round_tables.append(season_insights.render_season_insights(
-                league_rows, table_meta, lang, entity=view_canon, show_details=show_round_details,
+                league_rows, table_meta, lang, entity=view_canon, show_details=show_round_details, metric=round_metric,
             ))
         if any(round_tables):
             with points_panel:
