@@ -415,6 +415,12 @@ class AdminManagementPureHelperTests(unittest.TestCase):
         error_key = f"{ui.CORRECTION_PREFIX}extract_error"
         state = {
             upload_key: [b"new-image-one", b"new-image-two"],
+            f"{upload_key}:secure_component": {
+                "payload": {"files": [{"data": "encoded-new-image"}]}
+            },
+            f"{upload_key}:secure_private": {
+                "images": (b"new-image-one", b"new-image-two")
+            },
             f"{ui.CORRECTION_PREFIX}uploads_stale_1": [b"old-image"],
             generation_key: 2,
             draft_key: {"rows": [{"Driver": "Old review"}]},
@@ -450,6 +456,12 @@ class AdminManagementPureHelperTests(unittest.TestCase):
         error_key = f"{ui.CORRECTION_PREFIX}extract_error"
         state = {
             upload_key: [b"image-one", b"image-two"],
+            f"{upload_key}:secure_component": {
+                "payload": {"files": [{"data": "encoded-image"}]}
+            },
+            f"{upload_key}:secure_private": {
+                "images": (b"image-one", b"image-two")
+            },
             draft_key: {
                 "screenshot_hashes": ["digest-one", "digest-two"],
                 "rows": [{"Driver": "Reviewed"}],
@@ -474,6 +486,32 @@ class AdminManagementPureHelperTests(unittest.TestCase):
             ["digest-one", "digest-two"],
             state[draft_key]["screenshot_hashes"],
         )
+
+    def test_stale_correction_cleanup_preserves_current_secure_upload_state(self):
+        upload_key = f"{ui.CORRECTION_PREFIX}uploads_current_0"
+        current_component = f"{upload_key}:secure_component"
+        current_private = f"{upload_key}:secure_private"
+        state = {
+            upload_key: [b"current"],
+            current_component: {"payload": {"files": []}},
+            current_private: {"images": (b"current",)},
+            f"{ui.CORRECTION_PREFIX}uploads_old_0": [b"old"],
+            f"{ui.CORRECTION_PREFIX}uploads_old_0:secure_private": {
+                "images": (b"old",)
+            },
+            "public_filter": "unchanged",
+        }
+
+        ui._clear_stale_correction_uploads(
+            state,
+            current_upload_key=upload_key,
+        )
+
+        self.assertIn(upload_key, state)
+        self.assertIn(current_component, state)
+        self.assertIn(current_private, state)
+        self.assertFalse(any("uploads_old_0" in str(key) for key in state))
+        self.assertEqual("unchanged", state["public_filter"])
 
     def test_completed_managed_event_offers_replace_only(self):
         event = {"league_id": "managed-one"}

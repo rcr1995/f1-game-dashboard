@@ -692,6 +692,23 @@ def _finalize_correction_ocr_attempt(
     )
 
 
+def _clear_stale_correction_uploads(
+    session_state: MutableMapping[object, object],
+    *,
+    current_upload_key: str,
+) -> None:
+    """Discard old correction upload contexts while preserving the current one."""
+
+    upload_prefix = f"{CORRECTION_PREFIX}uploads_"
+    current_prefix = f"{current_upload_key}:"
+    for key in list(session_state):
+        if not isinstance(key, str) or not key.startswith(upload_prefix):
+            continue
+        if key == current_upload_key or key.startswith(current_prefix):
+            continue
+        del session_state[key]
+
+
 def _canonical_alias_text(value: object) -> str:
     import league_config
 
@@ -2880,24 +2897,32 @@ def _render_replace_correction(
     upload_key = (
         f"{CORRECTION_PREFIX}uploads_{context_digest[:12]}_{upload_generation}"
     )
-    for key in list(st.session_state):
-        if (
-            isinstance(key, str)
-            and key.startswith(f"{CORRECTION_PREFIX}uploads_")
-            and key != upload_key
-        ):
-            del st.session_state[key]
-    uploads = st.file_uploader(
-        _text(lang, "corrected_uploads"),
-        type=["png", "jpg", "jpeg", "webp"],
-        accept_multiple_files=True,
-        help=_text(lang, "replace_help"),
-        key=upload_key,
+    _clear_stale_correction_uploads(
+        st.session_state,
+        current_upload_key=upload_key,
     )
+    import secure_image_upload
+
+    if hosted_publisher is not None and secure_image_upload.enabled():
+        uploads, transport_errors = secure_image_upload.render_uploader(
+            _text(lang, "corrected_uploads"),
+            help_text=_text(lang, "replace_help"),
+            key=upload_key,
+            lang=lang,
+        )
+    else:
+        uploads = st.file_uploader(
+            _text(lang, "corrected_uploads"),
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+            help=_text(lang, "replace_help"),
+            key=upload_key,
+        )
+        transport_errors = []
     upload_bytes = [upload.getvalue() for upload in uploads] if uploads else []
-    upload_errors = (
-        race_import_ui.validate_screenshot_set(upload_bytes) if uploads else []
-    )
+    upload_errors = list(transport_errors)
+    if uploads:
+        upload_errors.extend(race_import_ui.validate_screenshot_set(upload_bytes))
     if uploads and not upload_errors:
         with st.expander(
             _format_text(lang, "view_screenshots", count=len(uploads))

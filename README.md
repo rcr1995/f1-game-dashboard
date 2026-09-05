@@ -85,8 +85,9 @@ not the existing live dashboard. Later CLI deployments default to previews.
 
 Before considering a hosting switch, verify cold starts, WebSocket reconnects,
 filter interactions, mobile rendering, and real upload/review flows. Container
-and WebSocket support are beta, and Streamlit's session-dependent HTTP uploads
-must reach the correct instance. Admin validation requires separate test-only
+and WebSocket support are beta. The Vercel Admin therefore uses the bounded
+WebSocket screenshot component described below instead of Streamlit's
+instance-local HTTP uploader. Admin validation requires separate test-only
 authentication and a sandbox workbook publisher or test-only GitHub repository
 and GitHub App. Do not publish fabricated results to test hosting. Vercel
 usage is charged against the existing plan; a separate project is not a promise
@@ -121,13 +122,20 @@ never weaken preview protection to make an OAuth test work.
 The Vercel launcher also installs `vercel_upload_gate.py` before starting the
 pinned Streamlit 1.59.2 server. Native screenshot PUT/DELETE requests must have
 both a live, server-authenticated Admin session and a valid signed Google login
-cookie for this exact origin, before their body is read. Native XSRF/CORS and
-size checks still apply. Missing, expired, forbidden, or logged-out identities
-cannot upload even by calling the underlying HTTP route. The wrapper is
-OIDC-only and stops startup on incompatible Streamlit versions; re-audit it
-before upgrading. Standard `streamlit run app.py` and manual workbook editing
-are unaffected. Session affinity and hosted upload-size limits still need to
-be verified on the actual deployment; this gate does not bypass those limits.
+cookie for this exact origin, before their body is read. Missing, expired,
+forbidden, or logged-out identities cannot call that underlying HTTP route.
+Vercel does not guarantee that those separate requests reach the container
+holding the Streamlit session, so `F1_WEBSOCKET_SCREENSHOT_UPLOAD=1` replaces
+the two protected screenshot pickers with `secure_image_upload.py`. It sends
+2–4 images over the already-authenticated Streamlit connection and validates
+the count, PNG/JPEG/WebP type and signature, filename, declared and decoded
+size, SHA-256, duplicates, session context and one-time submission on both
+sides. Limits are 12 MiB per image and 25 MiB per set. Bytes remain only in the
+Admin session and are removed after OCR, errors, context changes and logout;
+normal Streamlit session expiry handles abandoned browser sessions. Standard
+`streamlit run app.py` keeps the native uploader, and manual workbook editing
+is unaffected. Both version-pinned paths fail closed; re-audit them before
+upgrading Streamlit.
 
 ## Configure the Admin area once
 

@@ -19,7 +19,7 @@ import hosted_settings
 import ui_preferences
 
 
-APP_VERSION = "v43"
+APP_VERSION = "v44"
 PUBLIC_DASHBOARD_URL = hosted_settings.dashboard_url()
 # admin_auth.logout() clears every key with the race_import_ prefix.
 REMOTE_STATE_KEY = "race_import_remote_workbook"

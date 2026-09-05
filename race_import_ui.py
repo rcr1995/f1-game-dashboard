@@ -23,6 +23,7 @@ import race_import as ri
 import race_metadata
 import race_ocr
 import race_workbook as rw
+import secure_image_upload
 
 
 class HostedPublisher(Protocol):
@@ -265,6 +266,22 @@ def _upload_widget_key(
 
 EXTRACTION_ERROR_KEY = "race_import_extraction_error"
 _UPLOAD_WIDGET_PREFIX = "race_import_uploads_v2_"
+
+
+def _clear_stale_upload_contexts(
+    session_state: MutableMapping[object, object],
+    *,
+    current_upload_key: str,
+) -> None:
+    """Discard images from earlier event contexts, retaining the current picker."""
+
+    current_prefix = f"{current_upload_key}:"
+    for key in list(session_state):
+        if not isinstance(key, str) or not key.startswith(_UPLOAD_WIDGET_PREFIX):
+            continue
+        if key == current_upload_key or key.startswith(current_prefix):
+            continue
+        del session_state[key]
 
 
 def finalize_ocr_attempt(
@@ -1405,15 +1422,30 @@ def render_race_import(
         str(gp_name),
         upload_generation,
     )
-    uploads = st.file_uploader(
-        text(lang, "screenshots"),
-        type=["png", "jpg", "jpeg", "webp"],
-        accept_multiple_files=True,
-        help=text(lang, "screenshots_help"),
-        key=upload_widget_key,
+    _clear_stale_upload_contexts(
+        st.session_state,
+        current_upload_key=upload_widget_key,
     )
+    if hosted and secure_image_upload.enabled():
+        uploads, transport_errors = secure_image_upload.render_uploader(
+            text(lang, "screenshots"),
+            help_text=text(lang, "screenshots_help"),
+            key=upload_widget_key,
+            lang=lang,
+        )
+    else:
+        uploads = st.file_uploader(
+            text(lang, "screenshots"),
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=True,
+            help=text(lang, "screenshots_help"),
+            key=upload_widget_key,
+        )
+        transport_errors = []
     upload_bytes = [upload.getvalue() for upload in uploads] if uploads else []
-    upload_errors = validate_screenshot_set(upload_bytes) if uploads else []
+    upload_errors = list(transport_errors)
+    if uploads:
+        upload_errors.extend(validate_screenshot_set(upload_bytes))
 
     existing_draft = st.session_state.get("race_import_draft")
     if uploads and not upload_errors:

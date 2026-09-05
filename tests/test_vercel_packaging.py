@@ -15,6 +15,7 @@ RUNTIME_MODULES = {
     "league_runtime", "league_workbook", "race_correction", "race_github",
     "race_import", "race_import_ui", "race_metadata", "race_ocr", "race_workbook",
     "ui_preferences", "public_workbook", "hosted_settings", "vercel_start", "vercel_upload_gate",
+    "secure_image_upload",
 }
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",
@@ -82,6 +83,7 @@ class VercelPackagingTests(unittest.TestCase):
         self.assertEqual(config["framework"], "container")
         self.assertIn("FROM python:3.11-slim-bookworm", self.dockerfile)
         self.assertIn("F1_ENABLE_RACE_IMPORT=0", self.dockerfile)
+        self.assertIn("F1_WEBSOCKET_SCREENSHOT_UPLOAD=1", self.dockerfile)
         command_line = next(line for line in self.dockerfile.splitlines() if line.startswith("CMD "))
         command = json.loads(command_line.removeprefix("CMD "))
         self.assertEqual(command, ["python", "vercel_start.py"])

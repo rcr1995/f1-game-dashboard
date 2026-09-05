@@ -30,6 +30,7 @@
 !hosted_settings.py
 !vercel_start.py
 !vercel_upload_gate.py
+!secure_image_upload.py
 !F1_Standings.xlsx
 !.streamlit
 .streamlit/**

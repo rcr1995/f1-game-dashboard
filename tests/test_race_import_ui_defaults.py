@@ -414,6 +414,12 @@ class AdminDefaultUiTests(unittest.TestCase):
         )
         state = {
             key_before: [b"screenshot-one", b"screenshot-two"],
+            f"{key_before}:secure_component": {
+                "payload": {"files": [{"data": "encoded-screenshot"}]}
+            },
+            f"{key_before}:secure_private": {
+                "images": (b"screenshot-one", b"screenshot-two")
+            },
             "race_import_uploads_v2_stale_context_0": [b"stale-screenshot"],
             "race_import_draft": {"screenshot_hashes": ["digest-one", "digest-two"]},
             ui.EXTRACTION_ERROR_KEY: "stale error",
@@ -444,6 +450,35 @@ class AdminDefaultUiTests(unittest.TestCase):
             ["digest-one", "digest-two"],
         )
 
+    def test_event_change_discards_old_secure_images_but_preserves_current_picker(self):
+        current_key = ui._upload_widget_key(
+            "source1",
+            "championship1",
+            2,
+            "Australian GP",
+        )
+        state = {
+            current_key: [b"current"],
+            f"{current_key}:secure_component": {"payload": {"files": []}},
+            f"{current_key}:secure_private": {"images": (b"current",)},
+            "race_import_uploads_v2_old_context_0": [b"old"],
+            "race_import_uploads_v2_old_context_0:secure_private": {
+                "images": (b"old",)
+            },
+            "dashboard_filter": "unchanged",
+        }
+
+        ui._clear_stale_upload_contexts(
+            state,
+            current_upload_key=current_key,
+        )
+
+        self.assertIn(current_key, state)
+        self.assertIn(f"{current_key}:secure_component", state)
+        self.assertIn(f"{current_key}:secure_private", state)
+        self.assertFalse(any("old_context" in str(key) for key in state))
+        self.assertEqual("unchanged", state["dashboard_filter"])
+
     def test_failed_ocr_discards_uploads_and_old_review_but_keeps_text_error(self):
         current_key = ui._upload_widget_key(
             "source1",
@@ -454,6 +489,12 @@ class AdminDefaultUiTests(unittest.TestCase):
         )
         state = {
             current_key: [b"screenshot-one", b"screenshot-two"],
+            f"{current_key}:secure_component": {
+                "payload": {"files": [{"data": "encoded-screenshot"}]}
+            },
+            f"{current_key}:secure_private": {
+                "images": (b"screenshot-one", b"screenshot-two")
+            },
             "race_import_uploads_v2_other_context_2": [b"older-screenshot"],
             "race_import_draft": {
                 "rows": [{"Driver": "Old review"}],

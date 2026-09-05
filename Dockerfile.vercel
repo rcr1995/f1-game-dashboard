@@ -5,6 +5,7 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     F1_ENABLE_RACE_IMPORT=0 \
+    F1_WEBSOCKET_SCREENSHOT_UPLOAD=1 \
     F1_PUBLIC_GITHUB_SYNC=1 \
     F1_PUBLIC_DASHBOARD_URL=https://f1puskasleague.vercel.app/
 
@@ -25,7 +26,7 @@ COPY ["league_config.py", "league_runtime.py", "league_workbook.py", "./"]
 COPY ["race_correction.py", "race_github.py", "race_import.py", "race_import_ui.py", "./"]
 COPY ["race_metadata.py", "race_ocr.py", "race_workbook.py", "./"]
 COPY ["ui_preferences.py", "public_workbook.py", "hosted_settings.py", "vercel_start.py", "./"]
-COPY ["vercel_upload_gate.py", "./"]
+COPY ["vercel_upload_gate.py", "secure_image_upload.py", "./"]
 COPY ["F1_Standings.xlsx", "./"]
 COPY [".streamlit/config.toml", "./.streamlit/config.toml"]
 COPY ["assets/hero_banner.webp", "./assets/hero_banner.webp"]
