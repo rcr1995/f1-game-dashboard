@@ -2,9 +2,30 @@ from pathlib import Path
 import unittest
 import dashboard_surface as surface
 import season_insights
+import pandas as pd
+import puskas_html
 
 
 class DashboardSurfaceTests(unittest.TestCase):
+    def test_teammates_rank_by_team_total_then_driver_score(self):
+        rows = pd.DataFrame([
+            {"Team": "Alpha", "Driver": "A", "Points": 40},
+            {"Team": "Zulu", "Driver": "Z2", "Points": 30},
+            {"Team": "Alpha", "Driver": "B", "Points": 10},
+            {"Team": "Zulu", "Driver": "Z1", "Points": 35},
+        ])
+        self.assertEqual(puskas_html._rank_teammate_rows(rows).Driver.tolist(), ["Z1", "Z2", "A", "B"])
+        # Actual constructor points override current-driver sums after transfers.
+        constructors = pd.DataFrame([{"Team": "Alpha", "Points": 90}, {"Team": "Zulu", "Points": 20}])
+        self.assertEqual(puskas_html._rank_teammate_rows(rows, constructors).Driver.tolist(), ["A", "B", "Z1", "Z2"])
+        self.assertNotIn("_team_points", rows)
+
+    def test_teammate_score_ties_are_stable_and_empty_is_safe(self):
+        rows = pd.DataFrame([{"Team": t, "Driver": d, "Points": 2.5}
+                             for t, d in [("Z", "C"), ("A", "B"), ("A", "A"), ("Z", "D")]])
+        self.assertEqual(puskas_html._rank_teammate_rows(rows).Driver.tolist(), ["A", "B", "C", "D"])
+        self.assertTrue(puskas_html._rank_teammate_rows(rows.iloc[:0]).empty)
+
     def test_content_height_without_embedded_page_or_generated_execution(self):
         source = Path('dashboard_surface.py').read_text(encoding='utf-8')
         self.assertIn("height='content'", source)

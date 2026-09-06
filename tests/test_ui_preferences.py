@@ -117,11 +117,33 @@ class LanguageStateTests(unittest.TestCase):
             page_config = next(node for node in calls if ast.unparse(node.func) == "st.set_page_config")
             self.assertLess(page_config.lineno, preference.lineno)
             self.assertLess(preference.lineno, navigation.lineno)
-            stop = next(node for node in calls if ast.unparse(node.func) == "st.stop")
             page_run = next(node for node in calls if ast.unparse(node.func) == "navigation.run")
-            self.assertLess(navigation.lineno, stop.lineno)
-            self.assertLess(stop.lineno, page_run.lineno)
+            self.assertFalse(any(ast.unparse(node.func) == "st.stop" for node in calls))
+            self.assertLess(navigation.lineno, page_run.lineno)
             self.assertIn('initial_sidebar_state="collapsed"', (ROOT / filename).read_text(encoding="utf-8"))
+
+    def test_mount_recovers_replayed_value_without_callback(self):
+        state = {}
+        fake = SimpleNamespace(session_state=state, query_params={"lang": "pt"},
+            components=SimpleNamespace(v2=SimpleNamespace(component=lambda *a, **k:
+                lambda **mounted: {"preference": "en"})))
+        with patch.dict("sys.modules", {"streamlit": fake}):
+            preferences.mount_browser_language()
+        self.assertEqual(state["app_lang"], "English")
+        self.assertTrue(state[preferences.READY_KEY])
+
+    def test_unresponsive_component_keeps_url_hint_without_blocking_later_hydration(self):
+        state = {}
+        fake = SimpleNamespace(session_state=state, query_params={"lang": "en"},
+            components=SimpleNamespace(v2=SimpleNamespace(component=lambda *a, **k:
+                lambda **mounted: None)))
+        with patch.dict("sys.modules", {"streamlit": fake}):
+            preferences.mount_browser_language()
+            preferences.mount_browser_language()
+        self.assertEqual(state["app_lang"], "English")
+        self.assertFalse(state.get(preferences.READY_KEY, False))
+        preferences.hydrate_language(state, "pt")
+        self.assertEqual(state["app_lang"], "Português (Portugal)")
 
 
 @unittest.skipUnless(shutil.which("node"), "Node is required for the component's isolated JavaScript tests")

@@ -2,6 +2,19 @@
 
 A bilingual Streamlit dashboard for exploring Formula 1 game leagues, race results, championship standings, circuit records, form, and all-time statistics from an Excel workbook.
 
+The canonical hosted site is https://f1puskasleague.vercel.app/ . It runs independently
+of the legacy Streamlit Community Cloud deployment; retain the GitHub repository
+and its Excel workbook when retiring that old deployment.
+
+Language restoration is non-blocking: an unavailable browser preference callback
+cannot stop Dashboard or Admin navigation. A valid URL language hint is used while
+the saved preference arrives, and replayed component state is accepted on reconnect.
+This does not change Admin authentication or workbook-write authorization.
+
+Teammate Battle lists the three highest-scoring eligible teams first (the rest
+under Full List), using actual league constructor points and descending driver
+points within each team. Equal scores use alphabetical ordering for stability.
+
 ![F1 Game Dashboard banner](assets/hero_banner.webp)
 
 ## Features

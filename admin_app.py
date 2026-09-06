@@ -28,7 +28,4 @@ admin_page = st.Page(
     default=True,
 )
 navigation = st.navigation([admin_page], position="hidden")
-if not st.session_state.get(ui_preferences.READY_KEY):
-    st.caption("Loading / A carregar…")
-    st.stop()
 navigation.run()

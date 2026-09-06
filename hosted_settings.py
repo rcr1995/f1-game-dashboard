@@ -5,7 +5,7 @@ import os
 from urllib.parse import urlsplit
 
 
-DEFAULT_DASHBOARD_URL = "https://f1-game-dashboard.streamlit.app/"
+DEFAULT_DASHBOARD_URL = "https://f1puskasleague.vercel.app/"
 
 
 def dashboard_url(environ: Mapping[str, str] | None = None) -> str:

@@ -60,6 +60,17 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
         app.query_params['view'] = view
         return app.run()
 
+    def test_router_renders_without_language_component_response_and_on_rerun(self):
+        # Reproduce a lost browser handshake/new server session. Previously this
+        # stopped on the bilingual loading caption forever, before routing.
+        with patch("ui_preferences.mount_browser_language"):
+            app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
+            self.assert_rendered(app)
+            self.assertFalse(any("Loading /" in element.value for element in app.caption))
+            app.run()
+            self.assert_rendered(app)
+
+
     def assert_rendered(self, app):
         self.assertFalse(app.exception, [item.message for item in app.exception])
         self.assertEqual(len(app.tabs), 0)

@@ -15,7 +15,7 @@ class HostedSettingsTests(unittest.TestCase):
         )
 
     def test_default_url_preserves_streamlit_workflow(self):
-        self.assertEqual(hosted_settings.dashboard_url({}), "https://f1-game-dashboard.streamlit.app/")
+        self.assertEqual(hosted_settings.dashboard_url({}), "https://f1puskasleague.vercel.app/")
 
     def test_configured_dashboard_url_is_normalized(self):
         for value in ("https://f1puskasleague.vercel.app", "https://f1puskasleague.vercel.app/"):

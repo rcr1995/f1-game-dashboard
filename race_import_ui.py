@@ -1357,7 +1357,7 @@ def render_race_import(
     clear_data_cache: Callable[[], None],
     source_version: str | None = None,
     hosted_publisher: HostedPublisher | None = None,
-    dashboard_url: str = "https://f1-game-dashboard.streamlit.app/",
+    dashboard_url: str = "https://f1puskasleague.vercel.app/",
 ) -> None:
     """Render a write-free review followed by a protected local or hosted commit."""
     hosted = hosted_publisher is not None

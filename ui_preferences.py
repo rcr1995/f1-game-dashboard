@@ -9,6 +9,7 @@ Streamlit session cannot replace a remembered choice with the default language.
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+import logging
 from typing import Any
 
 LANGUAGES = {"English": "en", "Português (Portugal)": "pt"}
@@ -89,6 +90,16 @@ def mount_browser_language() -> None:
 
     import streamlit as st
 
+    # Language is a display preference, never an authorization prerequisite.
+    # Render immediately using a valid URL hint while storage hydrates. Do not
+    # mark ready here: the browser's newer saved choice still takes precedence.
+    if "app_lang" not in st.session_state:
+        linked = getattr(st, "query_params", {}).get("lang")
+        for name, code in LANGUAGES.items():
+            if linked == code:
+                st.session_state["app_lang"] = name
+                break
+
     # Re-register the identical definition in the current runtime. Streamlit's
     # registry is runtime-scoped (not process-scoped); keeping a module-global
     # callable can otherwise reference an old registry after runtime recreation.
@@ -98,13 +109,19 @@ def mount_browser_language() -> None:
         js=LANGUAGE_COMPONENT_JS,
     )
     ready = st.session_state.get(READY_KEY) is True
-    language_component(
+    result = language_component(
         key=COMPONENT_KEY,
         data={"ready": ready, "language": LANGUAGES[language_name(st.session_state)] if ready else None},
         on_preference_change=_receive_browser_language,
         height=0,
         width="stretch",
     )
+    # After reconnect the component can replay its value without a change
+    # callback. Consume the returned state as well; hydration is idempotent.
+    hydrate_language(st.session_state, result.get("preference") if hasattr(result, "get") else None)
+    if not st.session_state.get(READY_KEY) and not st.session_state.get("ui_language_pending_logged"):
+        logging.getLogger(__name__).info("Language preference pending; rendering without blocking navigation")
+        st.session_state["ui_language_pending_logged"] = True
 
 
 HEADER_JS = r"""

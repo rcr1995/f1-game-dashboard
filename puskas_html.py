@@ -5,6 +5,27 @@ import re
 import season_insights
 from pathlib import Path
 from functools import lru_cache
+
+
+def _rank_teammate_rows(rows, constructors=None):
+    """League team points descending, then each driver's points descending.
+
+    Prefer actual constructor totals so transfers do not move historical team
+    points. Alphabetical ties keep otherwise equal scores stable on reruns.
+    """
+    ranked = rows.copy()
+    if ranked.empty:
+        return ranked
+    totals = ranked.groupby("Team")["Points"].sum()
+    if constructors is not None and not constructors.empty:
+        totals = constructors.set_index("Team")["Points"].combine_first(totals)
+    ranked["_team_points"] = ranked["Team"].map(totals)
+    return ranked.sort_values(
+        ["_team_points", "Team", "Points", "Driver"],
+        ascending=[False, True, False, True], kind="stable",
+    ).drop(columns="_team_points")
+
+
 _T = {
     "en": {
         "days": "DAYS",
@@ -1575,10 +1596,6 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     team_chart_html = ""
     team_chart_extra_html = ""
     
-    target_drivers = ["TomasRodri21", "Polingua", "Fatacuida"]
-    target_teams = [driver_team.get(d) for d in target_drivers if d in driver_team]
-    target_teams = [t for t in target_teams if t]
-    
     duel_rows = []
     for _, row in st_tbl_latest.iterrows():
         drv = str(row.get("Driver", ""))
@@ -1590,20 +1607,19 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             
     if duel_rows:
         duel_df = pd.DataFrame(duel_rows)
-        if not target_teams and not duel_df.empty:
-            top_teams = duel_df.groupby("Team")["Points"].sum().sort_values(ascending=False).head(3).index.tolist()
-            target_teams = top_teams
         teams_with_2 = duel_df.groupby("Team").filter(lambda x: len(x) >= 2)["Team"].unique()
         plot_duel = duel_df[duel_df["Team"].isin(teams_with_2)].copy()
+        plot_duel = _rank_teammate_rows(plot_duel, team_st if "team_st" in locals() else None)
+        target_teams = plot_duel["Team"].drop_duplicates().head(3).tolist()
         
         if not plot_duel.empty:
             max_pts = max(float(plot_duel["Points"].max()), 1)
             def _make_team_chart(df):
                 # Static, accessible bars work in the script-free dashboard surface.
                 markup = ''
-                for team, members in df.groupby('Team', sort=True):
+                for team, members in df.groupby('Team', sort=False):
                     markup += f'<section class="p-duel-group"><h4>{_html_escape(str(team))}</h4>'
-                    for member in members.sort_values('Points', ascending=False).to_dict('records'):
+                    for member in members.to_dict('records'):
                         score = float(member['Points'])
                         width = min(100, max(0, score / max_pts * 100))
                         markup += (f'<div class="p-duel-row"><span>{_html_escape(str(member["Driver"]))}</span>'
