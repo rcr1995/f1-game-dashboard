@@ -1,5 +1,6 @@
 from pathlib import Path
 import unittest
+import re
 import dashboard_surface as surface
 import season_insights
 import pandas as pd
@@ -7,6 +8,12 @@ import puskas_html
 
 
 class DashboardSurfaceTests(unittest.TestCase):
+    def test_hall_of_fame_matches_statistics_heading_gap(self):
+        source = Path('puskas_html.py').read_text(encoding='utf-8')
+        for selector in ('p-stats-grid', 'p-hof-grid'):
+            rules = re.search(r'\.' + selector + r'\s*\{([^}]+)\}', source).group(1)
+            self.assertIn('margin-top: 1rem;', rules)
+
     def test_teammates_rank_by_team_total_then_driver_score(self):
         rows = pd.DataFrame([
             {"Team": "Alpha", "Driver": "A", "Points": 40},

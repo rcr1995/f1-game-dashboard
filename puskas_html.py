@@ -2104,6 +2104,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     .p-hof-grid {
         display: flex;
         gap: 1rem;
+        margin-top: 1rem;
     }
     .p-hof-card {
         flex: 1;
