@@ -309,6 +309,11 @@ def get_calendar_for_league(calendar_df: pd.DataFrame, meta: dict) -> pd.DataFra
 
 
 def _tr_gp(lang: str, gp_name: str) -> str:
+    # Keep these two event names explicit now that Spain hosts both venues.
+    if gp_name == "Barcelona-Catalunya GP":
+        return gp_name
+    if gp_name == "Spanish GP" and lang != "pt":
+        return gp_name
     if lang == "pt":
         gp_map = {
             "British": "Grã-Bretanha",
@@ -468,7 +473,7 @@ CIRCUIT_SVG_MAP = {
     "Saudi Arabian GP":   f"{_SVG_BASE}/jeddah-1.svg",
     "Miami GP":           f"{_SVG_BASE}/miami-1.svg",
     "Emilia Romagna GP":  f"{_SVG_BASE}/imola-3.svg",
-    "Spanish GP":         f"{_SVG_BASE}/catalunya-6.svg",
+    "Barcelona-Catalunya GP": f"{_SVG_BASE}/catalunya-6.svg",
     "Canadian GP":        f"{_SVG_BASE}/montreal-6.svg",
     "Austrian GP":        f"{_SVG_BASE}/spielberg-3.svg",
     "Hungarian GP":       f"{_SVG_BASE}/hungaroring-3.svg",
@@ -495,6 +500,7 @@ CIRCUIT_SVG_MAP = {
 
 # GP name → country flag emoji
 GP_FLAGS = {
+    "Barcelona-Catalunya GP": "🇪🇸",
     "British GP": "🇬🇧", "Belgian GP": "🇧🇪", "Japanese GP": "🇯🇵",
     "Bahrain GP": "🇧🇭", "Saudi Arabian GP": "🇸🇦", "Miami GP": "🇺🇸",
     "Emilia Romagna GP": "🇮🇹", "Spanish GP": "🇪🇸", "Canadian GP": "🇨🇦",
@@ -513,7 +519,8 @@ GP_SHORT_TRACK = {
     "British GP": "Silverstone", "Belgian GP": "Spa-Francorchamps",
     "Japanese GP": "Suzuka", "Bahrain GP": "Bahrain",
     "Saudi Arabian GP": "Jeddah", "Miami GP": "Miami",
-    "Emilia Romagna GP": "Imola", "Spanish GP": "Barcelona",
+    "Emilia Romagna GP": "Imola", "Barcelona-Catalunya GP": "Barcelona",
+    "Spanish GP": "Madrid",
     "Canadian GP": "Montreal", "Austrian GP": "Spielberg",
     "Hungarian GP": "Hungaroring", "Dutch GP": "Zandvoort",
     "Italian GP": "Monza", "Azerbaijan GP": "Baku",
@@ -529,6 +536,7 @@ GP_SHORT_TRACK = {
 
 # GP name → ISO country code for flag images
 GP_COUNTRY_CODES = {
+    "Barcelona-Catalunya GP": "es",
     "British GP": "gb", "Belgian GP": "be", "Japanese GP": "jp",
     "Bahrain GP": "bh", "Saudi Arabian GP": "sa", "Miami GP": "us",
     "Emilia Romagna GP": "it", "Spanish GP": "es", "Canadian GP": "ca",

@@ -11,6 +11,7 @@ from puskas_html import (
     render_puskas_dashboard,
     CIRCUIT_SVG_MAP,
     GP_SHORT_TRACK,
+    _tr_gp,
     _flag_img,
     _team_badge_html
 )
@@ -574,46 +575,7 @@ def tr(lang: str, key: str):
     return T[lang].get(key, key)
 
 def tr_gp(lang: str, gp_name: str) -> str:
-    if lang == "pt":
-        gp_map = {
-            "British GP": "Grã-Bretanha",
-            "Belgian GP": "Bélgica",
-            "Japanese GP": "Japão",
-            "Bahrain GP": "Barém",
-            "Saudi Arabian GP": "Arábia Saudita",
-            "Miami GP": "Miami",
-            "Emilia Romagna GP": "Emília-Romanha",
-            "Spanish GP": "Espanha",
-            "Canadian GP": "Canadá",
-            "Austrian GP": "Áustria",
-            "Hungarian GP": "Hungria",
-            "Dutch GP": "Países Baixos",
-            "Italian GP": "Itália",
-            "Azerbaijan GP": "Azerbaijão",
-            "Singapore GP": "Singapura",
-            "United States GP": "Estados Unidos",
-            "Mexico City GP": "Cidade do México",
-            "Australian GP": "Austrália",
-            "Chinese GP": "China",
-            "São Paulo GP": "São Paulo",
-            "Las Vegas GP": "Las Vegas",
-            "Qatar GP": "Catar",
-            "Abu Dhabi GP": "Abu Dhabi",
-            "Monaco GP": "Mónaco",
-            "French GP": "França",
-            "Portuguese GP": "Portugal",
-            "Brazil GP": "Brasil",
-            "Mexico GP": "México",
-            "Brazilian GP": "Brasil",
-            "Mexican GP": "México",
-            "70th Anniversary GP": "70.º Aniversário",
-            "Eifel GP": "Eifel",
-            "Styrian GP": "Estíria",
-            "Turkish GP": "Turquia",
-            "Tuscan GP": "Toscana",
-        }
-        return gp_map.get(gp_name, gp_name.replace(" GP", ""))
-    return gp_name.replace(" GP", "")
+    return _tr_gp(lang, gp_name)
 
 def tr_track(lang: str, gp_name: str) -> str:
     short_name = GP_SHORT_TRACK.get(gp_name, gp_name.replace(" GP", ""))
