@@ -53,7 +53,7 @@ MOBILE_DASHBOARD_CSS = """
         width: 100% !important;
         max-width: 100% !important;
         padding: 2rem 1rem 1.5rem !important;
-        background-position: 60% center !important;
+        background-position: 85% center !important;
     }
     .p-hero-title {
         font-size: clamp(2.65rem, 14vw, 3rem) !important;

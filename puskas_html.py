@@ -377,7 +377,7 @@ def get_base64_image(path: str) -> str:
 
 # Cache hero image at module load so we don't re-encode every render
 _HERO_IMG_PATH = Path(__file__).parent / "assets" / "hero_banner.webp"
-_HERO_B64 = get_base64_image(str(_HERO_IMG_PATH)) # Reload image with explicit numbers v2
+_HERO_B64 = get_base64_image(str(_HERO_IMG_PATH))
 
 # ── Helmet images ──
 _HELMETS_DIR = Path(__file__).parent / "assets" / "helmets"
@@ -988,7 +988,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
     
     @media (max-width: 768px) {
         .puskas-container { margin: 0; width: 100%; }
-        .p-hero { padding: 2rem 1rem 1.5rem; background-position: 60% center; }
+        .p-hero { padding: 2rem 1rem 1.5rem; background-position: 85% center; }
         .p-hero-title {
             font-size: clamp(2.65rem, 14vw, 3rem);
             line-height: 0.92;
