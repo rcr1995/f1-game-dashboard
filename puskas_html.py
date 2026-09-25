@@ -5,6 +5,7 @@ import re
 import season_insights
 from pathlib import Path
 from functools import lru_cache
+from circuit_records import get_circuit_record
 
 
 def _rank_teammate_rows(rows, constructors=None):
@@ -52,6 +53,9 @@ _T = {
         "full_results": "FULL RESULTS",
         "hide_results": "HIDE RESULTS",
         "next_race": "📅 NEXT RACE",
+        "real_race_record": "REAL-WORLD F1 RACE LAP RECORD",
+        "record_source": "Source: Formula 1",
+        "record_unavailable": "Verified record unavailable",
         "date": "DATE",
         "race_length": "RACE LENGTH",
         "weather": "WEATHER",
@@ -149,6 +153,9 @@ _T = {
         "full_results": "RESULTADOS COMPLETOS",
         "hide_results": "OCULTAR",
         "next_race": "📅 PRÓXIMA CORRIDA",
+        "real_race_record": "RECORDE REAL DE VOLTA EM CORRIDA F1",
+        "record_source": "Fonte: Formula 1",
+        "record_unavailable": "Recorde verificado indisponível",
         "date": "DATA",
         "race_length": "DISTÂNCIA",
         "weather": "METEOROLOGIA",
@@ -560,6 +567,29 @@ def _flag_img(gp_name: str, height: int = 18) -> str:
         f'<img src="https://flagcdn.com/w40/{code}.png" '
         f'style="height:{height}px;vertical-align:middle;border-radius:2px;margin-left:6px;" />'
     )
+
+def _next_race_circuit_details(gp_name: str, circuit: object, lang: str) -> tuple[str, str]:
+    """Circuit heading and sourced real-world record, separate from game timing."""
+    venue = str(circuit).strip() if pd.notna(circuit) else ""
+    record = get_circuit_record(gp_name, venue)
+    name = record.circuit if record else venue
+    name_html = f'<div class="p-next-circuit">{_html_escape(name)}</div>' if name else ""
+    if not name:
+        return name_html, ""
+    if record is None:
+        return name_html, (
+            f'<div class="p-next-record"><div class="p-next-record-label">{_tr(lang, "real_race_record")}</div>'
+            f'<div class="p-next-record-holder">{_tr(lang, "record_unavailable")}</div></div>'
+        )
+    return name_html, f"""
+        <div class="p-next-record">
+            <div class="p-next-record-label">{_tr(lang, 'real_race_record')}</div>
+            <div class="p-next-record-time">{_html_escape(record.lap_time)}</div>
+            <div class="p-next-record-holder">{_html_escape(record.driver)} <span aria-hidden="true">·</span> {record.year}</div>
+            <a class="p-next-record-source" href="{_html_escape(record.source)}" target="_blank" rel="noopener noreferrer">{_tr(lang, 'record_source')} ↗</a>
+        </div>
+    """
+
 
 def _driving_style(wins: int, podiums: int, avg_finish: float, consistency: float) -> str:
     """Derive a fun driving style label from stats."""
@@ -1414,6 +1444,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     next_race_date = "-"
     next_race_flag_img = ""
     next_race_circuit_svg = ""
+    next_race_circuit = ""
     if not calendar_raw.empty:
         cal = get_calendar_for_league(calendar_raw, meta)
         if not cal.empty:
@@ -1421,6 +1452,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             if not upcoming.empty:
                 nr = upcoming.iloc[0]
                 next_race_name = nr.get("GP Name", "TBD")
+                next_race_circuit = nr.get("Circuit", "")
                 next_race_flag_img = _flag_img(next_race_name, 18)
                 date_val = nr.get("Date", "")
                 if pd.notna(date_val):
@@ -1462,6 +1494,9 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
                 next_race_circuit_svg = CIRCUIT_SVG_MAP.get(next_race_name, "")
 
     # Build Next Race card HTML
+    circuit_name_html, circuit_record_html = _next_race_circuit_details(
+        next_race_name, next_race_circuit, lang
+    )
     circuit_img = ""
     if next_race_circuit_svg:
         circuit_img = f'<img src="{next_race_circuit_svg}" style="width:100%;max-width:200px;height:auto;opacity:0.85;margin:0.5rem auto;display:block; filter: drop-shadow(0 0 4px rgba(255,255,255,0.2));" />'
@@ -1476,7 +1511,9 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     next_race_card_html = f"""
     <div style="text-align:center; padding: 0.5rem 0;">
         <h2 style="margin:0; font-size:1.3rem; letter-spacing:2px; font-weight:800; text-shadow: 1px 1px 3px rgba(0,0,0,0.8);">{_tr_gp(lang, next_race_name).upper()} {next_race_flag_img}</h2>
+        {circuit_name_html}
         {circuit_img}
+        {circuit_record_html}
         <div style="text-align:left; padding: 0.5rem 1rem 0 1rem; font-size:0.78rem; color:#aaa; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">
             <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid rgba(255,255,255,0.1);">
                 <span>📅&nbsp; {_tr(lang, 'date')}</span>
@@ -1864,6 +1901,53 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         letter-spacing: 1px;
     }
     
+    .p-next-circuit {
+        margin: 0.4rem 0 0.5rem;
+        color: #e0e5ed;
+        font-size: 0.85rem;
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+        text-shadow: 1px 1px 3px #000;
+    }
+    .p-next-record {
+        margin: 0.8rem 0 0.3rem;
+        padding: 0.8rem 0.7rem;
+        border: 1px solid rgba(190, 207, 231, 0.2);
+        border-radius: 8px;
+        background: rgba(11, 14, 21, 0.72);
+        text-align: center;
+    }
+    .p-next-record-label {
+        color: #c4cedd;
+        font-size: 0.63rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        line-height: 1.5;
+    }
+    .p-next-record-time {
+        margin: 0.25rem 0;
+        color: #fff;
+        font-size: 1.45rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+    }
+    .p-next-record-holder {
+        color: #eef1f6;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+    }
+    .p-next-record-source {
+        display: inline-block;
+        margin-top: 0.25rem;
+        padding: 0.25rem;
+        color: #c4cedd;
+        font-size: 0.68rem;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+    }
+    .p-next-record-source:hover { color: #fff; }
+    .p-next-record-source:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
     .p-row {
         display: flex;
         align-items: center;

@@ -439,6 +439,14 @@ If `Calendar` is missing, standings remain available and the app displays a sche
 
 ## Scoring behavior
 
+The Next Race card shows the circuit's full name and a real-world F1 **race-lap
+record**, including the driver, year and Formula 1 source link. These curated
+records live in `circuit_records.py` (checked 25 September 2026), independently of
+the workbook's game results. They refer to the listed circuit layouts, not
+qualifying/absolute fastest laps. Update the values and source together when a
+record or layout changes. An explicit Calendar circuit takes precedence over
+the GP name; unknown venues display “Verified record unavailable”.
+
 - Points from race and sprint rows are added to championship totals.
 - Wins, podiums, top-five finishes, average finish, and consistency use main-race rows only.
 - Standings tie-break order is points, wins, podiums, average finish, then name.
