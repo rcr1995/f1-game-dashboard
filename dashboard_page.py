@@ -6,11 +6,14 @@ import pandas as pd
 from pathlib import Path
 import importlib
 import dashboard_core as core
+from circuit_records import league_lap_records
 core = importlib.reload(core)
 from puskas_html import (
     render_puskas_dashboard,
     CIRCUIT_SVG_MAP,
     GP_SHORT_TRACK,
+    CIRCUIT_LAP_RECORDS_CSS,
+    circuit_lap_records_html,
     _tr_gp,
     _flag_img,
     _team_badge_html
@@ -830,7 +833,7 @@ h2, h3 {
 /* ── Circuits gallery cards ────────────────────────────────── */
 .p-tracks-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
     gap: 1rem;
     margin-top: 1.5rem;
     margin-bottom: 2rem;
@@ -1000,7 +1003,7 @@ lang_name = ui_preferences.language_name(st.session_state)
 lang = LANGS[lang_name]
 THEME_CFG = dark_palette()
 apply_theme_css(THEME_CFG)
-st.html(GLOBAL_CSS)
+st.html(GLOBAL_CSS + CIRCUIT_LAP_RECORDS_CSS)
 ui_preferences.render_page_header()
 
 # Load data silently in background
@@ -1336,6 +1339,7 @@ if view_page == "circuits":
         gps = sorted([g for g in base_all[~base_all["IsSeasonFinal"]]["GP Name"].unique() if g and g != "Season Final"])
 
         cards_html = '<div class="p-tracks-grid">'
+        lap_records = league_lap_records(base_all)
         for gp in gps:
             svg_url = CIRCUIT_SVG_MAP.get(gp, "")
             flag_html = _flag_img(gp, height=14)
@@ -1370,6 +1374,7 @@ if view_page == "circuits":
                 <div class="p-track-title">{tr_gp(lang, gp).upper()}</div>
                 <div class="p-track-country">{short_name} {flag_html}</div>
                 {svg_img_tag}
+                {circuit_lap_records_html(gp, lang=lang, league_records=lap_records)}
                 <div class="p-track-stats" style="flex-direction: column; align-items: center; gap: 2px; display: flex; border-top: 1px solid #222; margin-top: 0.6rem; padding-top: 0.5rem;">
                     <div style="font-size:0.65rem; margin-bottom:4px; opacity:0.6; text-transform:uppercase; letter-spacing:0.05em; color:#aaa;">{tr(lang, "gp_winners")}</div>
                     <div style="font-size:0.78rem; color:#ffd700; font-weight:700;">{t1_text}</div>

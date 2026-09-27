@@ -439,10 +439,17 @@ If `Calendar` is missing, standings remain available and the app displays a sche
 
 ## Scoring behavior
 
-The Next Race card shows the circuit's full name and a real-world F1 **race-lap
-record**, including the driver, year and Formula 1 source link. These curated
-records live in `circuit_records.py` (checked 25 September 2026), independently of
-the workbook's game results. They refer to the listed circuit layouts, not
+The Next Race card shows the circuit's full name. Both it and every Circuits
+card show two compact lap-record lines: the real-world F1 **race-lap record**
+(time, driver, year), and the fastest saved race or sprint lap among TomasRodri21,
+Polingua and Fatacuida across all seasons (time, driver, season). Missing league
+times display “No recorded lap”; race duration and finishing position are never
+used to infer a lap. Equal lap times select season then driver consistently.
+
+The curated real-world records and their Formula 1 source URLs
+live in `circuit_records.py` (checked 25 September 2026), independently of
+the workbook's game results; source links are not displayed on the cards.
+They refer to the listed circuit layouts, not
 qualifying/absolute fastest laps. Update the values and source together when a
 record or layout changes. An explicit Calendar circuit takes precedence over
 the GP name; unknown venues display “Verified record unavailable”.

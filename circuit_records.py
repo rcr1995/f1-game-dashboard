@@ -6,7 +6,13 @@ the linked F1 circuit pages when a record or circuit layout changes.
 """
 
 from dataclasses import dataclass
+from datetime import time, timedelta
+from numbers import Real
+import math
+import re
 import unicodedata
+
+import pandas as pd
 
 
 @dataclass(frozen=True)
@@ -84,3 +90,74 @@ def get_circuit_record(gp_name: str, circuit: str = "") -> CircuitRecord | None:
     if circuit.strip():
         return _BY_CIRCUIT.get(_key(circuit))
     return _BY_GP.get(_key(gp_name))
+
+
+@dataclass(frozen=True)
+class LeagueLapRecord:
+    lap_time: str
+    driver: str
+    season: str
+    milliseconds: int
+
+
+def _text(value: object) -> str:
+    return "" if pd.isna(value) else str(value).strip()
+
+
+def circuit_key(gp_name: str, circuit: str = "") -> str:
+    """Match GP aliases while keeping explicitly different venues separate."""
+    record = get_circuit_record(gp_name, circuit)
+    return _key(record.circuit if record else circuit or gp_name)
+
+
+def _lap_milliseconds(value: object) -> int | None:
+    """Read the workbook's Excel times and imported lap strings, never race times."""
+    if isinstance(value, bool) or pd.isna(value):
+        return None
+    if isinstance(value, time):
+        milliseconds = round(((value.hour * 60 + value.minute) * 60 + value.second) * 1000 + value.microsecond / 1000)
+    elif isinstance(value, timedelta):
+        milliseconds = round(value.total_seconds() * 1000)
+    elif isinstance(value, Real):
+        if not math.isfinite(value) or not 0 < value < 1:
+            return None
+        milliseconds = round(value * 86_400_000)  # Excel fraction of a day
+    else:
+        match = re.fullmatch(r"(?:0 days? )?(?:00:)?(\d{1,2}):([0-5]\d)[.,](\d{1,6})", str(value).strip())
+        if not match:
+            return None
+        minutes, seconds, fraction = match.groups()
+        milliseconds = round((int(minutes) * 60 + int(seconds) + int(fraction) / 10 ** len(fraction)) * 1000)
+    return milliseconds if 0 < milliseconds < 3_600_000 else None
+
+
+def league_lap_records(results: pd.DataFrame | None) -> dict[str, LeagueLapRecord]:
+    """One fastest saved race/sprint lap among the three humans, across seasons.
+
+    Missing lap times stay missing. Ties select season then driver consistently,
+    so reordering the workbook never changes which equal record is displayed.
+    """
+    if results is None or not {"GP Name", "Driver", "Fastest Lap"}.issubset(results.columns):
+        return {}
+    drivers = {"tomasrodri": "TomasRodri21", "tomasrodri21": "TomasRodri21",
+               "polingua": "Polingua", "fatacuida": "Fatacuida"}
+    records = {}
+    for row in results.to_dict("records"):
+        driver = drivers.get(_key(_text(row["Driver"])))
+        gp = _text(row["GP Name"])
+        if (not driver or not gp or _key(gp) == "seasonfinal"
+                or _text(row.get("IsSeasonFinal", False)).casefold() in {"true", "1"}
+                or _text(row.get("Type", "R")).upper() not in {"R", "SR"}):
+            continue
+        milliseconds = _lap_milliseconds(row["Fastest Lap"])
+        if milliseconds is None:
+            continue
+        key = circuit_key(gp, _text(row.get("Circuit", "")))
+        minutes, remainder = divmod(milliseconds, 60_000)
+        seconds, fraction = divmod(remainder, 1000)
+        season = _text(row.get("SeasonLabel", "")) or _text(row.get("Season", "")) or "—"
+        candidate = LeagueLapRecord(f"{minutes}:{seconds:02}.{fraction:03}", driver, season, milliseconds)
+        previous = records.get(key)
+        if previous is None or (milliseconds, season, driver) < (previous.milliseconds, previous.season, previous.driver):
+            records[key] = candidate
+    return records

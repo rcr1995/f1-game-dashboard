@@ -5,7 +5,7 @@ import re
 import season_insights
 from pathlib import Path
 from functools import lru_cache
-from circuit_records import get_circuit_record
+from circuit_records import get_circuit_record, circuit_key, league_lap_records
 
 
 def _rank_teammate_rows(rows, constructors=None):
@@ -54,8 +54,10 @@ _T = {
         "hide_results": "HIDE RESULTS",
         "next_race": "📅 NEXT RACE",
         "real_race_record": "REAL-WORLD F1 RACE LAP RECORD",
-        "record_source": "Source: Formula 1",
         "record_unavailable": "Verified record unavailable",
+        "league_lap_label": "League",
+        "league_lap_description": "Fastest saved race or sprint lap among TomasRodri21, Polingua and Fatacuida · all seasons",
+        "league_lap_unavailable": "No recorded lap",
         "date": "DATE",
         "race_length": "RACE LENGTH",
         "weather": "WEATHER",
@@ -154,8 +156,10 @@ _T = {
         "hide_results": "OCULTAR",
         "next_race": "📅 PRÓXIMA CORRIDA",
         "real_race_record": "RECORDE REAL DE VOLTA EM CORRIDA F1",
-        "record_source": "Fonte: Formula 1",
         "record_unavailable": "Recorde verificado indisponível",
+        "league_lap_label": "Liga",
+        "league_lap_description": "Melhor volta guardada em corrida ou sprint entre TomasRodri21, Polingua e Fatacuida · todas as temporadas",
+        "league_lap_unavailable": "Sem volta registada",
         "date": "DATA",
         "race_length": "DISTÂNCIA",
         "weather": "METEOROLOGIA",
@@ -568,27 +572,71 @@ def _flag_img(gp_name: str, height: int = 18) -> str:
         f'style="height:{height}px;vertical-align:middle;border-radius:2px;margin-left:6px;" />'
     )
 
-def _next_race_circuit_details(gp_name: str, circuit: object, lang: str) -> tuple[str, str]:
-    """Circuit heading and sourced real-world record, separate from game timing."""
+CIRCUIT_LAP_RECORDS_CSS = """
+<style>
+.p-lap-records {
+    margin: 0.8rem 0 0.3rem;
+    padding: 0.65rem 0.6rem;
+    border: 1px solid rgba(190, 207, 231, 0.2);
+    border-radius: 8px;
+    background: rgba(11, 14, 21, 0.72);
+    text-align: left;
+    container-type: inline-size;
+}
+.p-lap-record-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5em;
+    color: #eef1f6;
+    font-family: Inter, sans-serif;
+    font-size: clamp(10px, 3.8cqi, 13px);
+    line-height: 1.6;
+    white-space: nowrap;
+}
+.p-lap-record-line + .p-lap-record-line { margin-top: 0.25rem; }
+.p-lap-record-label {
+    flex: 0 0 3.3em;
+    color: #b7c3d5;
+    font-weight: 600;
+}
+.p-lap-record-value strong { color: #fff; font-weight: 800; font-variant-numeric: tabular-nums; }
+.p-lap-record-missing { color: #b7c3d5; }
+</style>
+"""
+
+
+def circuit_lap_records_html(gp_name: str, circuit: str = "", lang: str = "en", league_records=None) -> str:
+    """The same two compact record lines for the next race and circuit gallery."""
+    real_record = get_circuit_record(gp_name, circuit)
+    league_record = (league_records or {}).get(circuit_key(gp_name, circuit))
+
+    def value(record, season):
+        return (f'<strong>{_html_escape(record.lap_time)}</strong> · '
+                f'{_html_escape(record.driver)} · {_html_escape(str(season))}')
+
+    real_value = value(real_record, real_record.year) if real_record else _tr(lang, "record_unavailable")
+    league_value = value(league_record, league_record.season) if league_record else _tr(lang, "league_lap_unavailable")
+    return (
+        '<div class="p-lap-records">'
+        f'<div class="p-lap-record-line" title="{_html_escape(_tr(lang, "real_race_record"))}">'
+        '<span class="p-lap-record-label">F1</span>'
+        f'<span class="p-lap-record-value">{real_value}</span></div>'
+        f'<div class="p-lap-record-line" title="{_html_escape(_tr(lang, "league_lap_description"))}">'
+        f'<span class="p-lap-record-label">{_tr(lang, "league_lap_label")}</span>'
+        f'<span class="p-lap-record-value{ " p-lap-record-missing" if not league_record else ""}">{league_value}</span></div>'
+        '</div>'
+    )
+
+
+def _next_race_circuit_details(gp_name: str, circuit: object, lang: str, league_records=None) -> tuple[str, str]:
+    """Circuit heading and separate real-world / league record lines."""
     venue = str(circuit).strip() if pd.notna(circuit) else ""
     record = get_circuit_record(gp_name, venue)
     name = record.circuit if record else venue
     name_html = f'<div class="p-next-circuit">{_html_escape(name)}</div>' if name else ""
     if not name:
         return name_html, ""
-    if record is None:
-        return name_html, (
-            f'<div class="p-next-record"><div class="p-next-record-label">{_tr(lang, "real_race_record")}</div>'
-            f'<div class="p-next-record-holder">{_tr(lang, "record_unavailable")}</div></div>'
-        )
-    return name_html, f"""
-        <div class="p-next-record">
-            <div class="p-next-record-label">{_tr(lang, 'real_race_record')}</div>
-            <div class="p-next-record-time">{_html_escape(record.lap_time)}</div>
-            <div class="p-next-record-holder">{_html_escape(record.driver)} <span aria-hidden="true">·</span> {record.year}</div>
-            <a class="p-next-record-source" href="{_html_escape(record.source)}" target="_blank" rel="noopener noreferrer">{_tr(lang, 'record_source')} ↗</a>
-        </div>
-    """
+    return name_html, circuit_lap_records_html(gp_name, venue, lang, league_records)
 
 
 def _driving_style(wins: int, podiums: int, avg_finish: float, consistency: float) -> str:
@@ -1495,7 +1543,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
 
     # Build Next Race card HTML
     circuit_name_html, circuit_record_html = _next_race_circuit_details(
-        next_race_name, next_race_circuit, lang
+        next_race_name, next_race_circuit, lang, league_lap_records(base_all)
     )
     circuit_img = ""
     if next_race_circuit_svg:
@@ -1909,45 +1957,6 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         overflow-wrap: anywhere;
         text-shadow: 1px 1px 3px #000;
     }
-    .p-next-record {
-        margin: 0.8rem 0 0.3rem;
-        padding: 0.8rem 0.7rem;
-        border: 1px solid rgba(190, 207, 231, 0.2);
-        border-radius: 8px;
-        background: rgba(11, 14, 21, 0.72);
-        text-align: center;
-    }
-    .p-next-record-label {
-        color: #c4cedd;
-        font-size: 0.63rem;
-        font-weight: 700;
-        letter-spacing: 0.07em;
-        line-height: 1.5;
-    }
-    .p-next-record-time {
-        margin: 0.25rem 0;
-        color: #fff;
-        font-size: 1.45rem;
-        font-weight: 800;
-        font-variant-numeric: tabular-nums;
-    }
-    .p-next-record-holder {
-        color: #eef1f6;
-        font-size: 0.8rem;
-        line-height: 1.5;
-        overflow-wrap: anywhere;
-    }
-    .p-next-record-source {
-        display: inline-block;
-        margin-top: 0.25rem;
-        padding: 0.25rem;
-        color: #c4cedd;
-        font-size: 0.68rem;
-        text-decoration: underline;
-        text-underline-offset: 3px;
-    }
-    .p-next-record-source:hover { color: #fff; }
-    .p-next-record-source:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
     .p-row {
         display: flex;
         align-items: center;
@@ -2313,6 +2322,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
     }
     </style>
     """
+
+    css += CIRCUIT_LAP_RECORDS_CSS
 
     def _hof_sub_list(items, limit=5, stacked=False):
         if len(items) <= 1:

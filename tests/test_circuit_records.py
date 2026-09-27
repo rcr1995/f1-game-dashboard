@@ -1,12 +1,13 @@
 """Records must follow the venue without confusing game and real-world timing."""
 from pathlib import Path
+from datetime import time, timedelta
 import unittest
 
 import pandas as pd
 
 import dashboard_core as core
-from circuit_records import CIRCUIT_RECORDS, get_circuit_record
-from puskas_html import _next_race_circuit_details, render_puskas_dashboard
+from circuit_records import CIRCUIT_RECORDS, get_circuit_record, league_lap_records, circuit_key
+from puskas_html import _next_race_circuit_details, render_puskas_dashboard, circuit_lap_records_html
 
 
 class CircuitRecordTests(unittest.TestCase):
@@ -62,7 +63,71 @@ class CircuitRecordTests(unittest.TestCase):
                     self.assertIn(circuit, card)
                     self.assertIn(driver, card)
                     self.assertIn(label, card)
-                    self.assertIn(get_circuit_record(gp).source, card)
+                    self.assertNotIn(get_circuit_record(gp).source, card)
+                    self.assertEqual(card.count('class="p-lap-record-line"'), 2)
+
+
+class LeagueLapRecordTests(unittest.TestCase):
+    def results(self, rows):
+        return pd.DataFrame([dict({"GP Name": "Austrian GP", "Driver": "TomasRodri21",
+                                   "Fastest Lap": "1:10.097", "Season": "2026-T01",
+                                   "Type": "R", "IsSeasonFinal": False}, **row) for row in rows])
+
+    def test_fastest_human_across_seasons_and_sprints_not_race_winner_or_ai(self):
+        results = self.results([
+            {},
+            {"Driver": "Fatacuida", "Fastest Lap": time(0, 1, 10, 677000)},
+            {"Driver": "Polingua", "Fastest Lap": time(0, 1, 8, 159000), "Season": "2025-T01", "Type": "SR"},
+            {"Driver": "Max Verstappen", "Fastest Lap": "1:00.000"},
+            {"Driver": "TomasRodri21 AI", "Fastest Lap": "1:00.000"},
+            {"IsSeasonFinal": True, "Fastest Lap": "0:55.000"},
+            {"Type": "Q", "Fastest Lap": "0:50.000"},
+        ])
+        record = league_lap_records(results)[circuit_key("Austrian GP")]
+        self.assertEqual((record.lap_time, record.driver, record.season), ("1:08.159", "Polingua", "2025-T01"))
+
+    def test_missing_and_invalid_laps_are_not_inferred_from_race_time(self):
+        results = self.results([{"Fastest Lap": value, "Time": "1:00.000"} for value in
+                                [None, pd.NA, float("nan"), "", "-", "DNF", "1:70.123", "-1:20.000", "0:00.000", True, 90]])
+        self.assertEqual(league_lap_records(results), {})
+        self.assertEqual(league_lap_records(results.drop(columns="Fastest Lap")), {})
+        self.assertEqual(league_lap_records(None), {})
+
+    def test_workbook_time_formats_are_compared_numerically(self):
+        for value in (time(0, 1, 8, 159000), "1:08.159", "00:01:08.159", "1:08,159",
+                      timedelta(seconds=68.159), 68.159 / 86400):
+            with self.subTest(value=value):
+                records = league_lap_records(self.results([{"Fastest Lap": value}, {"Fastest Lap": "0:59.999", "Driver": "Fatacuida"}]))
+                self.assertEqual(records[circuit_key("Austrian GP")].lap_time, "0:59.999")
+                normalized = league_lap_records(self.results([{"Fastest Lap": value}]))
+                self.assertEqual(normalized[circuit_key("Austrian GP")].lap_time, "1:08.159")
+
+    def test_aliases_venues_and_equal_laps_are_stable(self):
+        results = self.results([
+            {"GP Name": "Mexican GP", "Driver": "TomasRodri", "Fastest Lap": "1:20.000"},
+            {"GP Name": "Mexico City GP", "Driver": "Polingua", "Fastest Lap": "1:20.000", "Season": "2025-T01"},
+            {"GP Name": "Spanish GP", "Circuit": "Barcelona", "Fastest Lap": "1:18.000"},
+            {"GP Name": "Spanish GP", "Circuit": "Madring", "Fastest Lap": "1:35.000"},
+        ])
+        records = league_lap_records(results)
+        self.assertEqual(records, league_lap_records(results.iloc[::-1]))
+        self.assertEqual(records[circuit_key("Mexico GP")].season, "2025-T01")
+        self.assertEqual(records[circuit_key("Barcelona-Catalunya GP")].lap_time, "1:18.000")
+        self.assertEqual(records[circuit_key("Spanish GP")].lap_time, "1:35.000")
+
+    def test_shared_record_lines_and_missing_values_in_both_languages(self):
+        records = league_lap_records(self.results([{"Season": "2026-<T01>"}]))
+        for lang, missing in (("en", "No recorded lap"), ("pt", "Sem volta registada")):
+            gallery = circuit_lap_records_html("Austrian GP", lang=lang, league_records=records)
+            _, next_race = _next_race_circuit_details("Austrian GP", "Red Bull Ring", lang, records)
+            self.assertEqual(gallery, next_race)
+            self.assertEqual(gallery.count('class="p-lap-record-line"'), 2)
+            self.assertIn("1:10.097", gallery)
+            self.assertIn("TomasRodri21 · 2026-&lt;T01&gt;", gallery)
+            self.assertNotIn("href=", gallery)
+            japan = circuit_lap_records_html("Japanese GP", lang=lang, league_records=records)
+            self.assertIn("Kimi Antonelli · 2025", japan)
+            self.assertIn(missing, japan)
 
 
 if __name__ == "__main__":
