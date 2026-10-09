@@ -23,6 +23,7 @@ RUNTIME_MODULES = {
 }
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",
+    "assets/hero_wet_night.webp", "assets/hero_sunset.webp",
 }
 
 
@@ -117,6 +118,7 @@ class VercelPackagingTests(unittest.TestCase):
                     "Dockerfile.vercel", ".dockerignore", ".vercelignore", "vercel.json",
                     "requirements.txt", "requirements-import.txt", "F1_Standings.xlsx",
                     ".streamlit", ".streamlit/config.toml", "assets", "assets/hero_banner.webp",
+                    "assets/hero_wet_night.webp", "assets/hero_sunset.webp",
                     "assets/helmets", "assets/helmets/*.webp", "assets/tracks",
                     "assets/tracks/*.webp", "assets/tracks/*.png", "assets/tracks/*.jpg",
                 }

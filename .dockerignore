@@ -42,6 +42,8 @@
 !assets
 assets/**
 !assets/hero_banner.webp
+!assets/hero_wet_night.webp
+!assets/hero_sunset.webp
 !assets/helmets
 assets/helmets/**
 !assets/helmets/*.webp

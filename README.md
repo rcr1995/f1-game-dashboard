@@ -462,6 +462,20 @@ the GP name; unknown venues display “Verified record unavailable”.
 
 ## Quality checks
 
+### Landing-page background rotation
+
+The landing header selects one of three bundled WebP backgrounds for each new
+Streamlit visit (including a full page reload). It stays fixed through language
+changes and result refreshes during that session. Only the last public image ID
+is remembered in the browser, so the next visit randomly chooses another image.
+If browser storage is blocked, selection still works but cannot remember the
+previous visit. Missing images are skipped, with the original background as the
+rendering fallback.
+
+The two additional backgrounds were created with the built-in image-generation
+tool and compressed to WebP. Their prompts and asset paths are documented in
+[`assets/hero-backgrounds.md`](assets/hero-backgrounds.md).
+
 ### Dashboard navigation and manual Excel adjustments
 
 The public dashboard uses one content-height surface, not a nested scrolling

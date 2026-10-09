@@ -390,6 +390,23 @@ def get_base64_image(path: str) -> str:
 _HERO_IMG_PATH = Path(__file__).parent / "assets" / "hero_banner.webp"
 _HERO_B64 = get_base64_image(str(_HERO_IMG_PATH))
 
+HERO_IMAGE_FILES = (
+    ("floodlit", "hero_banner.webp"),
+    ("wet-night", "hero_wet_night.webp"),
+    ("sunset", "hero_sunset.webp"),
+)
+
+
+@lru_cache(maxsize=1)
+def hero_image_options() -> tuple[dict[str, str], ...]:
+    """Cache image bytes, never a user's selection. Missing assets are skipped."""
+    options = []
+    for image_id, filename in HERO_IMAGE_FILES:
+        src = get_base64_image(str(Path(__file__).parent / "assets" / filename))
+        if src:
+            options.append({"id": image_id, "src": src})
+    return tuple(options)
+
 # ── Helmet images ──
 _HELMETS_DIR = Path(__file__).parent / "assets" / "helmets"
 
@@ -964,7 +981,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
     
     .p-hero {
         background: linear-gradient(to right, #0b0b0f 15%, rgba(11,11,15,0.3) 70%, transparent 100%), 
-                    url('""" + _HERO_B64 + """');
+                    var(--hero-image, url('""" + _HERO_B64 + """'));
         background-color: #0b0b0f; /* fallback */
         background-size: cover;
         background-position: center;

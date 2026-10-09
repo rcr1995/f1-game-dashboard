@@ -34,6 +34,8 @@ COPY ["circuit_records.py", "./"]
 COPY ["F1_Standings.xlsx", "./"]
 COPY [".streamlit/config.toml", "./.streamlit/config.toml"]
 COPY ["assets/hero_banner.webp", "./assets/hero_banner.webp"]
+COPY ["assets/hero_wet_night.webp", "./assets/hero_wet_night.webp"]
+COPY ["assets/hero_sunset.webp", "./assets/hero_sunset.webp"]
 COPY ["assets/helmets/", "./assets/helmets/"]
 COPY ["assets/tracks/", "./assets/tracks/"]
 

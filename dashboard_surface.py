@@ -1,9 +1,32 @@
 """Content-height public HTML surface: no nested frame, eval or remote script execution."""
 from __future__ import annotations
 import re
+from uuid import uuid4
 import streamlit as st
+from puskas_html import hero_image_options
 
 JS = r"""
+// This memory belongs to this browser document, not the shared Python process.
+// The only persisted preference is the previous public image ID.
+const heroStorageKey = 'f1puskasleague.hero.previous.v1';
+let heroSelection = null;
+
+function chooseHero(images, visit) {
+  if (!images.length) return null;
+  if (heroSelection?.visit === visit) {
+    const current = images.find(image => image.id === heroSelection.id);
+    if (current) return current;
+  }
+  let previous = heroSelection?.id;
+  try { previous = window.localStorage.getItem(heroStorageKey) || previous; } catch (_) {}
+  const alternatives = images.filter(image => image.id !== previous);
+  const pool = alternatives.length ? alternatives : images;
+  const selected = pool[Math.floor(Math.random() * pool.length)];
+  heroSelection = {visit, id:selected.id};
+  try { window.localStorage.setItem(heroStorageKey, selected.id); } catch (_) {}
+  return selected;
+}
+
 export default function ({parentElement, data}) {
   const root = parentElement.querySelector('.surface');
   const parsed = new DOMParser().parseFromString(data.html, 'text/html');
@@ -13,6 +36,14 @@ export default function ({parentElement, data}) {
     if (attr.name.startsWith('on') || /^(javascript|vbscript):/i.test(attr.value.trim())) el.removeAttribute(attr.name);
   }));
   root.replaceChildren(...Array.from(parsed.head.children), ...Array.from(parsed.body.children));
+  const hero = root.querySelector('.p-hero');
+  if (hero) {
+    const selected = chooseHero(data.heroImages || [], data.heroVisit);
+    if (selected) {
+      hero.style.setProperty('--hero-image', `url("${selected.src}")`);
+      hero.dataset.heroId = selected.id;
+    }
+  }
   const pt = data.lang === 'pt';
   const find = id => root.querySelector('#'+id);
   const timers = [];
@@ -103,5 +134,10 @@ def render(html: str, *, lang: str, key: str) -> None:
     target = re.search(r'var targetIso = "([^"]*)"', html)
     # Styles and scripts in the source are isolated; executable behavior comes from JS only.
     component = st.components.v2.component('f1_public_surface', html='<div class="surface"></div>', js=JS, css=CSS)
-    component(key=key, data={'html':html, 'lang':lang, 'target':target.group(1) if target else ''},
+    data = {'html':html, 'lang':lang, 'target':target.group(1) if target else ''}
+    if '<div class="p-hero"' in html:
+        if 'ui_hero_visit' not in st.session_state:
+            st.session_state['ui_hero_visit'] = uuid4().hex
+        data.update(heroImages=hero_image_options(), heroVisit=st.session_state['ui_hero_visit'])
+    component(key=key, data=data,
               height='content', width='stretch')
