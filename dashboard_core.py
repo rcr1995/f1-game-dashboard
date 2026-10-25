@@ -285,6 +285,21 @@ def latest_league_slice(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return latest, {"Game": game, "SeasonLabel": latest_label, "League Name": league}
 
 
+def filter_event_results(df: pd.DataFrame, event_scope: str = "all") -> pd.DataFrame:
+    """Select actual Race/Sprint rows before calculating a hypothetical championship."""
+    allowed = {"all": {"R", "SR"}, "race": {"R"}, "sprint": {"SR"}}
+    if event_scope not in allowed:
+        raise ValueError("Unknown event scope")
+    kinds = df.get("Type", pd.Series("R", index=df.index)).fillna("R").astype(str).str.strip().str.upper()
+    kinds = kinds.replace({"RACE": "R", "SPRINT": "SR", "SPRINT RACE": "SR"})
+    selected = kinds.isin(allowed[event_scope])
+    if "IsSeasonFinal" in df:
+        selected &= ~df["IsSeasonFinal"].fillna(False).astype(bool)
+    result = df.loc[selected].copy()
+    result["Type"] = kinds.loc[selected]
+    return result
+
+
 def standings_table(df: pd.DataFrame, entity: str) -> pd.DataFrame:
     column = "Driver" if entity == "Drivers" else "Team"
     output_columns = ["Pos", column, "Points", "Races", "Wins", "Podiums", "Top5", "AvgFinish", "Consistency", "Pts/Race"]

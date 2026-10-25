@@ -6,6 +6,7 @@ import pandas as pd
 
 import browser_download
 import season_insights
+import dashboard_core as core
 
 
 class SeasonInsightsTests(unittest.TestCase):
@@ -126,6 +127,60 @@ class SeasonInsightsTests(unittest.TestCase):
         self.assertIn('Posição média',rendered)
         self.assertIn('&lt;img',rendered)
         self.assertNotIn('<img src=x>',rendered)
+
+    def test_sprint_scope_excludes_races_from_ranking_positions_and_charts(self):
+        rows = pd.DataFrame([
+            self.row(Team='Red', Points=0, **{'Finish Pos':20}),
+            self.row(Team='Red', Type='SR', Points=6, **{'Finish Pos':3}),
+            self.row(Team='Red', Driver='Bob', Points=25),
+            self.row(Team='Red', Driver='Bob', Type='SR', Points=8),
+            self.row(Team='Blue', Round=2, **{'GP Name':'Monaco GP'}),
+            self.row(Team='Blue', Round=3, Type='SR', Points=8, **{'GP Name':'Chinese GP'}),
+            self.row(Team='Red', Driver='Bob', Round=3, Type='SR', Points=0,
+                     **{'GP Name':'Chinese GP','Finish Pos':12}),
+            self.row(Driver='RaceOnly', Team='Green', Points=18, **{'Finish Pos':2}),
+        ])
+        model = season_insights.season_points(rows,self.meta,event_scope='sprint')
+        self.assertEqual(model['rounds'],[1,3])
+        self.assertEqual(model['events'],{1:['SR'],3:['SR']})
+        self.assertEqual(model['drivers'],['Alice','Bob'])
+        self.assertEqual(sum(model['points'].values()),22)
+        teams = season_insights.season_points(rows,self.meta,'Constructors',event_scope='sprint')
+        self.assertEqual(teams['drivers'],['Red','Blue'])
+        self.assertEqual(teams['points'][('Red',1,'SR')],14)
+        self.assertEqual(teams['points'][('Blue',3,'SR')],8)
+        positions = season_insights.season_positions(rows,self.meta,event_scope='sprint')
+        self.assertEqual(positions['averages'],{'Alice':2,'Bob':6.5})
+        self.assertEqual(positions['counts'],{'Alice':2,'Bob':2})
+        selected = core.filter_event_results(rows,'sprint')
+        wide,_ = core.cumulative_points_wide(selected,'Driver',False)
+        self.assertEqual(wide.index.tolist(),[1,3])
+        self.assertEqual(wide.iloc[-1].to_dict(),{'Alice':14,'Bob':8})
+        metrics,_,_ = core.championship_tension(selected,'Driver')
+        self.assertEqual(metrics['last_gap'],6)
+        delta = core.position_delta_table(selected,'Driver').set_index('Driver')
+        self.assertEqual(delta.loc['Alice','Delta'],1)
+        self.assertEqual(delta.loc['Bob','Delta'],-1)
+        self.assertEqual(len(core.filter_event_results(rows,'race')),4)
+        self.assertEqual(len(core.filter_event_results(rows,'all')),len(rows))
+        for lang,label in [('en','Sprints only'),('pt','Só Sprints')]:
+            for metric in ('points','positions'):
+                rendered = season_insights.render_season_insights(rows,self.meta,lang,
+                    event_scope='sprint',metric=metric,show_details=False)
+                self.assertIn(label,rendered)
+                self.assertNotIn('Monaco',rendered)
+                self.assertNotIn('RaceOnly',rendered)
+                self.assertNotIn('scope="col">Race</th>',rendered)
+
+    def test_sprint_scope_handles_absent_sprints_and_legacy_race_rows(self):
+        rows = pd.DataFrame([self.row()])
+        self.assertFalse(season_insights.season_points(rows,self.meta,event_scope='sprint')['rounds'])
+        self.assertFalse(season_insights.season_positions(rows,self.meta,event_scope='sprint')['rounds'])
+        legacy = rows.drop(columns='Type')
+        self.assertTrue(core.filter_event_results(legacy,'sprint').empty)
+        self.assertEqual(core.filter_event_results(legacy,'race')['Type'].tolist(),['R'])
+        with self.assertRaises(ValueError):
+            core.filter_event_results(rows,'unknown')
 
     def test_download_delivers_identical_bytes_without_media_endpoint(self):
         content = b'PK\x03\x04\x00\xff workbook fixture'

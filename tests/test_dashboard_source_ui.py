@@ -95,7 +95,7 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
             self.assert_rendered(app)
             self.assertFalse(app.sidebar.selectbox)
             self.assertFalse(app.sidebar.radio)
-            self.assertEqual(render.call_args.kwargs, {"entity": "Drivers", "show_details": False, "metric": "points"})
+            self.assertEqual(render.call_args.kwargs, {"entity": "Drivers", "show_details": False, "metric": "points", "event_scope": "all"})
             app.radio(key="dash_view").set_value("Constructors").run()
             self.assert_rendered(app)
             self.assertEqual(render.call_args.kwargs["entity"], "Constructors")
@@ -115,6 +115,52 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
             self.assert_rendered(app)
             self.assertEqual(app.selectbox(key='round_metric').value, 'Posições finais')
             self.assertEqual(render.call_args.kwargs['metric'], 'positions')
+
+    def test_sprint_filter_controls_tables_charts_and_survives_language_change(self):
+        import dashboard_core as core
+        with (
+            patch('importlib.reload', side_effect=lambda module: module),
+            patch.object(season_insights, 'render_season_insights', wraps=season_insights.render_season_insights) as render,
+            patch.object(core, 'cumulative_points_wide', wraps=core.cumulative_points_wide) as progression,
+            patch.object(core, 'championship_tension', wraps=core.championship_tension) as tension,
+            patch.object(core, 'position_delta_table', wraps=core.position_delta_table) as delta,
+        ):
+            app = self.app(view='race-centre')
+            app.selectbox(key='race_event_scope').set_value('sprint').run()
+            self.assert_rendered(app)
+            self.assertEqual(render.call_args.kwargs['event_scope'],'sprint')
+            for calculation in (render,progression,tension,delta):
+                self.assertEqual(set(calculation.call_args.args[0]['Type']),{'SR'})
+            self.assertFalse(app.toggle)
+            app.selectbox(key='round_metric').set_value('Finishing positions').run()
+            self.assertEqual(render.call_args.kwargs['metric'],'positions')
+            app.radio(key='dash_view').set_value('Constructors').run()
+            self.assertEqual(render.call_args.kwargs['entity'],'Constructors')
+            app.session_state['app_lang'] = 'Português (Portugal)'
+            app.run()
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='race_event_scope').value,'sprint')
+            self.assertIn('Só Sprints',app.selectbox(key='race_event_scope').options)
+            app.selectbox(key='race_event_scope').set_value('race').run()
+            self.assert_rendered(app)
+            for calculation in (render,progression,tension,delta):
+                self.assertEqual(set(calculation.call_args.args[0]['Type']),{'R'})
+
+    def test_sprint_empty_selection_is_explained_and_filter_can_be_changed(self):
+        import dashboard_core as core
+        filter_events = core.filter_event_results
+        def without_sprints(rows, scope='all'):
+            return filter_events(rows[rows['Type']=='R'],scope)
+        with (patch('importlib.reload', side_effect=lambda module: module),
+              patch.object(core,'filter_event_results',side_effect=without_sprints)):
+            app = self.app(view='race-centre')
+            app.selectbox(key='race_event_scope').set_value('sprint').run()
+            self.assert_rendered(app)
+            self.assertIn('No Sprint results have been published for this selection.', self.messages(app.main,'info'))
+            self.assertFalse(app.get('plotly_chart'))
+            app.selectbox(key='race_event_scope').set_value('all').run()
+            self.assert_rendered(app)
+            self.assertTrue(app.get('plotly_chart'))
 
     def test_stale_warning_is_visible_and_localized_without_exposing_raw_error(self):
         self.resolver.return_value = replace(

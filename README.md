@@ -72,9 +72,13 @@ not interrupt an open race review. Public and unauthorized routes never render
 this control. **Refresh latest Excel** reloads Admin data and starts a fresh
 review; it does not upload a local Excel file.
 
-The **Race centre → Points by round** table follows the Season — League and
-Drivers/Constructors filters. GP totals are shown by default; **Show Race and
-Sprint points** expands the event detail. Season totals and grand totals use
+The **Race Centre → Points by round** table follows the Season — League,
+Drivers/Constructors, and **Events** filters. Events offers **Races + Sprints**
+(default), **Races only**, and **Sprints only**. The chosen events also drive
+finishing-position averages, progression charts, championship gaps, and position
+changes. Seasons without Sprint results show an empty-state message while the
+Events selector stays available. GP totals are shown by default; **Separate Race
+and Sprint points** expands the combined view's event detail. Season totals and grand totals use
 the Excel points, and constructor points stay with each event's recorded team. A dash
 means no published result; zero means a published zero-point finish. Exact
 game/season/league identity and duplicate-event checks prevent inflated totals.
@@ -504,13 +508,14 @@ The dashboard's existing GitHub revision check picks up a published workbook;
 unchanged revisions do not trigger a full application rerun.
 
 Race Centre's **Show** selector switches between points and finishing positions.
-Positions show the recorded main-race finish; **Include Sprint positions** adds
-Sprint events to both the columns and the final average. Missing, non-numeric,
+Positions show recorded finishes for the selected **Events**, including a
+Sprint-only view. The same event filter applies to columns and the final average. Missing, non-numeric,
 non-positive or non-integer finishes are displayed as absent and excluded from
 the average, not treated as zero. Constructor cells average their drivers'
 finishes for that event; the season average weights every recorded individual
 finish equally and preserves each event's team assignment. Rows sort by the
-lowest average finish. Points mode and its Race/Sprint totals are unchanged.
+lowest average finish. Points mode ranks drivers and constructors using only
+points from the selected events, with the existing standings tiebreaks.
 
 Teammate comparisons use script-free labelled bars. Driver profiles use a
 four-column desktop grid and two columns on phones (one on very narrow screens);

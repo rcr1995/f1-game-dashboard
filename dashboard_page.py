@@ -1143,14 +1143,26 @@ if view_page == "race-centre":
 
         gp_all_time = False
 
+    import season_insights
+    event_scope = filters[3].selectbox(
+        'Eventos' if lang == 'pt' else 'Events',
+        list(season_insights.EVENT_SCOPE_LABELS[lang]),
+        format_func=season_insights.EVENT_SCOPE_LABELS[lang].get,
+        key='race_event_scope',
+        help=('Aplica-se à tabela, aos gráficos e às estatísticas desta página.' if lang == 'pt' else
+              'Applies to the table, charts and statistics on this page.'),
+    )
+    df_gp = core.filter_event_results(df_gp, event_scope)
     if df_gp.empty:
-        st.info(f"{tr(lang, 'no_rows')} {tr(lang, 'empty_hint')}")
+        points_panel.info(
+            ('Não há resultados Sprint publicados para esta seleção.' if lang == 'pt' else 'No Sprint results have been published for this selection.')
+            if event_scope == 'sprint' else f"{tr(lang, 'no_rows')} {tr(lang, 'empty_hint')}"
+        )
     else:
         view = filters[1].radio(tr(lang, "standings_type"), [tr(lang, "drivers"), tr(lang, "constructors")], horizontal=True, key="dash_view")
         view_canon = {tr(lang, "drivers"): "Drivers", tr(lang, "constructors"): "Constructors"}[view]
         entity_col = "Driver" if view_canon == "Drivers" else "Team"
 
-        import season_insights
         metric_labels = {'points':'Pontos','positions':'Posições finais'} if lang == 'pt' else {'points':'Points','positions':'Finishing positions'}
         selected_metric = filters[2].selectbox(
             'Mostrar' if lang == 'pt' else 'Show', list(metric_labels.values()), key='round_metric',
@@ -1158,19 +1170,20 @@ if view_page == "race-centre":
         )
         round_metric = next(code for code,label in metric_labels.items() if label == selected_metric)
         st.session_state['round_metric_code'] = round_metric
-        detail_label = ('Incluir posições Sprint' if lang == 'pt' else 'Include Sprint positions') if round_metric == 'positions' else ('Mostrar pontos de Corrida e Sprint' if lang == 'pt' else 'Show Race and Sprint points')
-        show_round_details = filters[3].toggle(
-            detail_label,
-            value=False, key="round_points_details",
-            help=(('A média inclui apenas os eventos apresentados.' if lang == 'pt' else 'The average includes only the displayed events.') if round_metric == 'positions' else
-                  ('Desativa para ver apenas os totais por Grande Prémio.' if lang == 'pt' else 'Turn off to show only the total points per Grand Prix.')),
-        )
+        show_round_details = False
+        if round_metric == 'points' and event_scope == 'all':
+            show_round_details = points_panel.toggle(
+                'Separar pontos de Corrida e Sprint' if lang == 'pt' else 'Separate Race and Sprint points',
+                value=False, key="round_points_details",
+                help=('Mostra as colunas de cada evento ao lado do total do Grande Prémio.' if lang == 'pt' else
+                      'Show each event’s points alongside the Grand Prix total.'),
+            )
         # Never merge round numbers across different games or leagues in the all-time view.
         round_tables = []
         for identity, league_rows in df_gp.groupby(["Game", "SeasonLabel", "League Name"], sort=False):
             table_meta = dict(zip(["Game", "SeasonLabel", "League Name"], identity))
             round_tables.append(season_insights.render_season_insights(
-                league_rows, table_meta, lang, entity=view_canon, show_details=show_round_details, metric=round_metric,
+                league_rows, table_meta, lang, entity=view_canon, show_details=show_round_details, metric=round_metric, event_scope=event_scope,
             ))
         if any(round_tables):
             with points_panel:

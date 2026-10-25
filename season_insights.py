@@ -7,9 +7,16 @@ import hashlib
 import math
 
 import pandas as pd
+from dashboard_core import filter_event_results
 
 
-def season_points(results: pd.DataFrame, meta: dict, entity: str = "Drivers", *, _rank_points: bool = True) -> dict:
+EVENT_SCOPE_LABELS = {
+    "en": {"all": "Races + Sprints", "race": "Races only", "sprint": "Sprints only"},
+    "pt": {"all": "Corridas + Sprints", "race": "Só Corridas", "sprint": "Só Sprints"},
+}
+
+
+def season_points(results: pd.DataFrame, meta: dict, entity: str = "Drivers", *, _rank_points: bool = True, event_scope: str = "all") -> dict:
     """Preserve Race/Sprint identity, absent results and the workbook's actual points."""
     empty = {"rounds": [], "drivers": [], "events": {}, "points": {}}
     required = {"Game", "SeasonLabel", "League Name", "Driver", "Round", "Type", "Points",
@@ -21,7 +28,7 @@ def season_points(results: pd.DataFrame, meta: dict, entity: str = "Drivers", *,
     column = "Driver" if entity == "Drivers" else "Team"
     if column not in results:
         return empty
-    rows = results.copy()
+    rows = filter_event_results(results, event_scope)
     for identity_column in ("Game", "SeasonLabel", "League Name"):
         expected = str(meta.get(identity_column, "")).strip()
         if not expected:
@@ -71,8 +78,11 @@ def _number(value: float) -> str:
     return f"{value:g}"
 
 
-def season_positions(results: pd.DataFrame, meta: dict, entity: str = "Drivers", *, include_sprint: bool = False) -> dict:
+def season_positions(results: pd.DataFrame, meta: dict, entity: str = "Drivers", *, include_sprint: bool = False, event_scope: str | None = None) -> dict:
     """Recorded finishes only; constructor averages follow each result's actual team."""
+    if results is not None and event_scope is not None:
+        results = filter_event_results(results, event_scope)
+        include_sprint = event_scope != "race"
     if results is not None and 'Finish Pos' in results:
         results = results.copy()
         results['Finish Pos'] = pd.to_numeric(results['Finish Pos'], errors='coerce')
@@ -102,11 +112,11 @@ def season_positions(results: pd.DataFrame, meta: dict, entity: str = "Drivers",
             'positions': grouped.to_dict(), 'averages': averages, 'counts': counts}
 
 
-def _render_positions(results: pd.DataFrame, meta: dict, lang: str, entity: str, include_sprint: bool) -> str:
+def _render_positions(results: pd.DataFrame, meta: dict, lang: str, entity: str, include_sprint: bool, event_scope: str | None = None) -> str:
     pt = lang == 'pt'
-    model = season_positions(results, meta, entity, include_sprint=include_sprint)
+    model = season_positions(results, meta, entity, include_sprint=include_sprint, event_scope=event_scope)
     if not model['rounds']:
-        return '<section class="si-section"><p>' + ('Sem resultados de Corrida. Ativa Sprint para ver os resultados disponíveis.' if pt else 'No Race results. Enable Sprint to show available Sprint results.') + '</p></section>'
+        return '<section class="si-section"><p>' + ('Sem resultados para os eventos selecionados.' if pt else 'No results for the selected events.') + '</p></section>'
     esc = lambda value: html.escape(str(value), quote=True)
     label = ('Construtor' if pt else 'Constructor') if entity == 'Constructors' else ('Piloto' if pt else 'Driver')
     title = 'Posições por ronda' if pt else 'Finishing positions by round'
@@ -132,6 +142,8 @@ def _render_positions(results: pd.DataFrame, meta: dict, lang: str, entity: str,
         average = '—' if value is None else f'{value:.2f}'
         body += f'<td class="si-total" title="n={model["counts"].get(name,0)}">{average}</td></tr>'
     scope = ('Corrida e Sprint' if pt else 'Race and Sprint') if include_sprint else ('apenas Corrida' if pt else 'Race only')
+    if event_scope is not None:
+        scope = EVENT_SCOPE_LABELS[lang][event_scope]
     note = ('Média dos resultados individuais registados nos eventos apresentados; posições ausentes ou não numéricas são excluídas, nunca convertidas em zero. Menor é melhor.' if pt else
             'Average of recorded individual finishes in the displayed events; missing or non-numeric positions are excluded, never counted as zero. Lower is better.')
     if entity == 'Constructors':
@@ -146,12 +158,12 @@ def _render_positions(results: pd.DataFrame, meta: dict, lang: str, entity: str,
 
 
 def render_season_insights(results: pd.DataFrame, meta: dict, lang: str = "en", *,
-                           entity: str = "Drivers", show_details: bool = True, metric: str = "points") -> str:
+                           entity: str = "Drivers", show_details: bool = True, metric: str = "points", event_scope: str | None = None) -> str:
     if metric not in ('points', 'positions'):
         raise ValueError('Unknown round metric')
     if metric == 'positions':
         try:
-            return _render_positions(results, meta, lang, entity, show_details)
+            return _render_positions(results, meta, lang, entity, show_details, event_scope)
         except ValueError:
             return '<section class="si-section"><p>' + ('Corrige os resultados ambíguos no Excel.' if lang == 'pt' else 'Correct ambiguous results in Excel before viewing positions.') + '</p></section>'
     pt = lang == "pt"
@@ -161,7 +173,7 @@ def render_season_insights(results: pd.DataFrame, meta: dict, lang: str = "en", 
     title = "A época, ronda a ronda" if pt else "The season, round by round"
     section_id = "points-" + hashlib.sha256(repr((meta, entity)).encode()).hexdigest()[:12]
     try:
-        model = season_points(results, meta, entity)
+        model = season_points(results, meta, entity, event_scope=event_scope or "all")
     except ValueError:
         return '<section class="si-section"><p>' + (
             "A classificação por ronda requer a correção de resultados ambíguos no Excel."
@@ -211,7 +223,7 @@ def render_season_insights(results: pd.DataFrame, meta: dict, lang: str = "en", 
       <div class="si-table-tools"><h3>{'Pontos por ronda' if pt else 'Points by round'}</h3>
       <label>{search_label} <input type="search" class="si-search" placeholder="{entity_label}" /></label></div>
       <div class="si-table-scroll" tabindex="0" role="region" aria-label="{esc(title)}">
-      <table class="si-table"><caption>{esc(meta.get('Game',''))} · {esc(meta.get('League Name',''))} · {esc(meta.get('SeasonLabel',''))} · {entity_label}</caption>
+      <table class="si-table"><caption>{esc(meta.get('Game',''))} · {esc(meta.get('League Name',''))} · {esc(meta.get('SeasonLabel',''))} · {entity_label} · {EVENT_SCOPE_LABELS[lang][event_scope or 'all']}</caption>
       <thead>{heading}{subheading}</thead><tbody>{body}</tbody><tfoot>{foot}</tfoot></table></div>
       <p class="si-note">{'Desliza para ver todas as rondas. — = sem resultado publicado; 0 = resultado sem pontos. Os totais usam os pontos do Excel.' if pt else 'Scroll to explore all rounds. — = no published result; 0 = a result with no points. Totals use the points recorded in Excel.'}</p>
       <p class="si-empty" hidden>{'Nenhum resultado encontrado.' if pt else 'No matches found.'}</p>
