@@ -87,6 +87,49 @@ assert.equal(championshipCorrectionOpacity([0,.2,.1],2),1);
         self.assertIn('Starting grid',rendered)
         self.assertIsNone(ui.render(None) or None)
 
+    def test_points_and_cars_share_continuous_clock_and_exact_checkpoints(self):
+        self.run_js(r"""
+const assert=require('node:assert/strict');
+const totals=[[0,0],[25,8],[43,26],[68,26]],progress=[[0,0],[.1,.032],[.2,.12],[.4,.153]];
+const frames=totals.map((row,i)=>({standings:row.map((points,j)=>({id:String(j),points,progress:progress[i][j]}))}));
+const sample=championshipSampler(frames,['0','1']),epsilon=1e-5;
+totals.forEach((row,i)=>row.forEach((points,j)=>{
+ assert.equal(sample(i).get(String(j)).points,points);
+ assert.equal(sample(i).get(String(j)).p,progress[i][j]);
+}));
+let previous=sample(0);
+for(let cursor=.001;cursor<=3;cursor+=.001){
+ const current=sample(cursor);
+ for(const id of ['0','1']){
+  assert.ok(current.get(id).points>=previous.get(id).points-1e-10);
+  assert.ok(current.get(id).p>=previous.get(id).p-1e-10);
+ }
+ previous=current;
+}
+for(const checkpoint of [1,2]){
+ const before=(sample(checkpoint).get('0').points-sample(checkpoint-epsilon).get('0').points)/epsilon;
+ const after=(sample(checkpoint+epsilon).get('0').points-sample(checkpoint).get('0').points)/epsilon;
+ assert.ok(before>0&&Math.abs(before-after)<.002,'counter must not stop or jump at race boundary');
+}
+assert.ok(sample(.5).get('0').points>0&&sample(.5).get('0').points<25);
+assert.ok(sample(.5).get('0').p>0&&sample(.5).get('0').p<.1);
+assert.equal(sample(2.5).get('1').points,26,'no-score round must hold points');
+const adjusted=championshipSampler([{standings:[{id:'a',points:10,progress:.1}]},{standings:[{id:'a',points:5,progress:.05}]}],['a']);
+assert.ok(adjusted(.5).get('a').points<10&&adjusted(.5).get('a').points>5);
+assert.equal(adjusted(1).get('a').points,5,'published corrections are preserved');
+""")
+
+    def test_season_selector_escapes_labels_and_defaults_to_two_times_speed(self):
+        rendered=ui.render({'meta':{},'notes':['archive_calendar'],
+                            'catalog':[{'key':'a','label':'F1 2026 · Current'},
+                                       {'key':'b','label':'Archive <league> & season'}],
+                            'selectedKey':'b'})
+        self.assertIn('Select league and season',rendered)
+        self.assertIn('value="b" selected',rendered)
+        self.assertIn('Archive &lt;league&gt; &amp; season',rendered)
+        self.assertIn('<option value="2" selected>2×</option>',rendered)
+        self.assertIn('published round order',rendered)
+
 
 if __name__ == '__main__':
     unittest.main()

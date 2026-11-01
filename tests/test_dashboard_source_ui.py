@@ -89,6 +89,50 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
         self.assertFalse(any("GitHub update unavailable" in value for value in self.messages(app.main, "warning")))
         self.assertGreaterEqual(self.resolver.call_count, 2)
 
+    def test_championship_selector_changes_only_playback_and_rejects_unknown_keys(self):
+        import championship_circuit
+        import championship_circuit_ui
+        import dashboard_surface
+        import puskas_html
+
+        with (
+            patch.object(championship_circuit, 'build_model', wraps=championship_circuit.build_model) as build,
+            patch.object(championship_circuit_ui, 'render', wraps=championship_circuit_ui.render) as chart,
+            patch.object(puskas_html, 'render_puskas_dashboard', wraps=puskas_html.render_puskas_dashboard) as dashboard,
+            patch.object(dashboard_surface, 'render', wraps=dashboard_surface.render) as surface,
+        ):
+            app = self.app()
+            self.assert_rendered(app)
+            current = dashboard.call_args.kwargs['circuit_model']
+            offered = surface.call_args.kwargs['circuit']
+            self.assertEqual(offered['meta'], current['meta'])
+            self.assertNotIn('catalog', current)
+            self.assertNotIn('selectedKey', current)
+            self.assertEqual(build.call_count, 1)
+            selected = next(item for item in offered['catalog'] if item['meta'] != current['meta'])
+
+            app.query_params['championship'] = selected['key']
+            app.run()
+            self.assert_rendered(app)
+            displayed = surface.call_args.kwargs['circuit']
+            self.assertEqual(displayed['selectedKey'], selected['key'])
+            self.assertEqual(displayed['meta'], selected['meta'])
+            self.assertEqual(dashboard.call_args.args[3], current['meta'])
+            self.assertEqual(dashboard.call_args.kwargs['circuit_model'], current)
+            self.assertIs(dashboard.call_args.kwargs['championship_model'], displayed)
+            chart.assert_called_with(displayed, 'en')
+            self.assertEqual(build.call_count, 2)
+
+            # A URL can request a known key, never inject workbook metadata.
+            app.query_params['championship'] = '../../unknown-league'
+            app.run()
+            self.assert_rendered(app)
+            fallback = surface.call_args.kwargs['circuit']
+            self.assertEqual(fallback['selectedKey'], offered['selectedKey'])
+            self.assertEqual(fallback['meta'], current['meta'])
+            self.assertEqual(dashboard.call_args.kwargs['circuit_model'], current)
+            self.assertEqual(build.call_count, 2)
+
     def test_race_centre_points_follow_league_entity_and_detail_filters(self):
         with patch.object(season_insights, "render_season_insights", wraps=season_insights.render_season_insights) as render:
             app = self.app(view="race-centre")

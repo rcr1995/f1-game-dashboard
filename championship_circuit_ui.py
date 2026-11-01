@@ -9,6 +9,9 @@ NOTES = {
     'calendar_unavailable': ('The season calendar is unavailable or ambiguous. Remaining points and distances cannot be calculated.', 'O calendário não está disponível ou é ambíguo. Não é possível calcular os pontos restantes e as distâncias.'),
     'scoring_unavailable': ('The scoring rules cannot be verified. Configure league scoring to calculate remaining points; no target has been assumed.', 'Não foi possível verificar a pontuação. Configura as regras da liga para calcular os pontos restantes; não foi presumido um objetivo.'),
     'no_drivers': ('No drivers are recorded for this league yet.', 'Ainda não há pilotos registados nesta liga.'),
+    'archive_calendar': ('Archived season: the calendar uses the published round order and recorded Sprints. No future races have been assumed.', 'Época arquivada: o calendário usa as rondas publicadas e os Sprints registados. Não foram presumidas corridas futuras.'),
+    'final_calendar_unavailable': ('The race calendar is unavailable. Final distances use the published completed-season standings.', 'O calendário não está disponível. As distâncias finais usam a classificação publicada da época concluída.'),
+    'final_scoring_unavailable': ('Historical scoring rules cannot be verified. Only the published final standings are shown.', 'Não foi possível verificar a pontuação histórica. É apresentada apenas a classificação final publicada.'),
 }
 
 
@@ -19,11 +22,14 @@ def render(model: dict | None, lang='en') -> str:
     esc = lambda value: html.escape(str(value), quote=True)
     title = 'Evolução do campeonato' if pt else 'Championship progress'
     meta = model['meta']
-    notes = ''.join(f'<p class="cc-note {"cc-warning" if n != "sprint_2026" else ""}">{esc(NOTES[n][int(pt)])}</p>' for n in model['notes'])
+    catalog = model.get('catalog') or [{'key': '', 'label': ' · '.join(str(meta.get(k, '')) for k in ('Game', 'SeasonLabel', 'League Name'))}]
+    options = ''.join(f'<option value="{esc(item["key"])}" {"selected" if item["key"] == model.get("selectedKey", "") else ""}>{esc(item["label"])}</option>' for item in catalog)
+    note_keys = [('final_' + n) if n in ('calendar_unavailable', 'scoring_unavailable') and model.get('completedSeason') else n for n in model['notes']]
+    notes = ''.join(f'<p class="cc-note {"cc-warning" if n != "sprint_2026" else ""}">{esc(NOTES[n][int(pt)])}</p>' for n in note_keys)
     return f'''{STYLE}
     <div class="p-section-label" id="championship"><span>04</span> {title.upper()}</div>
     <section class="cc" aria-label="{title}">
-      <header class="cc-header"><div><p class="cc-context">{esc(meta.get('League Name',''))} · {esc(meta.get('SeasonLabel',''))}</p>
+      <header class="cc-header"><div class="cc-heading"><label class="cc-season-label">{'Liga / época' if pt else 'League / season'}<select class="cc-season" aria-label="{'Selecionar liga e época' if pt else 'Select league and season'}" {'disabled' if len(catalog) < 2 else ''}>{options}</select></label>
         <h2 class="cc-race">{'Grelha de partida' if pt else 'Starting grid'}</h2><p class="cc-round" aria-live="polite" aria-atomic="true"></p></div>
         <div class="cc-metrics"><div><span>{'Pontos da meta' if pt else 'Finish-line score'}</span><strong class="cc-target">—</strong></div>
         <div><span>{'Máximo ainda disponível' if pt else 'Maximum points remaining'}</span><strong class="cc-remaining">—</strong></div></div>
@@ -34,7 +40,7 @@ def render(model: dict | None, lang='en') -> str:
         <button class="cc-prev" type="button" aria-label="{'Corrida anterior' if pt else 'Previous race'}">← <span>{'Anterior' if pt else 'Previous'}</span></button>
         <button class="cc-next" type="button" aria-label="{'Corrida seguinte' if pt else 'Next race'}"><span>{'Seguinte' if pt else 'Next'}</span> →</button>
       </div><label class="cc-race-select">{'Corrida' if pt else 'Race'}<select class="cc-select" aria-label="{'Selecionar corrida' if pt else 'Select race'}"></select></label>
-      <label>{'Velocidade' if pt else 'Speed'}<select class="cc-speed" aria-label="{'Velocidade de reprodução' if pt else 'Playback speed'}"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label></div>
+      <label>{'Velocidade' if pt else 'Speed'}<select class="cc-speed" aria-label="{'Velocidade de reprodução' if pt else 'Playback speed'}"><option value="0.5">0.5×</option><option value="1">1×</option><option value="2" selected>2×</option></select></label></div>
       <label class="cc-timeline-label"><span>{'Época' if pt else 'Season timeline'}</span><input class="cc-timeline" type="range" min="0" max="0" value="0" aria-label="{'Linha temporal da época' if pt else 'Season timeline'}"/></label>
       <div class="cc-group-note">{'Colegas de equipa juntos · ordem alfabética fixa' if pt else 'Teammates together · fixed alphabetical order'}</div>
       <div class="cc-straight">
@@ -52,12 +58,14 @@ STYLE = '''<style>
 .cc{box-sizing:border-box;display:flex;flex-direction:column;height:var(--cc-height,calc(100svh - 145px));min-height:420px;max-height:1000px;margin:8px 28px 12px;padding:10px 14px;background:#11151c;border:1px solid #2c3440;border-radius:16px;color:#edf1f7;font:12px Inter,system-ui,sans-serif;overflow:hidden}.cc *{box-sizing:border-box}.cc [hidden]{display:none!important}
 .cc-header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:7px;flex-shrink:0}.cc-context{font-size:10px;color:#abb7c6;margin:0 0 2px}.cc .cc-race{font:750 19px Inter,system-ui;margin:0 0 2px;letter-spacing:-.03em}.cc-round{font-size:10px;color:#aeb9c9;min-height:14px;margin:0}.cc-metrics{display:flex;gap:20px;flex-shrink:0}.cc-metrics>div{display:flex;flex-direction:column;gap:3px}.cc-metrics span{font-size:9px;color:#b5c0cf}.cc-metrics strong{font-size:23px;font-variant-numeric:tabular-nums;letter-spacing:-.04em}.cc-target{color:#d9ed9c}
 .cc-controls{display:flex;align-items:end;gap:10px;margin:0 0 5px;padding:5px 0;border-top:1px solid #2b3542;border-bottom:1px solid #2b3542;flex-shrink:0;flex-wrap:wrap}.cc-buttons{display:flex;gap:5px}.cc button:not(.cc-lane),.cc select{min-height:28px;padding:4px 9px;border:1px solid #414d60;border-radius:6px;background:#1b2430;color:#eef3fa;font:600 11px Inter,system-ui;cursor:pointer}.cc .cc-controls button.cc-primary{background:#e10600;border-color:#e10600;min-width:68px}.cc button:disabled,.cc select:disabled{opacity:.4;cursor:default}.cc button:focus-visible,.cc select:focus-visible,.cc input:focus-visible{outline:2px solid #d9ed9c;outline-offset:2px}.cc-controls label{display:flex;flex-direction:column;font-size:9px;color:#aab8cb;gap:2px}.cc-race-select{flex:1;min-width:160px}.cc-select{width:100%}.cc select{color-scheme:dark}.cc-timeline-label{display:flex;align-items:center;gap:12px;margin:0 0 4px;min-height:20px;font-size:10px;color:#abb7c9;flex-shrink:0}.cc-timeline{flex:1;width:0;min-height:20px;accent-color:#dcf3a0;cursor:pointer}.cc-group-note{font-size:9px;color:#aab8cb;margin-bottom:5px;flex-shrink:0}
+.cc-heading{flex:1;min-width:0}.cc-season-label{display:flex;align-items:center;gap:7px;font-size:9px;color:#abb7c6;margin-bottom:4px}.cc .cc-season{min-width:0;max-width:490px;flex:1;min-height:25px;padding:3px 6px;font-size:10px}
 .cc-straight{display:flex;flex:1;flex-direction:column;min-height:0}.cc-straight-heading,.cc .cc-lane{display:grid;grid-template-columns:85px 140px minmax(0,1fr) 82px;gap:10px}.cc-straight-heading{font-size:9px;color:#aab8cb;padding:0 7px 4px;flex-shrink:0}.cc-straight-heading>span:last-child{text-align:right}.cc-axis{display:flex;justify-content:space-between;margin:0 17px}.cc-axis span{width:0;display:flex;justify-content:center;white-space:nowrap}.cc-lanes{position:relative;flex:1;min-height:0;border:1px solid #38434e;border-radius:8px;overflow:hidden;overflow-anchor:none}.cc .cc-lane{position:absolute;left:0;top:0;width:100%;height:calc((100% - 2px)/var(--cc-count));min-height:0;padding:0 7px;border:0;border-bottom:1px solid #36434b;border-radius:0;align-items:center;background:#29353b;text-align:left;color:#e5ebf4;font:11px Inter,system-ui;cursor:pointer;box-shadow:inset 3px 0 var(--driver-color)}.cc .cc-lane.cc-team-alt{background:#303d44}.cc .cc-lane.cc-team-start{border-top:1px solid #8a9ba377}.cc .cc-lane:hover,.cc .cc-lane[aria-pressed=true],.cc .cc-lane.cc-hover{background:#40514f}.cc .cc-lane:focus-visible{outline:2px solid #d9ed9c;outline-offset:-2px}.cc-team-label{font-size:9px;color:#bfcbd5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cc-lane-name{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cc-lane-track{position:relative;height:100%;min-height:0;margin:0 17px;background:repeating-linear-gradient(90deg,#ffffff22 0 1px,transparent 1px 25%);border-left:1px solid #bac7cd;border-right:3px solid #e5ecd8}.cc-lane-track:after{content:'';position:absolute;right:-5px;top:0;bottom:0;width:8px;background:repeating-conic-gradient(#eff3e9 0 25%,#263137 0 50%) 0 0/8px 8px}.cc-lane-trail{position:absolute;left:0;top:calc(50% - 2px);height:4px;background:var(--driver-color);opacity:.24;border-radius:3px}.cc-lane-car{position:absolute;top:50%;width:28px;height:100%;max-height:18px;transform:translate(-50%,-50%);overflow:visible;z-index:1;filter:drop-shadow(0 1px 1px #0008)}.cc-car-halo{fill:none;stroke:#fff;stroke-width:2;opacity:0}.cc-lane[aria-pressed=true] .cc-car-halo,.cc-lane.cc-hover .cc-car-halo,.cc-lane:focus-visible .cc-car-halo{opacity:1}.cc-lane.cc-finished .cc-car-halo{opacity:1;stroke:#d9ed9c}.cc-lane-score{display:flex;justify-content:end;gap:8px;align-items:center;font-variant-numeric:tabular-nums}.cc-lane-score b{font-size:10px}.cc-lane-score small{font-size:9px;color:#b6c4d2;min-width:23px;text-align:right}
 .cc-driver-detail{display:flex;align-items:center;min-height:26px;flex-shrink:0;gap:6px;padding-top:5px;flex-wrap:nowrap}.cc-detail-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}.cc-detail-stat{display:flex;flex-direction:column;min-width:45px;gap:1px}.cc-detail-stat span{font-size:8px;color:#9ba8bc}.cc-detail-stat b{font-size:10px;font-variant-numeric:tabular-nums}.cc-explanation{font-size:9px;color:#d0d8e3;line-height:1.3;margin:5px 0 0;flex-shrink:0}.cc-note{display:none}.cc-warning{display:block;color:#ffd49d;font-size:9px;line-height:1.25;padding:3px 5px;border-left:2px solid #f3bb75;background:#d3951910;margin:2px 0 0;flex-shrink:0}
 @media(max-width:900px){.cc{margin-left:8px;margin-right:8px;padding:8px 10px}.cc-metrics strong{font-size:20px}.cc-straight-heading,.cc .cc-lane{grid-template-columns:70px 120px minmax(0,1fr) 70px;gap:7px}}
 @media(max-width:520px){.cc{padding:7px 6px;min-height:450px;border-radius:12px}.cc-header{gap:6px;flex-wrap:wrap;margin-bottom:4px}.cc-context{font-size:8px}.cc .cc-race{font-size:15px}.cc-round{font-size:9px}.cc-metrics{width:100%;justify-content:space-between;gap:8px}.cc-metrics>div{flex-direction:row;align-items:center;gap:6px}.cc-metrics span{font-size:8px;max-width:80px}.cc-metrics strong{font-size:18px}.cc-controls{gap:4px;display:grid;grid-template-columns:minmax(0,1fr) 52px;padding:4px 0;margin-bottom:3px}.cc-buttons{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.cc button:not(.cc-lane){min-height:27px;padding:3px;font-size:10px}.cc .cc-controls button.cc-primary{min-width:0}.cc-controls select{min-height:27px;padding:3px;font-size:10px}.cc-controls label{font-size:8px}.cc-race-select{min-width:0}.cc-timeline-label{font-size:9px;min-height:18px}.cc-group-note{font-size:8px;margin-bottom:4px}.cc-straight-heading,.cc .cc-lane{grid-template-columns:44px 82px minmax(0,1fr) 40px;gap:3px}.cc-straight-heading{padding-left:3px;padding-right:3px;font-size:8px}.cc .cc-lane{padding:0 3px;font-size:9px}.cc-team-label{font-size:8px}.cc-lane-name{font-size:9px}.cc-axis,.cc-lane-track{margin:0 10px}.cc-axis{font-size:8px}.cc-lane-car{width:22px;max-height:14px}.cc-lane-score{gap:3px}.cc-lane-score b{font-size:9px}.cc-lane-score small{font-size:7px;min-width:14px}.cc-driver-detail{gap:4px;min-height:26px}.cc-detail-name{font-size:9px}.cc-detail-stat{min-width:31px}.cc-detail-stat span{font-size:7px}.cc-detail-stat b{font-size:9px}.cc-explanation{font-size:8px;margin-top:3px}}
 @media(prefers-reduced-motion:reduce){.cc *{scroll-behavior:auto!important;transition:none!important}}
+@media(max-width:520px){.cc-heading{width:100%;flex-basis:100%}.cc-season-label{font-size:8px;gap:5px;margin-bottom:3px}.cc .cc-season{font-size:9px;min-height:25px;padding:3px}.cc-straight-heading,.cc .cc-lane{grid-template-columns:44px 82px minmax(0,1fr) 54px}.cc-lane-score{gap:2px}.cc-lane-score b{font-size:8px}}
 </style>'''
 
 
@@ -103,6 +111,17 @@ function championshipForwardProgress(values,cursor) {
   const at=Math.max(0,Math.min(values.length-1,cursor)),i=Math.floor(at);
   return i<values.length-1&&values[i+1]<values[i]?values[i]:championshipSeries(values)(at);
 }
+function championshipSampler(frames,order) {
+  const entries=frames.map(f=>new Map(f.standings.map(e=>[e.id,e])));
+  const curves=new Map(order.map(id=>{
+    const progress=entries.map(e=>Math.max(0,Math.min(1,e.get(id)?.progress||0)));
+    return [id,{progress,sampleProgress:championshipSeries(progress),samplePoints:championshipSeries(entries.map(e=>e.get(id)?.points||0))}];
+  }));
+  return at=>new Map(order.map(id=>{
+    const curve=curves.get(id),i=Math.floor(Math.max(0,Math.min(frames.length-1,at))),correcting=i<frames.length-1&&curve.progress[i+1]<curve.progress[i];
+    return [id,{p:correcting?curve.progress[i]:curve.sampleProgress(at),points:curve.samplePoints(at),opacity:championshipCorrectionOpacity(curve.progress,at)}];
+  }));
+}
 function mountChampionship(root,model,pt) {
   const section=root.querySelector('.cc');
   if(!section||!model?.frames?.length)return ()=>{};
@@ -111,24 +130,31 @@ function mountChampionship(root,model,pt) {
   const lanes=new Map(),entries=frames.map(f=>new Map(f.standings.map(e=>[e.id,e])));
   const reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
   const canPlay=model.playback&&frames.length>1;
-  const fmt=n=>n==null?'—':new Intl.NumberFormat(pt?'pt-PT':'en-GB',{maximumFractionDigits:2}).format(n);
+  const numberFormat=new Intl.NumberFormat(pt?'pt-PT':'en-GB',{maximumFractionDigits:2});
+  const fmt=n=>n==null?'—':numberFormat.format(Math.abs(n)<.000001?0:n);
   const team=d=>d.team||(pt?'Sem equipa':'Unassigned');
   const raceName=f=>f.name==='grid'?(pt?'Grelha de partida':'Starting grid'):f.name==='current'?(pt?'Classificação guardada':'Saved standings'):f.name;
   const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;};
   const svg=(tag,attrs={})=>{const e=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));return e;};
-  let index=0,cursor=0,playing=false,started=false,selected=order[0],hovered=null,raf=0,lastTime=0,speed=1,disposed=false,motion=null;
+  let index=0,cursor=0,playing=false,started=false,selected=order[0],hovered=null,raf=0,focusRaf=0,lastTime=0,speed=2,disposed=false,motion=null;
   let positions=new Map();
-  const curves=new Map(order.map(id=>[id,frames.map((_,i)=>Math.max(0,Math.min(1,entries[i].get(id)?.progress||0)))]));
+  const sample=championshipSampler(frames,order),detailValues=new Map();
+  const leaderPoints=()=>positions.size?Math.max(...[...positions.values()].map(p=>p.points)):0;
+  function paintDetail(){
+    const id=hovered||selected,p=positions.get(id),e=entries[index].get(id);if(!p||!e)return;
+    const gap=Math.max(0,leaderPoints()-p.points);
+    [['points',fmt(p.points)],['gap',gap?`\u2212${fmt(gap)}`:'—'],['progress',e.progress==null?'—':`${fmt(p.p*100)}%`]].forEach(([key,value])=>{const node=detailValues.get(key);if(node)node.textContent=value;});
+  }
   function state(){q('.cc-play').textContent=playing?(pt?'Pausar':'Pause'):(pt?'Reproduzir':'Play');q('.cc-play').setAttribute('aria-pressed',String(playing));section.dataset.playing=String(playing);}
   function showDriver(){
     const id=hovered||selected,d=drivers.get(id),e=entries[index].get(id);if(!d||!e)return;
     lanes.forEach((row,key)=>{row.setAttribute('aria-pressed',String(key===selected));row.classList.toggle('cc-hover',key===hovered);});
-    const detail=q('.cc-driver-detail');detail.replaceChildren();
+    const detail=q('.cc-driver-detail');detail.replaceChildren();detailValues.clear();
     const name=el('strong','cc-detail-name',`${d.name} · ${team(d)}`);name.style.borderLeft=`3px solid ${d.teamColor||d.color}`;name.style.paddingLeft='7px';detail.append(name);
-    [[pt?'Posição':'Position',frames[index].name==='grid'?'—':`P${e.position}`],[pt?'Pontos':'Points',fmt(e.points)],
-     [pt?'Diferença':'Gap',e.gap?`\u2212${fmt(e.gap)}`:'—'],[pt?'Progresso':'Progress',e.progress==null?'—':`${fmt(e.progress*100)}%`]].forEach(([label,value])=>{
-      const stat=el('div','cc-detail-stat');stat.append(el('span','',label),el('b','',value));detail.append(stat);
-    });section.dataset.selectedDriver=id;
+    [['position',pt?'Posição':'Position',frames[index].name==='grid'?'—':`P${e.position}`],['points',pt?'Pontos':'Points','0'],
+     ['gap',pt?'Diferença':'Gap','—'],['progress',pt?'Progresso':'Progress','0%']].forEach(([key,label,value])=>{
+      const stat=el('div','cc-detail-stat'),number=el('b',`cc-detail-${key}`,value);stat.append(el('span','',label),number);detail.append(stat);detailValues.set(key,number);
+    });section.dataset.selectedDriver=id;paintDetail();
   }
   function select(id,temporary=false){if(temporary)hovered=id;else{selected=id;hovered=null;}showDriver();}
   let lastTeam=null,group=-1;
@@ -155,19 +181,26 @@ function mountChampionship(root,model,pt) {
   q('.cc-lanes').style.setProperty('--cc-count',String(order.length));
   frames.forEach((f,i)=>{const option=el('option','',`${f.round?`R${f.round} · `:''}${raceName(f)}`);option.value=String(i);q('.cc-select').append(option);});
   q('.cc-timeline').max=String(frames.length-1);
-  function sample(at){return new Map(order.map(id=>{const values=curves.get(id);return[id,{p:championshipForwardProgress(values,at),opacity:championshipCorrectionOpacity(values,at)}];}));}
-  function paint(next){positions=next;positions.forEach((p,id)=>{const row=lanes.get(id);row.querySelector('.cc-lane-car').style.left=`${p.p*100}%`;row.querySelector('.cc-lane-car').style.opacity=String(p.opacity??1);row.querySelector('.cc-lane-trail').style.width=`${p.p*100}%`;row.dataset.visualProgress=String(p.p);});}
+  function paint(next){
+    positions=next;const leader=leaderPoints();
+    positions.forEach((p,id)=>{
+      const row=lanes.get(id),d=drivers.get(id),e=entries[index].get(id),gap=Math.max(0,leader-p.points);
+      row.querySelector('.cc-lane-car').style.left=`${p.p*100}%`;row.querySelector('.cc-lane-car').style.opacity=String(p.opacity??1);row.querySelector('.cc-lane-trail').style.width=`${p.p*100}%`;
+      row.dataset.visualProgress=String(p.p);row.dataset.animatedPoints=String(p.points);
+      row.querySelector('.cc-lane-points').textContent=fmt(p.points);row.querySelector('.cc-lane-gap').textContent=gap?`\u2212${fmt(gap)}`:'—';
+      const description=`${d.name}, ${team(d)}, ${fmt(p.points)} ${pt?'pontos':'points'}, ${frames[index].name==='grid'?raceName(frames[index]):`P${e.position}`}, ${pt?'diferença':'gap'} ${fmt(gap)}, ${e.progress==null?'—':fmt(p.p*100)+'%'}`;
+      row.setAttribute('aria-label',description);row.title=description;
+    });paintDetail();
+  }
   function display(next){
     index=next;const frame=frames[index],grid=frame.name==='grid';section.dataset.frame=String(index);section.dataset.grid=String(grid);
-    q('.cc-race').textContent=raceName(frame);q('.cc-round').textContent=`${frame.round?`${pt?'Ronda':'Round'} ${frame.round} · `:''}${frame.completed} / ${model.totalRaces} ${pt?'corridas concluídas':'races completed'}`;
+    q('.cc-race').textContent=raceName(frame);q('.cc-round').textContent=model.completedSeason&&frame.name==='current'?(pt?'Época concluída · classificação guardada':'Season complete · saved standings'):model.completedSeason&&!model.totalRaces?(pt?'Prévia da grelha · seleciona a classificação guardada':'Grid preview · choose saved standings'):`${frame.round?`${pt?'Ronda':'Round'} ${frame.round} · `:''}${frame.completed} / ${model.totalRaces} ${pt?'corridas concluídas':'races completed'}`;
     q('.cc-target').textContent=fmt(frame.target);q('.cc-remaining').textContent=fmt(frame.remaining);
     q('.cc-select').value=String(index);q('.cc-timeline').value=String(index);q('.cc-timeline').setAttribute('aria-valuetext',raceName(frame));
     q('.cc-prev').disabled=index===0;q('.cc-next').disabled=index===frames.length-1;
     order.forEach(id=>{
-      const d=drivers.get(id),e=entries[index].get(id),row=lanes.get(id);if(!e)return;
-      const description=`${d.name}, ${team(d)}, ${fmt(e.points)} ${pt?'pontos':'points'}, ${grid?raceName(frame):`P${e.position}`}, ${pt?'diferença':'gap'} ${fmt(e.gap)}, ${e.progress==null?'—':fmt(e.progress*100)+'%'}`;
-      row.setAttribute('aria-label',description);row.title=description;row.dataset.progress=String(e.progress??'');row.dataset.position=grid?'':String(e.position);
-      row.querySelector('.cc-lane-points').textContent=fmt(e.points);row.querySelector('.cc-lane-gap').textContent=e.gap?`\u2212${fmt(e.gap)}`:'—';
+      const e=entries[index].get(id),row=lanes.get(id);if(!e)return;
+      row.dataset.progress=String(e.progress??'');row.dataset.position=grid?'':String(e.position);
       row.classList.toggle('cc-finished',e.progress===1&&frame.remaining===0&&frame.target>0);
     });showDriver();
   }
@@ -176,7 +209,7 @@ function mountChampionship(root,model,pt) {
     if(disposed)return;const elapsed=Math.max(0,now-lastTime);lastTime=now;
     if(motion?.running){
       motion.elapsed+=elapsed;const t=Math.min(1,motion.elapsed/600),ease=t*t*(3-2*t),next=new Map();
-      motion.to.forEach((to,id)=>{const from=motion.from.get(id)||to;next.set(id,{...to,p:from.p+(to.p-from.p)*ease});});paint(next);
+      motion.to.forEach((to,id)=>{const from=motion.from.get(id)||to;next.set(id,{...to,p:from.p+(to.p-from.p)*ease,points:from.points+(to.points-from.points)*ease});});paint(next);
       if(t===1){motion=null;transition(false);}
     }else if(playing){
       cursor=advanceChampionship(cursor,elapsed,speed,frames.length-1);
@@ -198,13 +231,18 @@ function mountChampionship(root,model,pt) {
   };
   q('.cc-prev').addEventListener('click',()=>seek(index-1));q('.cc-next').addEventListener('click',()=>seek(index+1));
   q('.cc-select').addEventListener('change',e=>seek(Number(e.target.value)));q('.cc-timeline').addEventListener('input',e=>seek(Number(e.target.value)));
-  q('.cc-speed').addEventListener('change',e=>{speed=Number(e.target.value)||1;});
+  q('.cc-speed').addEventListener('change',e=>{speed=Number(e.target.value)||2;});
+  q('.cc-season').addEventListener('change',e=>{
+    if(!(model.catalog||[]).some(item=>item.key===e.target.value))return;
+    pause();const url=new URL(window.location.href);url.searchParams.set('championship',e.target.value);url.hash='championship';window.location.assign(url.href);
+  });
   q('.cc-play').disabled=!canPlay;q('.cc-speed').disabled=!canPlay;
   ['.cc-restart','.cc-select','.cc-timeline'].forEach(s=>q(s).disabled=frames.length<=1);
   const onMotion=()=>{if(reduce.matches){motion=null;cursor=index;paint(sample(index));transition(false);}};reduce.addEventListener('change',onMotion);
   const onVisibility=()=>{if(document.hidden)pause();};document.addEventListener('visibilitychange',onVisibility);
   function fit(){const nav=root.querySelector('nav[aria-label="Season sections"]'),chrome=(nav?.getBoundingClientRect().height||70)+(window.innerWidth<520?112:80);section.style.setProperty('--cc-height',`${Math.max(420,window.innerHeight-chrome)}px`);}
   fit();window.addEventListener('resize',fit);display(0);paint(sample(0));section.dataset.cursor='0';transition(false);state();
-  return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('resize',fit);reduce.removeEventListener('change',onMotion);document.removeEventListener('visibilitychange',onVisibility);};
+  if(model.selectedKey&&window.location.hash==='#championship')focusRaf=requestAnimationFrame(()=>{const heading=root.querySelector('#championship');if(heading){heading.style.scrollMarginTop=`${(root.querySelector('nav[aria-label="Season sections"]')?.getBoundingClientRect().height||70)+8}px`;heading.scrollIntoView({block:'start',behavior:'instant'});}});
+  return ()=>{disposed=true;cancelAnimationFrame(raf);cancelAnimationFrame(focusRaf);window.removeEventListener('resize',fit);reduce.removeEventListener('change',onMotion);document.removeEventListener('visibilitychange',onVisibility);};
 }
 '''

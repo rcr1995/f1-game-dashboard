@@ -1136,7 +1136,8 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
     """
     return "\n".join(line.lstrip() for line in html.split("\n"))
 
-def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None, lang: str = "en", circuit_model: dict | None = None) -> str:
+def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None, lang: str = "en", circuit_model: dict | None = None, championship_model: dict | None = None) -> str:
+    chart_model = championship_model if championship_model is not None else circuit_model
     next_race_target_iso = ""
     if calendar_raw is not None and not calendar_raw.empty:
         cal = get_calendar_for_league(calendar_raw, meta)
@@ -2455,7 +2456,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         if lang == 'pt' else
         [('overview', 'Overview'), ('teams', 'Teams & battles'), ('calendar', 'Calendar'), ('statistics', 'Statistics'), ('legacy', 'Legacy')]
     )
-    if circuit_model is not None:
+    if chart_model is not None:
         sections.insert(3, ('championship', 'Campeonato' if lang == 'pt' else 'Championship'))
     section_nav = '<nav class="p-section-nav" aria-label="Season sections">' + ''.join(
         f'<button type="button" data-section="{section_id}">{label}</button>' for section_id, label in sections
@@ -2780,7 +2781,7 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         </div>
 
         <!-- ROW 4: HOF -->
-        {championship_circuit_ui.render(circuit_model, lang)}
+        {championship_circuit_ui.render(chart_model, lang)}
         <div class="p-section-label" id="statistics"><span>05</span> {_tr(lang, "league_statistics")}</div>
         <div style="padding: 0 2rem;">
             <div class="p-stats-grid">{stats_html}</div>

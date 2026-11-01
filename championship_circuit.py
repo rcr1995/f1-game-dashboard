@@ -6,6 +6,7 @@ revised results and adjustments without keeping a second results database.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 
@@ -13,6 +14,7 @@ import pandas as pd
 
 import dashboard_core as core
 import league_config as config
+from circuit_records import circuit_key
 from league_runtime import matching_configured_key, LeagueAuthorityError
 from race_import import infer_scoring_profile, ScoringProfileError
 
@@ -26,6 +28,44 @@ CANCELLED = {"cancelled", "canceled", "cancelado", "cancelada"}
 DONE = {"done", "completed", "complete", "finished", "concluído", "concluída"}
 COLORS = ("#ffad45", "#57d3ff", "#e6a0ff", "#a8e45c", "#ff708e", "#8caaFF",
           "#ffdc74", "#5ae0b1", "#eaa278", "#cfb6ff", "#65d3ce", "#ff9fd8")
+
+
+def championship_catalog(results: pd.DataFrame) -> list[dict]:
+    """Published league seasons, with stable keys independent of row ordering.
+
+    The exact three-part identity is also used by the existing league selector.
+    Labels carry no standings or winner information before playback starts.
+    """
+    columns = ["Game", "SeasonLabel", "League Name"]
+    if results is None or results.empty or not set(columns).issubset(results.columns):
+        return []
+    catalog = []
+    for _, rows in results.groupby(columns, sort=False, dropna=False):
+        if any(pd.isna(rows.iloc[0][column]) or not str(rows.iloc[0][column]).strip()
+               for column in columns):
+            continue
+        _, meta = core.latest_league_slice(rows)
+        identity = [str(meta[column]) for column in columns]
+        encoded = json.dumps(identity, ensure_ascii=False, separators=(",", ":"))
+        catalog.append({"key": hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:24],
+                        "label": " · ".join(identity), "meta": meta})
+    return sorted(catalog, key=lambda item: (
+        -core.season_sort_key(item["meta"]["SeasonLabel"]),
+        str(item["meta"]["SeasonLabel"]).casefold(), str(item["meta"]["SeasonLabel"]),
+        str(item["meta"]["Game"]).casefold(), str(item["meta"]["Game"]),
+        str(item["meta"]["League Name"]).casefold(), str(item["meta"]["League Name"])))
+
+
+def select_championship(results: pd.DataFrame, key: str | None = None) -> dict | None:
+    """Resolve only a catalog key; an unknown key uses the app's latest league."""
+    catalog = championship_catalog(results)
+    if not catalog:
+        return None
+    selected = next((item for item in catalog if item["key"] == key), None)
+    if selected is not None:
+        return selected
+    _, latest = core.latest_league_slice(results)
+    return next((item for item in catalog if item["meta"] == latest), catalog[0])
 
 
 def event_maximum(profile: config.ResolvedScoringProfile) -> float:
@@ -54,6 +94,49 @@ def _slice(results: pd.DataFrame, meta: dict) -> pd.DataFrame:
             return rows.iloc[:0]
         rows = rows[rows[column].fillna("").astype(str).str.strip().eq(str(meta.get(column, "")).strip())]
     return rows
+
+
+def _archived_calendar(results: pd.DataFrame, calendar: pd.DataFrame, history: pd.DataFrame,
+                       meta: dict, tables: config.ConfigTables, key) -> pd.DataFrame:
+    """Recover only published rounds of a closed archive, never a future schedule.
+
+    Older legacy seasons without upcoming calendars are treated as finished by
+    the existing Hall of Fame. Their numeric published round order is the only
+    available chronology. An active/configured league or an ambiguous calendar
+    must retain the normal unavailable-calendar fallback.
+    """
+    if history.empty:
+        return pd.DataFrame()
+    if calendar is not None and not calendar.empty and "League Name" in calendar:
+        names = calendar["League Name"].fillna("").astype(str).str.strip().str.casefold()
+        if names.eq(str(meta.get("League Name", "")).strip().casefold()).any():
+            return pd.DataFrame()
+    if key:
+        if config.configured_league_status(tables, key.league_id) != "Completed":
+            return pd.DataFrame()
+    else:
+        _, latest = core.latest_league_slice(results)
+        season = core.season_sort_key(meta.get("SeasonLabel", ""))
+        if not 0 < season < core.season_sort_key(latest.get("SeasonLabel", "")):
+            return pd.DataFrame()
+    rounds = pd.to_numeric(history["Round"], errors="coerce")
+    if rounds.isna().any() or (rounds <= 0).any() or (rounds % 1 != 0).any():
+        return pd.DataFrame()
+    published = history.assign(Round=rounds.astype(int))
+    unique_rounds = sorted(published.Round.unique())
+    if unique_rounds != list(range(1, int(rounds.max()) + 1)):
+        return pd.DataFrame()
+    entries = []
+    for rnd, rows in published.groupby("Round", sort=True):
+        names = rows["GP Name"].fillna("").astype(str).str.strip()
+        if names.eq("").any() or names.str.casefold().nunique() != 1 or not rows.Type.eq("R").any():
+            return pd.DataFrame()
+        entries.append({"League Name": meta["League Name"], "Round": int(rnd),
+                        "GP Name": names.iloc[0], "Date": pd.NaT, "Status": "Done",
+                        "Has Sprint": bool(rows.Type.eq("SR").any())})
+    recovered = pd.DataFrame(entries)
+    recovered.attrs["has_explicit_sprint_schedule"] = True
+    return recovered
 
 
 def _drivers(names: set[str]) -> list[dict]:
@@ -155,9 +238,16 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
             names.update(roster["Driver Name"].astype(str))
     except (config.LeagueConfigError, LeagueAuthorityError, ValueError):
         config_error = True
+    if cal.empty and not config_error:
+        cal = _archived_calendar(results, calendar, history, meta, tables, key)
+        if not cal.empty:
+            notes.append("archive_calendar")
     drivers = _drivers(names)
+    final_summary = (not rows.empty and history.empty and "IsSeasonFinal" in rows
+                     and rows["IsSeasonFinal"].fillna(False).astype(bool).all())
     model = {"drivers": drivers, "frames": [], "meta": dict(meta), "notes": notes,
-             "playback": True, "defaultIndex": 0, "totalRaces": 0}
+             "playback": True, "defaultIndex": 0, "totalRaces": 0,
+             "completedSeason": bool(final_summary)}
     if not drivers:
         notes.append("no_drivers")
     observed_sprints = set(history.loc[history.Type.eq("SR"), "Round"]) if not history.empty else set()
@@ -172,8 +262,10 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
         cal = cal.sort_values(["Date", "Round"], na_position="last", kind="stable")
         # Explicit flags are authoritative. A legacy workbook without the column
         # uses the user's agreed real-life 2026 venue rule, never another year.
-        explicit = calendar.attrs.get("has_explicit_sprint_schedule", "Has Sprint" in calendar.columns)
-        if not explicit and str(meta.get("SeasonLabel", "")).startswith("2026"):
+        explicit = cal.attrs.get("has_explicit_sprint_schedule",
+                                 calendar.attrs.get("has_explicit_sprint_schedule", "Has Sprint" in calendar.columns))
+        if (not explicit and not cal.Status.isin(DONE).all()
+                and str(meta.get("SeasonLabel", "")).startswith("2026")):
             cal["Has Sprint"] = cal["GP Name"].astype(str).str.strip().str.casefold().isin(SPRINT_VENUES_2026)
             notes.append("sprint_2026")
         elif "Has Sprint" not in cal:
@@ -182,6 +274,8 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
 
     active_cal = cal[~cal.Status.isin(CANCELLED) | cal.Round.isin(race_rounds)] if not cal.empty else cal
     model["totalRaces"] = len(active_cal)
+    if not active_cal.empty and active_cal.Status.isin(DONE).all():
+        model["completedSeason"] = True
     opportunities = {}
     team_opportunities = {}
     scoring_ok = not cal.empty and not config_error
@@ -224,6 +318,10 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
                                  for e in active_cal.to_dict("records")
                                  for kind in (("SR", "R") if e["Has Sprint"] else ("R",))):
             remaining = 0.0
+        elif final_summary and cal.empty:
+            # A saved Season Final is an explicit completed championship. Its
+            # totals are usable without guessing the missing races or scoring.
+            remaining = 0.0
         leader = standings[0]["points"] if standings else 0.0
         target = leader + remaining if remaining is not None else None
         pending = [event for event in opportunities if event not in consumed]
@@ -248,7 +346,7 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
             history_ok = False
         for event in cal.to_dict("records"):
             group = history[history.Round.eq(event["Round"])]
-            if not group.empty and set(group["GP Name"].str.strip().str.casefold()) != {str(event["GP Name"]).strip().casefold()}:
+            if not group.empty and {circuit_key(name) for name in group["GP Name"].astype(str)} != {circuit_key(str(event["GP Name"]))}:
                 history_ok = False
             if event["Status"] in DONE and event["Round"] not in race_rounds:
                 history_ok = False
@@ -258,6 +356,10 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
         history_ok = False
     if not rows.empty and history.empty:
         history_ok = False
+    if model["completedSeason"] and not scoring_ok:
+        # Archived points alone cannot establish each historical finish-line
+        # target. Offer the exact final snapshot instead of stationary-car replay.
+        history_ok = False
 
     if not history_ok:
         notes.append("history_unavailable")
@@ -266,7 +368,11 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
                     if e["Status"] in DONE or e["Round"] in race_rounds for kind in ("R", "SR")}
         summary = history.empty and not rows.empty
         selected = rows if summary else history
-        model["frames"] = [frame(selected, name="current", rnd=None, completed=len(race_rounds) if not summary else len(cal[cal.Status.isin(DONE)]), consumed=consumed, summary=summary)]
+        completed = len(race_rounds)
+        if summary:
+            completed = int(cal["Status"].isin(DONE).sum()) if "Status" in cal else 0
+        model["frames"] = [frame(selected, name="current", rnd=None, completed=completed,
+                                 consumed=consumed, summary=summary)]
     else:
         model["frames"].append(frame(history.iloc[:0], name="grid", rnd=0, completed=0, consumed=set()))
         consumed = set()

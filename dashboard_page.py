@@ -1124,10 +1124,25 @@ if view_page != "overview":
     ) + '</nav><style>.page-links {display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 20px}.page-links a {color:#fff;text-decoration:none;padding:8px 12px;border:1px solid #303643;border-radius:20px}</style>')
 
 if view_page == "overview":
+    import championship_circuit
+
     circuit_model = load_championship_circuit(str(workbook_source.path), workbook_source.fingerprint, latest_meta)
-    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang, circuit_model=circuit_model)
+    selected_championship = championship_circuit.select_championship(base_all, st.query_params.get("championship"))
+    championship_model = circuit_model
+    if selected_championship is not None:
+        selected_meta = selected_championship["meta"]
+        if selected_meta != latest_meta:
+            championship_model = load_championship_circuit(str(workbook_source.path), workbook_source.fingerprint, selected_meta)
+        # Keep cached checkpoints immutable and the rest of the dashboard on the
+        # ongoing league; this selector belongs only to championship playback.
+        championship_model = {
+            **championship_model,
+            "catalog": championship_circuit.championship_catalog(base_all),
+            "selectedKey": selected_championship["key"],
+        }
+    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang, circuit_model=circuit_model, championship_model=championship_model)
     html_dashboard = html_dashboard.replace("</body>", f"{MOBILE_DASHBOARD_CSS}</body>")
-    dashboard_surface.render(html_dashboard, lang=lang, key="overview_surface", circuit=circuit_model)
+    dashboard_surface.render(html_dashboard, lang=lang, key="overview_surface", circuit=championship_model)
 
 
 

@@ -32,6 +32,94 @@ class ChampionshipCircuitTests(unittest.TestCase):
                                    kwargs.get("calendar", self.calendar), kwargs.get("meta", self.meta),
                                    kwargs.get("tables", self.tables))
 
+    def test_catalog_is_exact_stable_and_labels_do_not_reveal_standings(self):
+        rows = pd.DataFrame([
+            self.result(), self.result("Bob", 18, 2),
+            self.result(Game="Another game"),
+            self.result(**{"League Name": "Another league"}),
+            self.result(SeasonLabel="2026-T02"),
+            self.result(Game="f1 27"),
+        ])
+        catalog = circuit.championship_catalog(rows)
+        self.assertEqual(len(catalog), 5)
+        self.assertEqual(len({entry["key"] for entry in catalog}), 5)
+        self.assertEqual(catalog, circuit.championship_catalog(rows.sample(frac=1, random_state=2)))
+        for entry in catalog:
+            self.assertEqual(entry["label"], " · ".join(entry["meta"][column] for column in ("Game", "SeasonLabel", "League Name")))
+            self.assertRegex(entry["key"], r"^[a-f0-9]{24}$")
+            self.assertNotIn("points", entry["label"].lower())
+        _, latest = core.latest_league_slice(rows)
+        self.assertEqual(circuit.select_championship(rows)["meta"], latest)
+        self.assertEqual(circuit.select_championship(rows, "unknown")["meta"], latest)
+        for entry in catalog:
+            self.assertEqual(circuit.select_championship(rows, entry["key"]), entry)
+
+    def test_catalog_handles_missing_and_blank_identities(self):
+        for rows in (pd.DataFrame(), pd.DataFrame({"Driver": ["Alice"]}),
+                     pd.DataFrame([self.result(SeasonLabel=None)]),
+                     pd.DataFrame([self.result(**{"League Name": "  "})])):
+            with self.subTest(rows=rows):
+                self.assertEqual(circuit.championship_catalog(rows), [])
+                self.assertIsNone(circuit.select_championship(rows))
+
+    def test_archived_races_replay_from_published_round_order_without_future_sprints(self):
+        old_meta = {**self.meta, "SeasonLabel": "2026-T02"}
+        rows = [self.result(SeasonLabel="2026-T02", points=25),
+                self.result("Bob", 18, 2, SeasonLabel="2026-T02"),
+                self.result("Alice", 18, 2, 2, SeasonLabel="2026-T02"),
+                self.result("Bob", 25, 1, 2, SeasonLabel="2026-T02"),
+                self.result()]
+        model = self.build(rows, meta=old_meta, calendar=self.calendar.iloc[:0], tables=config.empty_config_tables())
+        self.assertTrue(model["playback"])
+        self.assertIn("archive_calendar", model["notes"])
+        self.assertNotIn("calendar_unavailable", model["notes"])
+        self.assertNotIn("sprint_2026", model["notes"])
+        self.assertEqual([f["round"] for f in model["frames"]], [0, 1, 2])
+        self.assertEqual(model["totalRaces"], 2)
+        self.assertEqual(model["frames"][0]["remainingSprints"], 0)
+        self.assertEqual(model["frames"][1]["remaining"], 25)
+        self.assertEqual(model["frames"][-1]["remaining"], 0)
+        self.assertEqual(model["frames"][-1]["standings"][0]["progress"], 1)
+
+    def test_archive_recovery_rejects_gaps_unfinished_config_and_conflicting_calendar(self):
+        old_meta = {**self.meta, "SeasonLabel": "2026-T02"}
+        old_rows = [self.result(SeasonLabel="2026-T02"), self.result()]
+        missing_round = [{**old_rows[0], "Round": 2}, old_rows[1]]
+        model = self.build(missing_round, meta=old_meta, calendar=self.calendar.iloc[:0], tables=config.empty_config_tables())
+        self.assertFalse(model["playback"])
+        # Same-name calendar blocks cannot be bypassed after identity validation fails.
+        conflict = self.calendar.copy()
+        conflict["Round"] = 1
+        self.assertFalse(self.build(old_rows, meta=old_meta, calendar=conflict, tables=config.empty_config_tables())["playback"])
+        # A configured Active league stays active even if another newer scope exists.
+        rows = [self.result(), self.result(SeasonLabel="2028-T01")]
+        active = self.build(rows, calendar=self.calendar.iloc[:0])
+        self.assertFalse(active["playback"])
+        self.assertNotIn("archive_calendar", active["notes"])
+        completed_tables = config.config_tables_from_setup(replace(self.setup, status="Completed"))
+        finished = self.build(rows, calendar=self.calendar.iloc[:0], tables=completed_tables)
+        self.assertTrue(finished["playback"])
+        self.assertEqual(finished["frames"][-1]["remaining"], 0)
+
+    def test_archive_without_verified_historical_scoring_uses_only_final_snapshot(self):
+        old_meta = {**self.meta, "SeasonLabel": "2026-T02"}
+        rows = [self.result(SeasonLabel="2026-T02", points=25),
+                self.result("Bob", 18, 2, SeasonLabel="2026-T02"),
+                self.result("Alice", 18, 2, 2, SeasonLabel="2026-T02"),
+                self.result("Bob", 26, 1, 2, SeasonLabel="2026-T02"),
+                self.result()]
+        model = self.build(rows, meta=old_meta, calendar=self.calendar.iloc[:0], tables=config.empty_config_tables())
+        self.assertFalse(model["playback"])
+        self.assertTrue(model["completedSeason"])
+        self.assertIn("scoring_unavailable", model["notes"])
+        self.assertIn("history_unavailable", model["notes"])
+        self.assertEqual(len(model["frames"]), 1)
+        snapshot = model["frames"][0]
+        self.assertEqual((snapshot["target"], snapshot["remaining"]), (44, 0))
+        self.assertEqual([entry["points"] for entry in snapshot["standings"]], [44, 43])
+        self.assertEqual(snapshot["standings"][0]["progress"], 1)
+        self.assertAlmostEqual(snapshot["standings"][1]["progress"], 43/44)
+
     def test_preseason_grid_uses_roster_and_all_scoring_opportunities(self):
         model = self.build()
         self.assertEqual([d["name"] for d in model["drivers"]], ["Alice", "Bob"])
@@ -173,6 +261,20 @@ class ChampionshipCircuitTests(unittest.TestCase):
         self.assertEqual(model["frames"][0]["standings"][0]["progress"],1)
         self.assertIn("history_unavailable",model["notes"])
 
+    def test_summary_only_archive_has_final_target_without_inventing_calendar(self):
+        rows = [self.result(points=100, IsSeasonFinal=True),
+                self.result("Bob", 75, 2, IsSeasonFinal=True)]
+        model = self.build(rows, calendar=self.calendar.iloc[:0])
+        self.assertTrue(model["completedSeason"])
+        self.assertFalse(model["playback"])
+        self.assertEqual(model["totalRaces"], 0)
+        self.assertEqual(len(model["frames"]), 1)
+        snapshot = model["frames"][0]
+        self.assertEqual((snapshot["target"], snapshot["remaining"], snapshot["completed"]), (100, 0, 0))
+        self.assertEqual([entry["progress"] for entry in snapshot["standings"]], [1, .75])
+        self.assertIn("history_unavailable", model["notes"])
+        self.assertNotIn("archive_calendar", model["notes"])
+
     def test_missing_history_and_duplicate_results_disable_playback(self):
         self.calendar.loc[0,"Status"]="Done"
         for rows in ([self.result(rnd=2)], [self.result(),self.result()]):
@@ -201,6 +303,25 @@ class ChampionshipCircuitTests(unittest.TestCase):
         cal["Has Sprint"]=False
         model=self.build(rows,calendar=cal,meta=meta,tables=config.empty_config_tables())
         self.assertEqual(model["frames"][-1]["remaining"],25)
+
+    def test_completed_legacy_calendar_uses_recorded_sprints_and_existing_gp_aliases(self):
+        meta = {**self.meta, "SeasonLabel": "2026-T01"}
+        cal = self.calendar.copy()
+        cal["Status"] = "Done"
+        cal["GP Name"] = ["Mexico City GP", "São Paulo GP"]
+        cal = cal.drop(columns="Has Sprint")
+        cal.attrs["has_explicit_sprint_schedule"] = False
+        rows = [self.result(SeasonLabel="2026-T01", **{"GP Name": "Mexican GP"}),
+                self.result(rnd=2, SeasonLabel="2026-T01", **{"GP Name": "Brazilian GP"})]
+        model = self.build(rows, calendar=cal, meta=meta, tables=config.empty_config_tables())
+        self.assertTrue(model["playback"])
+        self.assertTrue(model["completedSeason"])
+        self.assertEqual(len(model["frames"]), 3)
+        self.assertNotIn("sprint_2026", model["notes"])
+        self.assertEqual(model["frames"][-1]["remaining"], 0)
+        self.assertEqual(model["frames"][-1]["standings"][0]["progress"], 1)
+        rows[1]["GP Name"] = "Australian GP"
+        self.assertFalse(self.build(rows, calendar=cal, meta=meta, tables=config.empty_config_tables())["playback"])
 
     def test_calendar_loader_preserves_presence_of_explicit_sprint_column(self):
         for explicit in [True,False]:
