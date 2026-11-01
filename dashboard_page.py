@@ -999,6 +999,26 @@ def load_dashboard_data(workbook_path: str, revision: str):
     return warnings, standings, calendar
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def load_championship_circuit(workbook_path: str, revision: str, meta: dict):
+    import championship_circuit
+    import league_config
+    _, standings, calendar = load_dashboard_data(workbook_path, revision)
+    try:
+        tables = league_config.load_config_tables(workbook_path)
+    except league_config.LeagueConfigError:
+        # A damaged optional rule sheet must not break the rest of Dashboard.
+        model = championship_circuit.build_model(standings, calendar, meta)
+        if 'scoring_unavailable' not in model['notes']:
+            model['notes'].append('scoring_unavailable')
+        for frame in model['frames']:
+            frame['target'] = frame['remaining'] = None
+            for driver in frame['standings']:
+                driver['progress'] = None
+        return model
+    return championship_circuit.build_model(standings, calendar, meta, tables)
+
+
 lang_name = ui_preferences.language_name(st.session_state)
 lang = LANGS[lang_name]
 THEME_CFG = dark_palette()
@@ -1104,9 +1124,10 @@ if view_page != "overview":
     ) + '</nav><style>.page-links {display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 20px}.page-links a {color:#fff;text-decoration:none;padding:8px 12px;border:1px solid #303643;border-radius:20px}</style>')
 
 if view_page == "overview":
-    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang)
+    circuit_model = load_championship_circuit(str(workbook_source.path), workbook_source.fingerprint, latest_meta)
+    html_dashboard = render_puskas_dashboard(latest_gp, calendar_raw, st_tbl_latest, latest_meta, base_all, lang=lang, circuit_model=circuit_model)
     html_dashboard = html_dashboard.replace("</body>", f"{MOBILE_DASHBOARD_CSS}</body>")
-    dashboard_surface.render(html_dashboard, lang=lang, key="overview_surface")
+    dashboard_surface.render(html_dashboard, lang=lang, key="overview_surface", circuit=circuit_model)
 
 
 

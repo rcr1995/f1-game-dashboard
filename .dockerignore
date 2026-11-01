@@ -36,6 +36,8 @@
 !dashboard_surface.py
 !workbook_upload.py
 !calendar_review.py
+!championship_circuit.py
+!championship_circuit_ui.py
 !F1_Standings.xlsx
 !.streamlit
 .streamlit/**

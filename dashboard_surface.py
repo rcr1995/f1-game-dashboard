@@ -4,8 +4,9 @@ import re
 from uuid import uuid4
 import streamlit as st
 from puskas_html import hero_image_options
+from championship_circuit_ui import JS as CIRCUIT_JS
 
-JS = r"""
+JS = CIRCUIT_JS + r"""
 // This memory belongs to this browser document, not the shared Python process.
 // The only persisted preference is the previous public image ID.
 const heroStorageKey = 'f1puskasleague.hero.previous.v1';
@@ -45,12 +46,14 @@ export default function ({parentElement, data}) {
     }
   }
   const pt = data.lang === 'pt';
+  const disposeCircuit = mountChampionship(root, data.circuit, pt);
   const find = id => root.querySelector('#'+id);
   const timers = [];
   const listen = (el, name, fn) => el?.addEventListener(name, fn);
   root.querySelectorAll('[data-section]').forEach(btn=>listen(btn,'click',()=>{
     const target = find(btn.dataset.section);
-    target?.scrollIntoView({block:'start',behavior:'smooth'});
+    if(target)target.style.scrollMarginTop=((root.querySelector('.p-section-nav')?.getBoundingClientRect().height||70)+24)+'px';
+    target?.scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
   }));
   const toggles = {'btn-full-standings':'standings-extra','btn-full-c-standings':'c-standings-extra',
     'btn-full-team-chart':'team-chart-extra','btn-full-results':'race-extra','btn-full-calendar':'cal-extra','btn-all-drivers':'drivers-extra'};
@@ -93,7 +96,7 @@ export default function ({parentElement, data}) {
   document.addEventListener('click',outside);
   if(data.target){const tick=()=>{const seconds=Math.max(0,Math.floor((Date.parse(data.target)-Date.now())/1000));
     [Math.floor(seconds/86400),Math.floor(seconds/3600)%24,Math.floor(seconds/60)%60,seconds%60].forEach((n,i)=>{const el=find(['cd-days','cd-hours','cd-minutes','cd-seconds'][i]);if(el)el.textContent=String(n).padStart(2,'0');});};tick();timers.push(setInterval(tick,1000));}
-  return ()=>{hide();clearTimeout(closeTimer);timers.forEach(clearInterval);document.removeEventListener('keydown',keydown);document.removeEventListener('click',outside);};
+  return ()=>{disposeCircuit();hide();clearTimeout(closeTimer);timers.forEach(clearInterval);document.removeEventListener('keydown',keydown);document.removeEventListener('click',outside);};
 }
 """
 
@@ -130,11 +133,11 @@ CSS = """
 @media(max-width:850px){.surface .p-calendar-grid {grid-template-columns:1fr}.surface .p-section-nav a {padding:8px 10px;font-size:10px}}
 """
 
-def render(html: str, *, lang: str, key: str) -> None:
+def render(html: str, *, lang: str, key: str, circuit: dict | None = None) -> None:
     target = re.search(r'var targetIso = "([^"]*)"', html)
     # Styles and scripts in the source are isolated; executable behavior comes from JS only.
     component = st.components.v2.component('f1_public_surface', html='<div class="surface"></div>', js=JS, css=CSS)
-    data = {'html':html, 'lang':lang, 'target':target.group(1) if target else ''}
+    data = {'html':html, 'lang':lang, 'target':target.group(1) if target else '', 'circuit':circuit}
     if '<div class="p-hero"' in html:
         if 'ui_hero_visit' not in st.session_state:
             st.session_state['ui_hero_visit'] = uuid4().hex

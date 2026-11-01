@@ -227,6 +227,7 @@ def load_calendar_data(source: str | Path | BinaryIO) -> pd.DataFrame:
     result["Round"] = pd.to_numeric(result["Round"], errors="coerce").astype("Int64")
     result["Date"] = pd.to_datetime(result["Date"], errors="coerce")
     result = result[~(result["GP Name"].eq("") & result["Date"].isna())].copy()
+    result.attrs["has_explicit_sprint_schedule"] = "Has Sprint" in df.columns
     return result.sort_values(["Round", "Date", "GP Name"], na_position="last").reset_index(drop=True)
 
 

@@ -22,6 +22,18 @@ points within each team. Equal scores use alphabetical ordering for stability.
 - Driver and constructor standings with F1-style tie-breakers
 - Sprint points included in totals while race-only statistics remain accurate
 - Championship progression, lead changes, momentum, and form tables
+- Interactive championship circuit above League Statistics: published Race/Sprint
+  checkpoints, play/pause, restart, race navigation, speeds, and synchronized
+  keyboard/touch driver details. The finish-line target is leader points plus
+  the maximum still available to one driver, using configured scoring revisions
+  and eligible fastest-lap bonuses, or the existing verified legacy points map.
+  Cancelled future races are excluded; corrected Excel points are never rescored.
+  Missing/ambiguous history disables playback without hiding current standings.
+  Unknown scoring/calendars show an explanation instead of an invented target.
+  For legacy 2026 calendars without `Has Sprint`, the agreed fallback is the
+  [official 2026 Sprint venues](https://www.fia.com/news/fia-and-formula-1-announce-2026-sprint-calendar):
+  China, Miami, Canada, Britain, Netherlands, Singapore. The season year applies
+  to postponed rounds in 2027; an explicit Excel `Has Sprint` column takes priority.
 - Latest-race dashboard and calendar status, with completed-Race standings on hover, focus, or tap
 - Circuit win records and all-time title counts
 - English and Portuguese interface

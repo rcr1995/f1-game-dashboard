@@ -3,6 +3,7 @@ import base64
 import html
 import re
 import season_insights
+import championship_circuit_ui
 from pathlib import Path
 from functools import lru_cache
 from circuit_records import get_circuit_record, circuit_key, league_lap_records
@@ -102,7 +103,7 @@ _T = {
         "leads": "leads",
         "by": "by",
         "pts": "pts",
-        "finish_line": "Finish Line",
+        "finish_line": "Challenger’s maximum",
         "points_still_open": "Points Still Open",
         "races_left": "Races left",
         "magic_no_p1": "Magic No. {p1_name} (P1)",
@@ -204,7 +205,7 @@ _T = {
         "leads": "lidera",
         "by": "por",
         "pts": "pts",
-        "finish_line": "Meta",
+        "finish_line": "Máximo do perseguidor",
         "points_still_open": "Pts em jogo",
         "races_left": "Corridas rest.",
         "magic_no_p1": "Nº Mágico {p1_name} (P1)",
@@ -1135,7 +1136,7 @@ def render_puskas_hero(meta: dict, calendar_raw: pd.DataFrame = None, lang: str 
     """
     return "\n".join(line.lstrip() for line in html.split("\n"))
 
-def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None, lang: str = "en") -> str:
+def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame, st_tbl_latest: pd.DataFrame, meta: dict, base_all: pd.DataFrame = None, lang: str = "en", circuit_model: dict | None = None) -> str:
     next_race_target_iso = ""
     if calendar_raw is not None and not calendar_raw.empty:
         cal = get_calendar_for_league(calendar_raw, meta)
@@ -1623,6 +1624,13 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
             max_pts_per_race = 25.0
 
         max_available = int(races_left * max_pts_per_race)
+        if circuit_model and circuit_model.get('frames'):
+            checkpoint = circuit_model['frames'][circuit_model['defaultIndex']]
+            budget = checkpoint.get('remainingTeam' if is_team else 'remaining')
+            if budget is not None:
+                max_available = int(budget) if float(budget).is_integer() else budget
+                races_left = checkpoint['remainingRaces']
+                max_pts_per_race = checkpoint.get('nextTeamWeekendMaximum' if is_team else 'nextWeekendMaximum', max_pts_per_race)
         magic_number = p2_pts + max_available - p1_pts + 1
         
         p3_name, magic_p2 = "", None
@@ -2447,6 +2455,8 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         if lang == 'pt' else
         [('overview', 'Overview'), ('teams', 'Teams & battles'), ('calendar', 'Calendar'), ('statistics', 'Statistics'), ('legacy', 'Legacy')]
     )
+    if circuit_model is not None:
+        sections.insert(3, ('championship', 'Campeonato' if lang == 'pt' else 'Championship'))
     section_nav = '<nav class="p-section-nav" aria-label="Season sections">' + ''.join(
         f'<button type="button" data-section="{section_id}">{label}</button>' for section_id, label in sections
     ) + f'<a href="/?view=race-centre&lang={lang}">{"Centro de corridas" if lang == "pt" else "Race Centre"}</a><a href="/?view=circuits&lang={lang}">{"Circuitos" if lang == "pt" else "Circuits"}</a><a href="/?view=archive&lang={lang}">{"Arquivo" if lang == "pt" else "Archive"}</a>' + '''</nav><script>
@@ -2770,11 +2780,12 @@ def render_puskas_dashboard(latest_gp: pd.DataFrame, calendar_raw: pd.DataFrame,
         </div>
 
         <!-- ROW 4: HOF -->
-        <div class="p-section-label" id="statistics"><span>04</span> {_tr(lang, "league_statistics")}</div>
+        {championship_circuit_ui.render(circuit_model, lang)}
+        <div class="p-section-label" id="statistics"><span>05</span> {_tr(lang, "league_statistics")}</div>
         <div style="padding: 0 2rem;">
             <div class="p-stats-grid">{stats_html}</div>
         </div>
-        <div class="p-section-label" id="legacy" style="margin-top:36px"><span>05</span> {_tr(lang, "hall_of_fame")}</div>
+        <div class="p-section-label" id="legacy" style="margin-top:36px"><span>06</span> {_tr(lang, "hall_of_fame")}</div>
         <div class="p-hof">
             <div class="p-hof-grid">
                 <div class="p-hof-card"><div style="color:#aaa;font-weight:800;font-size:0.65rem;letter-spacing:1px;margin-bottom:0.5rem;">{_tr(lang, "most_championships")}</div>{champ_name}</div>
