@@ -22,26 +22,22 @@ points within each team. Equal scores use alphabetical ordering for stability.
 - Driver and constructor standings with F1-style tie-breakers
 - Sprint points included in totals while race-only statistics remain accurate
 - Championship progression, lead changes, momentum, and form tables
-- Interactive championship circuit above League Statistics: published Race/Sprint
+- Championship race playback above League Statistics: published Race/Sprint
   checkpoints, play/pause, restart, race navigation, speeds, and synchronized
-  keyboard/touch driver details. The finish-line target is leader points plus
-  the maximum still available to one driver, using configured scoring revisions
-  and eligible fastest-lap bonuses, or the existing verified legacy points map.
-  Cancelled future races are excluded; corrected Excel points are never rescored.
-  Missing/ambiguous history disables playback without hiding current standings.
-  Unknown scoring/calendars show an explanation instead of an invented target.
-  The default straight view fits all 22 drivers and playback controls in one
-  viewport. Names stay in fixed, swimming-style centre-seeded lanes: the strongest two
-  drivers occupy the middle pair, with the remaining seeds alternating outwards.
-  The name column does not display latest-rank numbers.
-  One playback clock and monotone cubic interpolation carry motion through race
-  checkpoints without per-race pauses. The circuit uses fixed lateral lanes on
-  a wide stadium/S track, with larger cars and a compact driver strip below the
-  full-width map: rank changes never shift a car backwards along it.
-  Zero-point cars wait in fixed pit bays and use a forward pit-exit route when
-  they first score. Genuine points reductions fade/snap to the corrected result
-  instead of animating reverse driving. Both views retain the historical points
-  formula, shared selection and reduced-motion support.
+  keyboard/touch driver details. All cars start at zero before Play; the selected
+  race and timeline also begin at the starting grid, regardless of the backend's
+  latest-scoring checkpoint. Teammates occupy fixed adjacent lanes, with teams and
+  drivers sorted alphabetically and shared team colours. Team assignments use the
+  latest published scoped results or authoritative configured roster.
+  The finish-line target is leader points plus the maximum still available to one
+  driver, using configured scoring revisions and eligible fastest-lap bonuses, or
+  the verified legacy points map. Cancelled future races are excluded; corrected
+  Excel points are never rescored. One continuous clock animates between confirmed
+  checkpoints without per-race pauses. The dashboard circuit visualization and
+  view switch have been removed. Missing history disables playback while keeping
+  a zero-point preview and explicitly selectable saved standings. Unknown scoring
+  shows an explanation instead of an invented target. Reduced-motion preferences
+  are respected, and the compact view fits the tested laptop and phone layouts.
   For legacy 2026 calendars without `Has Sprint`, the agreed fallback is the
   [official 2026 Sprint venues](https://www.fia.com/news/fia-and-formula-1-announce-2026-sprint-calendar):
   China, Miami, Canada, Britain, Netherlands, Singapore. The season year applies

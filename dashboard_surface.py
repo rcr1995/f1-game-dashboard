@@ -4,9 +4,9 @@ import re
 from uuid import uuid4
 import streamlit as st
 from puskas_html import hero_image_options
-from championship_circuit_ui import JS as CIRCUIT_JS
+from championship_circuit_ui import JS as CHAMPIONSHIP_JS
 
-JS = CIRCUIT_JS + r"""
+JS = CHAMPIONSHIP_JS + r"""
 // This memory belongs to this browser document, not the shared Python process.
 // The only persisted preference is the previous public image ID.
 const heroStorageKey = 'f1puskasleague.hero.previous.v1';
@@ -46,7 +46,7 @@ export default function ({parentElement, data}) {
     }
   }
   const pt = data.lang === 'pt';
-  const disposeCircuit = mountChampionship(root, data.circuit, pt);
+  const disposeChampionship = mountChampionship(root, data.circuit, pt);
   const find = id => root.querySelector('#'+id);
   const timers = [];
   const listen = (el, name, fn) => el?.addEventListener(name, fn);
@@ -96,7 +96,7 @@ export default function ({parentElement, data}) {
   document.addEventListener('click',outside);
   if(data.target){const tick=()=>{const seconds=Math.max(0,Math.floor((Date.parse(data.target)-Date.now())/1000));
     [Math.floor(seconds/86400),Math.floor(seconds/3600)%24,Math.floor(seconds/60)%60,seconds%60].forEach((n,i)=>{const el=find(['cd-days','cd-hours','cd-minutes','cd-seconds'][i]);if(el)el.textContent=String(n).padStart(2,'0');});};tick();timers.push(setInterval(tick,1000));}
-  return ()=>{disposeCircuit();hide();clearTimeout(closeTimer);timers.forEach(clearInterval);document.removeEventListener('keydown',keydown);document.removeEventListener('click',outside);};
+  return ()=>{disposeChampionship();hide();clearTimeout(closeTimer);timers.forEach(clearInterval);document.removeEventListener('keydown',keydown);document.removeEventListener('click',outside);};
 }
 """
 

@@ -76,6 +76,41 @@ def _drivers(names: set[str]) -> list[dict]:
     return output
 
 
+def _driver_teams(rows: pd.DataFrame, history: pd.DataFrame, calendar: pd.DataFrame,
+                  tables: config.ConfigTables, key) -> dict[str, str]:
+    """Latest scoped team assignments, with the current configured roster authoritative."""
+    selected = history if not history.empty else rows
+    teams: dict[str, str] = {}
+    if not selected.empty and {"Driver", "Team", "Round"}.issubset(selected.columns):
+        selected = selected.copy()
+        selected["_round"] = pd.to_numeric(selected["Round"], errors="coerce").fillna(0)
+        # Calendar dates preserve the actual publication sequence for postponed GPs.
+        calendar_order = {int(rnd): i for i, rnd in enumerate(calendar.get("Round", [])) if pd.notna(rnd)}
+        selected["_event_order"] = selected["_round"].map(calendar_order).fillna(selected["_round"])
+        selected["_session_order"] = selected.get("Type", pd.Series("", index=selected.index)).eq("R").astype(int)
+        selected["Team"] = selected["Team"].fillna("").astype(str).str.strip()
+        selected = selected[selected["Team"].ne("")].sort_values(
+            ["_event_order", "_round", "_session_order"], kind="stable")
+        for name, group in selected.groupby("Driver", sort=False):
+            latest = group.iloc[-1]
+            same_event = group[
+                group["_event_order"].eq(latest["_event_order"])
+                & group["_round"].eq(latest["_round"])
+                & group["_session_order"].eq(latest["_session_order"])
+            ]["Team"].unique()
+            teams[str(name)] = str(same_event[0]) if len(same_event) == 1 else ""
+    if key:
+        rounds = pd.to_numeric(history.get("Round", pd.Series(dtype=float)), errors="coerce").dropna()
+        current_round = max(1, int(rounds.max())) if not rounds.empty else 1
+        try:
+            for member in config.resolve_roster_snapshot(tables, key.league_id, current_round):
+                teams[member.driver_name] = member.team_name
+        except (config.LeagueConfigError, ValueError, TypeError):
+            # Team labels must not make otherwise readable published standings fail.
+            pass
+    return teams
+
+
 def _standings(rows: pd.DataFrame, drivers: list[dict], *, summary=False) -> list[dict]:
     if rows.empty:
         table = pd.DataFrame(columns=["Driver", "Points", "Pos"])
@@ -103,7 +138,7 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
     A weekend checkpoint includes its Sprint; stand-alone Sprints wait for their
     main Race checkpoint. Future/unpublished events never gain invented results.
     """
-    from puskas_html import get_calendar_for_league
+    from puskas_html import get_calendar_for_league, TEAM_COLORS
     tables = tables if tables is not None else config.empty_config_tables()
     rows = _slice(results, meta)
     history = core.filter_event_results(rows) if not rows.empty else rows.copy()
@@ -250,4 +285,12 @@ def build_model(results: pd.DataFrame, calendar: pd.DataFrame, meta: dict,
             model["frames"].append(frame(selected, name=str(event["GP Name"]), rnd=rnd,
                                          completed=len(completed), consumed=consumed))
         model["defaultIndex"] = len(model["frames"]) - 1
+    teams = _driver_teams(rows, history, cal, tables, key)
+    known_teams = {name.casefold(): name for name in TEAM_COLORS}
+    for driver in drivers:
+        team = teams.get(driver["name"], "")
+        driver["team"] = known_teams.get(team.casefold(), team)
+        fallback = COLORS[int(hashlib.sha256(team.casefold().encode()).hexdigest()[:8], 16) % len(COLORS)] if team else driver["color"]
+        color = TEAM_COLORS.get(driver["team"], fallback)
+        driver["teamColor"] = color if re.fullmatch(r"#[0-9a-fA-F]{6}", color) else fallback
     return model

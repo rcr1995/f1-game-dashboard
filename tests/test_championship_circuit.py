@@ -40,6 +40,47 @@ class ChampionshipCircuitTests(unittest.TestCase):
         self.assertEqual(grid["remainingTeam"],60)  # Configured teams each have one car.
         self.assertTrue(all(d["progress"] == 0 for d in grid["standings"]))
         self.assertEqual(model["defaultIndex"], 0)
+        self.assertEqual({d["name"]: d["team"] for d in model["drivers"]}, {"Alice": "Red", "Bob": "Blue"})
+
+    def test_legacy_team_comes_from_latest_scoped_result_and_shared_team_color(self):
+        rows = [self.result(Team="McLaren"), self.result("Bob", 0, 2, Team="McLaren"),
+                self.result(points=18, rnd=2, Team="Ferrari"),
+                self.result(points=900, rnd=3, Team="Mercedes", SeasonLabel="2026-T01")]
+        model = self.build(rows, tables=config.empty_config_tables())
+        drivers = {d["name"]: d for d in model["drivers"]}
+        self.assertEqual(drivers["Alice"]["team"], "Ferrari")
+        self.assertEqual(drivers["Alice"]["teamColor"], "#E8002D")
+        self.assertEqual(drivers["Bob"]["team"], "McLaren")
+        self.assertEqual(drivers["Bob"]["teamColor"], "#FF8000")
+        shared = self.build(rows[:2], tables=config.empty_config_tables())["drivers"]
+        self.assertEqual({d["teamColor"] for d in shared}, {"#FF8000"})
+
+    def test_latest_legacy_team_follows_postponed_calendar_order(self):
+        self.calendar.loc[0, "Date"] = pd.Timestamp("2027-02-01")
+        model = self.build([self.result(Team="Late team"), self.result(rnd=2, Team="Earlier team")],
+                           tables=config.empty_config_tables())
+        self.assertEqual(model["drivers"][0]["team"], "Late team")
+
+    def test_configured_current_roster_overrides_result_labels_without_using_future_changes(self):
+        setup = replace(self.setup, roster=self.setup.roster + (
+            config.RosterChange(self.setup.key.league_id, 2, "Alice", "Ferrari"),
+            config.RosterChange(self.setup.key.league_id, 2, "Bob", "Ferrari"),
+        ))
+        tables = config.config_tables_from_setup(setup)
+        first = self.build([self.result(Team="Incorrect")], tables=tables)
+        self.assertEqual({d["name"]: d["team"] for d in first["drivers"]}, {"Alice": "Red", "Bob": "Blue"})
+        second = self.build([self.result(), self.result(rnd=2)], tables=tables)
+        self.assertEqual({d["team"] for d in second["drivers"]}, {"Ferrari"})
+        self.assertEqual({d["teamColor"] for d in second["drivers"]}, {"#E8002D"})
+
+    def test_unknown_teams_are_not_invented_and_custom_team_colors_are_stable(self):
+        missing = self.build([self.result(Team=None)], tables=config.empty_config_tables())["drivers"][0]
+        self.assertEqual(missing["team"], "")
+        self.assertEqual(missing["teamColor"], missing["color"])
+        custom = self.build([self.result(Team="Custom Team"), self.result("Bob", 0, 2, Team="Custom Team")],
+                            tables=config.empty_config_tables())["drivers"]
+        self.assertEqual(len({d["teamColor"] for d in custom}), 1)
+        self.assertTrue(all(len(d["teamColor"]) == 7 and d["teamColor"].startswith("#") for d in custom))
 
     def test_every_checkpoint_has_its_own_target_and_exact_points(self):
         rows = [self.result(), self.result("Bob",18,2), self.result("Alice",18,2,2), self.result("Bob",26,1,2),
