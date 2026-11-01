@@ -73,6 +73,39 @@ assert.equal(championshipCorrectionOpacity(corrections,4),1);
 assert.equal(championshipCorrectionOpacity([0,.2,.1],2),1);
 """)
 
+    def test_only_completed_unverified_seasons_open_on_saved_final_standings(self):
+        self.run_js(r"""
+const assert=require('node:assert/strict');
+const drivers=[{id:'winner',name:'Alice',team:'Red'},{id:'runner',name:'Bob',team:'Blue'},{id:'zero',name:'Charlie',team:'Green'}];
+const saved={name:'current',round:null,completed:0,target:254,remaining:0,standings:[
+ {id:'winner',points:254,gap:0,progress:1,position:1},
+ {id:'runner',points:125,gap:129,progress:125/254,position:2},
+ {id:'zero',points:0,gap:254,progress:0,position:3}
+]};
+const archive={drivers,frames:[saved],completedSeason:true,playback:false,defaultIndex:0,totalRaces:0};
+const before=JSON.stringify(archive),frames=championshipPlaybackFrames(archive);
+assert.deepEqual(frames,[saved],'completed archives should expose the published final snapshot immediately');
+assert.notEqual(frames,archive.frames,'the UI frame list must not alias the cached model array');
+const initial=championshipSampler(frames,drivers.map(d=>d.id))(0);
+assert.equal(initial.get('winner').points,254);assert.equal(initial.get('winner').p,1);
+assert.equal(initial.get('runner').points,125);assert.equal(initial.get('runner').p,125/254);
+assert.equal(initial.get('zero').points,0);assert.equal(initial.get('zero').p,0);
+assert.equal(JSON.stringify(archive),before,'showing the final snapshot must not alter shared scoring data');
+
+const ongoing={...archive,completedSeason:false,totalRaces:24};
+const ongoingFrames=championshipPlaybackFrames(ongoing);
+assert.equal(ongoingFrames[0].name,'grid','an ongoing league with unavailable history still opens at zero');
+assert.ok(ongoingFrames[0].standings.every(e=>e.points===0&&e.progress===0));
+assert.equal(ongoingFrames[1],saved);
+
+const grid={name:'grid',standings:drivers.map((d,i)=>({id:d.id,points:0,progress:0,gap:0,position:i+1}))};
+const replay={...archive,playback:true,frames:[grid,saved],defaultIndex:1};
+const replayFrames=championshipPlaybackFrames(replay);
+assert.equal(replayFrames[0],grid,'verified completed seasons must preserve the starting-grid reveal');
+assert.equal(replayFrames[1],saved);
+assert.ok(championshipSampler(replayFrames,drivers.map(d=>d.id))(0).get('winner').points===0);
+""")
+
     def test_removed_view_has_no_markup_or_controller(self):
         model={'meta':{},'notes':[]}
         rendered=ui.render(model)
