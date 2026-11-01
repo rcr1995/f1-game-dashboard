@@ -7,6 +7,7 @@ from zipfile import ZipFile
 import openpyxl
 import streamlit as st
 import admin_auth
+import calendar_review
 import public_workbook
 import race_github
 
@@ -40,11 +41,13 @@ def compare(previous: bytes, candidate: bytes) -> dict:
                     if len(sample)<100:
                         sample.append({'Sheet':sheet.title,'Cell':f'{openpyxl.utils.get_column_letter(colno)}{rowno}','Before':str(a) if a is not None else '', 'After':str(b) if b is not None else ''})
             summary.append({'Sheet':sheet.title,'Changed cells':changed,'Cleared cells':deleted})
-        return {'summary':summary,'sample':sample,'digest':hashlib.sha256(candidate).hexdigest()}
+        return {'summary':summary,'sample':sample,'digest':hashlib.sha256(candidate).hexdigest(),
+                'calendar':calendar_review.review_calendar(previous, candidate)}
     finally:
         for book in books: book.close()
 
-def publish(config, content: bytes, *, expected_sha: str, approved_digest: str, approved: bool):
+def publish(config, content: bytes, *, expected_sha: str, approved_digest: str, approved: bool,
+            calendar_acknowledged: bool = False):
     if not admin_auth.is_current_admin() or not approved:
         raise PermissionError('Admin sign-in and explicit approval are required.')
     if hashlib.sha256(content).hexdigest() != approved_digest:
@@ -54,7 +57,9 @@ def publish(config, content: bytes, *, expected_sha: str, approved_digest: str, 
     remote = client._fetch_with_token(token)
     if remote.blob_sha != expected_sha:
         raise race_github.GitHubConflictError('GitHub changed after preview. Download the latest Excel and review again.')
-    compare(remote.content,content)
+    review = compare(remote.content,content)
+    if calendar_review.needs_acknowledgement(review['calendar']) and not calendar_acknowledged:
+        raise ValueError('Review and acknowledge the calendar warnings before publishing.')
     if remote.content == content:
         raise ValueError('This Excel is already published.')
     return client._publish_updated_workbook(token=token,remote=remote,updated_bytes=content,
@@ -74,6 +79,64 @@ export default function({parentElement,data,setStateValue}) {
 }
 """
 
+def _row_ranges(rows):
+    """Condense adjacent Excel row numbers while preserving gaps."""
+    from itertools import groupby
+    spans = []
+    for _, group in groupby(enumerate(sorted(rows)), key=lambda item: item[1] - item[0]):
+        numbers = [number for _, number in group]
+        spans.append(str(numbers[0]) if len(numbers) == 1 else f'{numbers[0]}–{numbers[-1]}')
+    return ', '.join(spans) or '—'
+
+
+_CALENDAR_MESSAGES = {
+    'name': ('GP names differ. Check the GP Name in Leagues and Calendar.',
+             'Os nomes do GP diferem. Verifica GP Name em Leagues e Calendar.'),
+    'missing_round': ('No Calendar entry for this round.', 'A ronda não consta de Calendar.'),
+    'ambiguous_round': ('The calendar has no unique GP for this round.', 'O calendário não identifica um único GP para esta ronda.'),
+    'status': ('Race results exist. Check whether the Calendar status should be Done.',
+               'Há resultados de corrida. Verifica se o estado em Calendar deve ser Done.'),
+    'missing_race': ('Calendar says Done, but there are no main Race results.',
+                     'Calendar indica Done, mas não há resultados da corrida principal.'),
+    'missing_winner': ('No Race driver has Finish Pos 1.', 'Nenhum piloto da corrida tem Finish Pos 1.'),
+    'multiple_winners': ('More than one Race result has Finish Pos 1.', 'Mais de um resultado da corrida tem Finish Pos 1.'),
+    'invalid_classification': ('The calendar cannot display this classification. Check for repeated drivers or invalid or repeated positions.',
+                               'O calendário não consegue mostrar a classificação. Verifica pilotos repetidos e posições inválidas ou repetidas.'),
+}
+
+
+def _calendar_table(issues, pt):
+    st.dataframe([{
+        'Ronda' if pt else 'Round': issue.round_number,
+        'Evento' if pt else 'Event': 'Sprint' if issue.event == 'SR' else ('Corrida' if pt else 'Race'),
+        'GP em Leagues' if pt else 'GP in Leagues': issue.uploaded or '—',
+        'GP em Calendar' if pt else 'GP in Calendar': issue.expected or '—',
+        'Linhas em Leagues' if pt else 'Leagues rows': _row_ranges(issue.rows),
+        'Verificar' if pt else 'Check': _CALENDAR_MESSAGES[issue.problem][int(pt)],
+        'Época / Liga' if pt else 'Season / League': f'{issue.game} · {issue.season} · {issue.league}',
+    } for issue in issues], hide_index=True, width='stretch')
+
+
+def _render_calendar_review(review, pt):
+    st.subheader('Verificação do calendário' if pt else 'Calendar check')
+    if review['new_unchecked']:
+        st.warning('Não foi possível identificar o calendário destas épocas. Verifica a liga, o jogo e a época antes de publicar.'
+                   if pt else 'These seasons have no uniquely matching calendar. Check their league, game and season before publishing.')
+        st.text('\n'.join(review['new_unchecked']))
+    if review['new']:
+        st.warning('Há novos avisos ou avisos alterados. Corrige as linhas indicadas e volta a carregar o Excel, ou confirma que pretendes publicar assim.'
+                   if pt else 'New or changed calendar warnings. Correct the listed rows and upload again, or acknowledge them to publish as reviewed.')
+        _calendar_table(review['new'], pt)
+    elif not review['new_unchecked']:
+        st.caption('Não há novos avisos nas rondas comparadas.' if pt else 'No new warnings for the rounds compared.')
+    if review['existing']:
+        with st.expander('Avisos já presentes no Excel publicado' if pt else 'Warnings already in the published workbook'):
+            _calendar_table(review['existing'], pt)
+    if review['unchecked']:
+        with st.expander('Épocas sem calendário identificável' if pt else 'Seasons without a uniquely matching calendar'):
+            st.text('\n'.join(review['unchecked']))
+
+
 def render(config, *, lang: str) -> None:
     if not admin_auth.is_current_admin():
         st.stop()
@@ -91,21 +154,33 @@ def render(config, *, lang: str) -> None:
         if not isinstance(encoded,str) or len(encoded)>LIMIT*4//3+4: raise ValueError('Excel exceeds 10 MB.')
         content=base64.b64decode(encoded,validate=True)
         if not isinstance(payload.get('name'),str) or not payload['name'].lower().endswith('.xlsx'): raise ValueError('Choose an .xlsx file.')
-        if st.button('Pré-visualizar alterações' if pt else 'Preview Excel changes'):
-            remote=race_github.fetch_remote_workbook(config)
-            preview=compare(remote.content,content)
-            preview['sha']=remote.blob_sha
-            st.session_state[KEY+'_preview']=preview
         preview=st.session_state.get(KEY+'_preview')
-        if not preview or preview['digest']!=hashlib.sha256(content).hexdigest(): return
+        refresh = st.button('Atualizar pré-visualização' if pt else 'Refresh preview')
+        if refresh or not preview or preview['digest'] != hashlib.sha256(content).hexdigest():
+            with st.spinner('A comparar com o calendário…' if pt else 'Checking the workbook against the calendar…'):
+                remote=race_github.fetch_remote_workbook(config)
+                preview=compare(remote.content,content)
+                preview['sha']=remote.blob_sha
+                st.session_state[KEY+'_preview']=preview
+        _render_calendar_review(preview['calendar'], pt)
         st.table(preview['summary'])
-        st.caption('Primeiras 100 alterações de células; estilos e fórmulas do ficheiro carregado também serão substituídos.' if pt else 'First 100 cell changes; uploaded formatting and formulas will also replace the current file.')
-        st.table(preview['sample'])
-        approved=st.checkbox('Aprovo substituir o Excel completo no GitHub, incluindo as células removidas acima.' if pt else 'I approve replacing the entire GitHub Excel, including the cleared cells shown above.',key=KEY+'_approve_'+preview['sha']+'_'+preview['digest'])
-        if st.button('Publicar Excel aprovado' if pt else 'Publish approved Excel',disabled=not approved):
+        with st.expander('Ver alterações nas células' if pt else 'View changed cells'):
+            st.caption('Primeiras 100 alterações de células; estilos e fórmulas do ficheiro carregado também serão substituídos.' if pt else 'First 100 cell changes; uploaded formatting and formulas will also replace the current file.')
+            st.table(preview['sample'])
+        review_key = preview['sha']+'_'+preview['digest']
+        acknowledged = False
+        requires_ack = calendar_review.needs_acknowledgement(preview['calendar'])
+        if requires_ack:
+            acknowledged = st.checkbox('Revi os avisos do calendário e pretendo publicar este Excel assim.'
+                if pt else 'I reviewed the calendar warnings and want to publish this workbook as shown.',
+                key=KEY+'_calendar_'+review_key)
+        approved=st.checkbox('Aprovo substituir o Excel completo no GitHub, incluindo as células removidas acima.' if pt else 'I approve replacing the entire GitHub Excel, including the cleared cells shown above.',key=KEY+'_approve_'+review_key)
+        ready = approved and (not requires_ack or acknowledged)
+        if st.button('Publicar Excel aprovado' if pt else 'Publish approved Excel',disabled=not ready):
             # Consume the preview before any uncertain network response; never silently retry a write.
             st.session_state.pop(KEY+'_preview',None)
-            _,url,_=publish(config,content,expected_sha=preview['sha'],approved_digest=preview['digest'],approved=approved)
+            _,url,_=publish(config,content,expected_sha=preview['sha'],approved_digest=preview['digest'],
+                            approved=approved,calendar_acknowledged=acknowledged)
             admin_auth.clear_race_import_state(st.session_state)
             st.success('Excel publicado. O Dashboard irá carregar esta versão.' if pt else 'Excel published. The Dashboard will load this version.')
             st.link_button('GitHub commit',url)

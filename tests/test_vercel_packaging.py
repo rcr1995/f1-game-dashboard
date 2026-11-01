@@ -18,7 +18,7 @@ RUNTIME_MODULES = {
     "secure_image_upload",
     "review_draft_recovery",
     "browser_download", "season_insights",
-    "dashboard_surface", "workbook_upload",
+    "dashboard_surface", "workbook_upload", "calendar_review",
     "circuit_records",
 }
 PUBLIC_ASSET_SOURCES = {

@@ -494,8 +494,13 @@ Navigation carries the selected language, and server refreshes never overwrite i
 In the authenticated Admin page, **Upload latest Excel** sits beside
 **Download latest Excel**. Download the current GitHub version first, make your
 small adjustments in Excel, save, then upload the `.xlsx` (maximum 10 MB).
-Choose **Preview Excel changes**, inspect the worksheet counts and cell changes,
-then explicitly approve **Publish approved Excel**. The complete uploaded file,
+Choosing the file opens a preview automatically. **Calendar check** compares Race
+and Sprint GP names with the uploaded calendar for the same league and round,
+shows the affected Excel rows, and checks whether the calendar can show a Race
+winner. Correct the workbook and upload it again, or explicitly acknowledge any
+new or changed warnings before approving **Publish approved Excel**. Previous
+warnings and seasons without an identifiable calendar are listed separately.
+The complete uploaded file,
 including its formulas and formatting, replaces the GitHub workbook in one
 versioned commit; it is not merged with a newer remote file. Missing existing
 worksheets, invalid data, macros, embedded objects, external workbook links,

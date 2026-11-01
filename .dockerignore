@@ -35,6 +35,7 @@
 !season_insights.py
 !dashboard_surface.py
 !workbook_upload.py
+!calendar_review.py
 !F1_Standings.xlsx
 !.streamlit
 .streamlit/**
