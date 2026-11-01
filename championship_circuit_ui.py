@@ -23,7 +23,7 @@ def render(model: dict | None, lang="en") -> str:
         return ""
     pt = lang == "pt"
     esc = lambda value: html.escape(str(value), quote=True)
-    title = "O campeonato em pista" if pt else "Championship circuit"
+    title = "Evolução do campeonato" if pt else "Championship progress"
     trees = ""
     # Deterministic small vector scenery; never used to position the data marks.
     for band, count in ((0, 32), (1, 22), (2, 16)):
@@ -47,11 +47,11 @@ def render(model: dict | None, lang="en") -> str:
         <div><span>{'Máximo ainda disponível' if pt else 'Maximum points remaining'}</span><strong class="cc-remaining">—</strong></div></div>
       </header>
       <div class="cc-view-switch" role="group" aria-label="{'Visualização do campeonato' if pt else 'Championship view'}">
-        <button class="cc-view-circuit" type="button" aria-pressed="true">{'Circuito' if pt else 'Circuit'}</button>
-        <button class="cc-view-straight" type="button" aria-pressed="false">{'Reta' if pt else 'Straight'}</button>
+        <button class="cc-view-circuit" type="button" aria-pressed="false">{'Circuito' if pt else 'Circuit'}</button>
+        <button class="cc-view-straight" type="button" aria-pressed="true">{'Reta' if pt else 'Straight'}</button>
         <span>{'Mesmos pontos, duas perspetivas' if pt else 'Same points, two perspectives'}</span>
       </div>
-      <div class="cc-layout"><div class="cc-course">
+      <div class="cc-layout" hidden><div class="cc-course">
         <div class="cc-map"><svg class="cc-svg" viewBox="0 0 1200 800" aria-label="{'Circuito virtual do campeonato' if pt else 'Virtual championship circuit'}" role="group">
           <defs><linearGradient id="cc-grass" x2=".8" y2="1"><stop stop-color="#35503c"/><stop offset="1" stop-color="#1c332e"/></linearGradient>
           <pattern id="cc-flag" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#f4f6ed"/><path d="M0 0h7v7H0zM7 7h7v7H7z" fill="#182129"/></pattern>
@@ -82,10 +82,10 @@ def render(model: dict | None, lang="en") -> str:
       <div class="cc-board"><div class="cc-board-heading"><h3>{'Classificação' if pt else 'Standings'}</h3><span>{'Pontos / diferença' if pt else 'Points / gap'}</span></div>
         <div class="cc-list" role="group" aria-label="{'Selecionar piloto' if pt else 'Select driver'}"></div>
       </div></div>
-      <div class="cc-straight" hidden>
+      <div class="cc-straight">
         <div class="cc-straight-heading"><span>{'Piloto' if pt else 'Driver'}</span><div class="cc-axis"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><span>{'Pontos' if pt else 'Points'}</span></div>
         <div class="cc-lanes" role="group" aria-label="{'Reta do campeonato, da esquerda para a direita' if pt else 'Championship straight, left to right'}"></div>
-        <p class="cc-note">{'Uma faixa fixa por piloto. Partida à esquerda, meta à direita. A posição do centro do carro indica a percentagem exata.' if pt else 'One fixed lane per driver. Start on the left, finish on the right. The centre of each car marks its exact progress.'}</p>
+        <p class="cc-note">{'Partida à esquerda, meta à direita. Os pilotos sobem ou descem com a classificação. O centro de cada carro indica o progresso; os números mostram a corrida selecionada.' if pt else 'Start on the left, finish on the right. Drivers move up or down with the standings. Each car’s centre marks progress; the numbers show the selected race.'}</p>
       </div>
       <div class="cc-controls"><div class="cc-buttons">
         <button class="cc-play cc-primary" type="button">{'Reproduzir' if pt else 'Play'}</button>
@@ -113,15 +113,34 @@ STYLE = '''<style>
 .cc-board-heading{display:flex;justify-content:space-between;align-items:center;padding:0 2px 10px;border-bottom:1px solid #2b3542}.cc-board-heading h3{margin:0;font:650 14px Inter,system-ui}.cc-board-heading>span{font-size:10px;color:#a7b3c6}.cc-list{max-height:430px;overflow:auto;scrollbar-width:thin;scrollbar-color:#566372 #171d26;padding:6px 3px 4px 0}.cc-row{width:100%;display:grid;grid-template-columns:22px 8px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:43px;padding:7px 8px;border:1px solid transparent;border-radius:7px;background:none;text-align:left;color:#e5ebf4;font:12px Inter,system-ui;cursor:pointer}.cc-row:hover,.cc-row[aria-pressed=true],.cc-row.cc-hover{background:#222d38;border-color:#50606c}.cc-row:focus-visible{outline:2px solid #d9ed9c;outline-offset:-2px}.cc-row .cc-pos{color:#8f9db1;font-variant-numeric:tabular-nums}.cc-row .cc-dot{width:6px;height:20px;border-radius:3px}.cc-row .cc-name{overflow-wrap:anywhere}.cc-row .cc-score{text-align:right;display:flex;gap:10px;align-items:center;font-variant-numeric:tabular-nums}.cc-row .cc-score small{font-size:10px;color:#9eafc3;min-width:24px}
 .cc-controls{display:flex;align-items:end;gap:16px;margin-top:20px;padding-top:20px;border-top:1px solid #2b3542;flex-wrap:wrap}.cc-buttons{display:flex;gap:6px;flex-wrap:wrap}.cc button:not(.cc-row):not(.cc-lane),.cc select{min-height:42px;border:1px solid #414d60;border-radius:7px;background:#1b2430;color:#eef3fa;font:600 12px Inter,system-ui;padding:9px 12px;cursor:pointer}.cc .cc-controls button.cc-primary{background:#e10600;border-color:#e10600;min-width:82px}.cc button:disabled,.cc select:disabled{opacity:.4;cursor:default}.cc button:focus-visible,.cc select:focus-visible,.cc input:focus-visible{outline:2px solid #d9ed9c;outline-offset:3px}.cc-controls label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#aab8cb}.cc-race-select{flex:1;min-width:170px}.cc-select{width:100%}.cc-controls select{color-scheme:dark}.cc-timeline-label{display:flex;align-items:center;gap:16px;color:#abb7c9;font-size:11px;margin:20px 0}.cc-timeline{flex:1;width:0;accent-color:#dcf3a0;cursor:pointer;min-height:24px}.cc-explanation{font-size:12px;color:#d0d8e3;line-height:1.65;margin:16px 0 8px;max-width:1000px}.cc-note{font-size:11px;color:#9caec0;line-height:1.6;margin:6px 0 0}.cc-warning{color:#ffd49d;padding:10px 12px;border-left:2px solid #f3bb75;background:#d3951910;margin-top:10px}
 .cc [hidden]{display:none!important}.cc-view-switch{display:flex;align-items:center;gap:6px;margin-bottom:16px}.cc-view-switch span{margin-left:auto;color:#aab8cb;font-size:11px}.cc .cc-view-switch button{min-width:96px}.cc .cc-view-switch button[aria-pressed=true]{background:#d9ed9c;border-color:#d9ed9c;color:#14231d}.cc-grid-caption{fill:#d6e2c9;font:600 15px Inter,system-ui;letter-spacing:2px}.cc-anchor path{opacity:0}.cc-anchor.cc-active path{opacity:.9}.cc-anchor circle{opacity:.8}.cc-controls{margin:0 0 16px;padding:14px 0;border-top:1px solid #2b3542;border-bottom:1px solid #2b3542}.cc-timeline-label{margin:0 0 18px}
-.cc-straight-heading,.cc .cc-lane{display:grid;grid-template-columns:150px minmax(0,1fr) 90px;gap:16px}.cc-straight-heading{font-size:11px;color:#aab8cb;padding:0 10px 12px}.cc-straight-heading>span:last-child{text-align:right}.cc-axis{display:flex;justify-content:space-between;margin:0 21px;position:relative}.cc-axis span{width:0;display:flex;justify-content:center;white-space:nowrap}.cc-lanes{border:1px solid #38434e;border-radius:10px;overflow:hidden}.cc .cc-lane{width:100%;min-height:44px;padding:3px 9px;border:0;border-bottom:1px solid #36434b;border-radius:0;background:#29353b;text-align:left;align-items:center;font:12px Inter,system-ui;color:#e5ebf4;cursor:pointer}.cc .cc-lane:nth-child(even){background:#303d44}.cc .cc-lane:last-child{border-bottom:0}.cc .cc-lane:hover,.cc .cc-lane[aria-pressed=true],.cc .cc-lane.cc-hover{background:#40514f;box-shadow:inset 3px 0 var(--driver-color)}.cc .cc-lane:focus-visible{outline:2px solid #d9ed9c;outline-offset:-2px}.cc-lane-name{display:flex;gap:9px;align-items:center;min-width:0}.cc-lane-name b{color:#abb9c8;font:11px Inter,system-ui;min-width:21px}.cc-lane-name span{overflow-wrap:anywhere}.cc-lane-track{position:relative;height:36px;margin:0 21px;background:repeating-linear-gradient(90deg,#ffffff22 0 1px,transparent 1px 25%);border-left:1px solid #bac7cd;border-right:3px solid #e5ecd8}.cc-lane-track:after{content:'';position:absolute;right:-5px;top:0;bottom:0;width:8px;background:repeating-conic-gradient(#eff3e9 0 25%,#263137 0 50%) 0 0/8px 8px}.cc-lane-trail{position:absolute;left:0;top:14px;height:8px;background:var(--driver-color);opacity:.24;border-radius:4px}.cc-lane-car{position:absolute;top:50%;width:38px;height:26px;transform:translate(-50%,-50%);overflow:visible;z-index:1;filter:drop-shadow(0 2px 2px #0008)}.cc-lane[aria-pressed=true] .cc-car-halo,.cc-lane.cc-hover .cc-car-halo{opacity:1}.cc-lane .cc-car-halo{fill:none;stroke:#fff;stroke-width:2;opacity:0}.cc-lane.cc-finished .cc-car-halo{opacity:1;stroke:#d9ed9c}.cc-lane-score{display:flex;justify-content:end;gap:10px;align-items:center;font-variant-numeric:tabular-nums}.cc-lane-score small{color:#b6c4d2;font-size:10px;min-width:28px;text-align:right}.cc-lane-score b{font-size:12px}.cc-lane-progress{display:none}.cc-lane[aria-pressed=true] .cc-lane-progress{display:block;font-size:10px;color:#d9ed9c}.cc-straight .cc-note{margin-top:10px}
+.cc-straight-heading,.cc .cc-lane{display:grid;grid-template-columns:150px minmax(0,1fr) 90px;gap:16px}.cc-straight-heading{font-size:11px;color:#aab8cb;padding:0 10px 12px}.cc-straight-heading>span:last-child{text-align:right}.cc-axis{display:flex;justify-content:space-between;margin:0 21px;position:relative}.cc-axis span{width:0;display:flex;justify-content:center;white-space:nowrap}.cc-lanes{--cc-lane-height:44px;position:relative;height:calc(var(--cc-count)*var(--cc-lane-height) + 2px);border:1px solid #38434e;border-radius:10px;overflow:hidden;overflow-anchor:none}.cc .cc-lane{position:absolute;left:0;top:0;width:100%;height:var(--cc-lane-height);min-height:44px;will-change:transform;padding:3px 9px;border:0;border-bottom:1px solid #36434b;border-radius:0;background:#29353b;text-align:left;align-items:center;font:12px Inter,system-ui;color:#e5ebf4;cursor:pointer}.cc .cc-lane:nth-child(even){background:#303d44}.cc .cc-lane:last-child{border-bottom:0}.cc .cc-lane[aria-pressed=true],.cc .cc-lane:focus-visible{z-index:100}.cc .cc-lane:hover,.cc .cc-lane[aria-pressed=true],.cc .cc-lane.cc-hover{background:#40514f;box-shadow:inset 3px 0 var(--driver-color)}.cc .cc-lane:focus-visible{outline:2px solid #d9ed9c;outline-offset:-2px}.cc-lane-name{display:flex;gap:9px;align-items:center;min-width:0}.cc-lane-name b{color:#abb9c8;font:11px Inter,system-ui;min-width:21px}.cc-lane-name span{overflow-wrap:anywhere}.cc-lane-track{position:relative;height:36px;margin:0 21px;background:repeating-linear-gradient(90deg,#ffffff22 0 1px,transparent 1px 25%);border-left:1px solid #bac7cd;border-right:3px solid #e5ecd8}.cc-lane-track:after{content:'';position:absolute;right:-5px;top:0;bottom:0;width:8px;background:repeating-conic-gradient(#eff3e9 0 25%,#263137 0 50%) 0 0/8px 8px}.cc-lane-trail{position:absolute;left:0;top:14px;height:8px;background:var(--driver-color);opacity:.24;border-radius:4px}.cc-lane-car{position:absolute;top:50%;width:38px;height:26px;transform:translate(-50%,-50%);overflow:visible;z-index:1;filter:drop-shadow(0 2px 2px #0008)}.cc-lane[aria-pressed=true] .cc-car-halo,.cc-lane.cc-hover .cc-car-halo{opacity:1}.cc-lane .cc-car-halo{fill:none;stroke:#fff;stroke-width:2;opacity:0}.cc-lane.cc-finished .cc-car-halo{opacity:1;stroke:#d9ed9c}.cc-lane-score{display:flex;justify-content:end;gap:10px;align-items:center;font-variant-numeric:tabular-nums}.cc-lane-score small{color:#b6c4d2;font-size:10px;min-width:28px;text-align:right}.cc-lane-score b{font-size:12px}.cc-lane-progress{display:none}.cc-lane[aria-pressed=true] .cc-lane-progress{display:block;font-size:10px;color:#d9ed9c}.cc-straight .cc-note{margin-top:10px}
 @media(min-width:1400px){.cc-list{max-height:530px}}
 @media(max-width:900px){.cc{margin:16px 16px 28px;padding:18px}.cc-header{align-items:start;flex-wrap:wrap}.cc-metrics{gap:24px}.cc-metrics strong{font-size:24px}.cc-layout{grid-template-columns:1fr}.cc-list{max-height:265px;display:grid;grid-template-columns:1fr 1fr;gap:0 12px}.cc-board{margin-top:8px}}
-@media(max-width:520px){.cc{margin:14px 8px 24px;padding:14px 10px;border-radius:12px}.cc-header{gap:16px}.cc-metrics{width:100%;justify-content:space-between;padding-top:10px;border-top:1px solid #2b3542}.cc-metrics span{font-size:10px}.cc-layout{gap:8px}.cc-list{grid-template-columns:1fr;max-height:258px}.cc-row{min-height:44px}.cc-controls{gap:12px}.cc-buttons{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr 1fr}.cc button:not(.cc-row):not(.cc-lane){padding:9px 4px;min-height:44px}.cc .cc-controls button.cc-primary{min-width:0}.cc-prev span,.cc-next span{font-size:10px}.cc-driver-detail{gap:12px 15px}.cc-driver-detail .cc-detail-name{flex-basis:100%}.cc-detail-stat{flex:1}.cc-timeline-label{gap:8px;font-size:10px}.cc-view-switch span{display:none}.cc-straight-heading,.cc .cc-lane{grid-template-columns:86px minmax(0,1fr) 52px;gap:5px}.cc-straight-heading{padding-left:4px;padding-right:4px}.cc .cc-lane{padding:4px;font-size:10px;min-height:48px}.cc-lane-name{gap:4px}.cc-lane-name b{min-width:17px;font-size:10px}.cc-lane-score{gap:2px;flex-direction:column;align-items:end}.cc-lane-score small{font-size:9px}.cc-lane-car{width:32px}.cc-axis,.cc-lane-track{margin-left:17px;margin-right:17px}.cc-axis{font-size:9px}.cc .cc-view-switch button{flex:1}}
+@media(max-width:520px){.cc{margin:14px 8px 24px;padding:14px 10px;border-radius:12px}.cc-header{gap:16px}.cc-metrics{width:100%;justify-content:space-between;padding-top:10px;border-top:1px solid #2b3542}.cc-metrics span{font-size:10px}.cc-layout{gap:8px}.cc-list{grid-template-columns:1fr;max-height:258px}.cc-row{min-height:44px}.cc-controls{gap:12px}.cc-buttons{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr 1fr}.cc button:not(.cc-row):not(.cc-lane){padding:9px 4px;min-height:44px}.cc .cc-controls button.cc-primary{min-width:0}.cc-prev span,.cc-next span{font-size:10px}.cc-driver-detail{gap:12px 15px}.cc-driver-detail .cc-detail-name{flex-basis:100%}.cc-detail-stat{flex:1}.cc-timeline-label{gap:8px;font-size:10px}.cc-view-switch span{display:none}.cc-straight-heading,.cc .cc-lane{grid-template-columns:86px minmax(0,1fr) 52px;gap:5px}.cc-straight-heading{padding-left:4px;padding-right:4px}.cc-lanes{--cc-lane-height:48px}.cc .cc-lane{padding:4px;font-size:10px;min-height:48px}.cc-lane-name{gap:4px}.cc-lane-name b{min-width:17px;font-size:10px}.cc-lane-score{gap:2px;flex-direction:column;align-items:end}.cc-lane-score small{font-size:9px}.cc-lane-car{width:32px}.cc-axis,.cc-lane-track{margin-left:17px;margin-right:17px}.cc-axis{font-size:9px}.cc .cc-view-switch button{flex:1}}
 @media(prefers-reduced-motion:reduce){.cc *{scroll-behavior:auto!important;transition:none!important}}
 </style>'''
 
 
 JS = r'''
+// Monotone cubic interpolation meets every published checkpoint with continuous
+// velocity. Only the start/end or a genuinely flat/reversing series has to stop.
+function championshipSeries(values) {
+  const delta=values.slice(1).map((v,i)=>v-values[i]);
+  const slopes=values.map((_,i)=>{
+    if(i===0||i===values.length-1)return 0;
+    const a=delta[i-1],b=delta[i];
+    return a*b>0?2*a*b/(a+b):0;
+  });
+  return cursor=>{
+    if(values.length===1)return values[0];
+    const x=Math.max(0,Math.min(values.length-1,cursor)),i=Math.min(values.length-2,Math.floor(x)),t=x-i;
+    const t2=t*t,t3=t2*t;
+    return (2*t3-3*t2+1)*values[i]+(t3-2*t2+t)*slopes[i]+(-2*t3+3*t2)*values[i+1]+(t3-t2)*slopes[i+1];
+  };
+}
+function advanceChampionship(cursor,elapsed,speed,last) {
+  return Math.min(last,Math.max(0,cursor+Math.max(0,elapsed)*speed/2400));
+}
 // Collision spacing only changes the glyph position. The points fraction stays
 // intact; a coloured anchor marks it, and the straight uses it without offsets.
 function championshipPack(standings, length, pointAt) {
@@ -165,8 +184,8 @@ function mountChampionship(root, model, pt) {
   const raceName = f => f.name==='grid' ? (pt?'Grelha de partida':'Starting grid') : f.name==='current' ? (pt?'Classificação atual':'Current standings') : f.name;
   const svgEl = (tag, attrs={}) => {const el=document.createElementNS(NS,tag);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,v));return el;};
   const htmlEl = (tag, cls, text) => {const el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=text;return el;};
-  let index=model.defaultIndex, playing=false, started=false, timer=0, raf=0, selected=frames[index].standings[0]?.id, hovered=null;
-  let positions=new Map(), targetPositions=new Map(), speed=1, disposed=false, view='circuit';
+  let index=model.defaultIndex, playing=false, started=false, raf=0, selected=frames[index].standings[0]?.id, hovered=null;
+  let positions=new Map(), speed=1, disposed=false, view='straight',cursor=index,lastTime=0,motion=null;
   const segments=Math.ceil(length/2),samples=Array.from({length:segments+1},(_,i)=>path.getPointAtLength(i*length/segments));
   // A distance may be negative for grid slots behind the start. Only geometry
   // wraps: a champion retains p=1, a finished state and the finish-line marker.
@@ -229,7 +248,7 @@ function mountChampionship(root, model, pt) {
     lane.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')selectDriver(d.id,true);});lane.addEventListener('pointerleave',()=>{hovered=null;showDriver();});
     lanes.set(d.id,lane);
   });
-  // Stable lanes follow the latest official order, never switch mid-animation.
+  q('.cc-lanes').style.setProperty('--cc-count',String(model.drivers.length));
   frames[model.defaultIndex].standings.forEach(e=>q('.cc-lanes').append(lanes.get(e.id)));
   model.drivers.forEach((d,i)=>{
     const p=pointAt(-44*(Math.floor(i/2)+1),i%2?24:-24);
@@ -237,47 +256,44 @@ function mountChampionship(root, model, pt) {
   });
   frames.forEach((f,i)=>{const option=htmlEl('option','',`${f.round?`R${f.round} · `:''}${raceName(f)}`);option.value=String(i);q('.cc-select').append(option);});
   q('.cc-timeline').max=String(frames.length-1);
-  function layout(frame) {
+  const layouts=frames.map(frame=>{
     const result=championshipPack(frame.standings,length,pointAt);
-    const grid=[...result.values()].every(p=>p.grid);
-    q('.cc-grid-caption').toggleAttribute('hidden',!grid);
-    q('.cc-grid-slots').toggleAttribute('hidden',!grid);
+    frame.standings.forEach(e=>result.get(e.id).row=e.position-1);
     return result;
+  });
+  const curves=new Map(model.drivers.map(d=>[d.id,Object.fromEntries(['p','s','lane','row'].map(key=>[key,championshipSeries(layouts.map(frame=>frame.get(d.id)[key]))]))]));
+  function sample(at){
+    return new Map(model.drivers.map(d=>{
+      const curve=curves.get(d.id),position=Object.fromEntries(Object.entries(curve).map(([key,get])=>[key,get(at)]));
+      return [d.id,{...position,grid:at===0&&layouts[0].get(d.id).grid}];
+    }));
   }
   function place(id, position) {
-    const point=pointAt(position.s,position.lane),exact=pointAt(position.p*length),car=cars.get(id);
+    const lane=lanes.get(id),car=cars.get(id);
+    lane.style.transform=`translateY(${position.row*100}%)`;
+    lane.querySelector('.cc-lane-car').style.left=`${position.p*100}%`;
+    lane.querySelector('.cc-lane-trail').style.width=`${position.p*100}%`;
+    lane.dataset.visualProgress=String(position.p);lane.dataset.visualRank=String(position.row+1);
+    car.dataset.visualProgress=String(position.p);car.dataset.trackDistance=String(position.s);car.dataset.lane=String(position.lane);
+    // The default view only animates lightweight row transforms and car progress.
+    // Hidden circuit geometry is repainted when that view is selected.
+    if(view!=='circuit')return;
+    const point=pointAt(position.s,position.lane),exact=pointAt(position.p*length);
     car.setAttribute('transform',`translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`);
     car.querySelector('.cc-car-body').setAttribute('transform',`rotate(${point.angle*180/Math.PI}) scale(.75)`);
-    car.dataset.visualProgress=String(position.p);car.dataset.trackDistance=String(position.s);car.dataset.lane=String(position.lane);
     const anchor=anchors.get(id);anchor.style.display=position.grid?'none':'';
-    // The connector follows the road instead of cutting across the infield.
     let line=`M${exact.x} ${exact.y}`;
     const delta=position.s-position.p*length,steps=Math.max(1,Math.ceil(Math.abs(delta)/15));
     for(let i=0;i<=steps;i++){const a=pointAt(position.p*length+delta*i/steps,position.lane);line+=`L${a.x} ${a.y}`;}
     anchor.querySelector('path').setAttribute('d',line);
     anchor.querySelector('circle').setAttribute('cx',exact.x);anchor.querySelector('circle').setAttribute('cy',exact.y);
-    const lane=lanes.get(id);lane.querySelector('.cc-lane-car').style.left=`${position.p*100}%`;
-    lane.querySelector('.cc-lane-trail').style.width=`${position.p*100}%`;
-    lane.dataset.visualProgress=String(position.p);
   }
-  function settle() {cancelAnimationFrame(raf);targetPositions.forEach((p,id)=>place(id,p));positions=new Map(targetPositions);q('.cc-transition').hidden=true;}
-  function move(frame,animate) {
-    cancelAnimationFrame(raf);targetPositions=layout(frame);
-    if(!animate||reduce.matches||!positions.size){settle();return;}
-    const from=new Map(positions), start=performance.now(), duration=1600/speed;
-    q('.cc-transition').hidden=false;
-    const tick=now=>{if(disposed)return;const t=Math.min(1,(now-start)/duration), ease=t*t*t*(t*(6*t-15)+10);
-      targetPositions.forEach((to,id)=>{const old=from.get(id)||to;
-        // Interpolate distance along the path, not a chord between XY points.
-        // Lateral interpolation is bounded by the same three asphalt lanes.
-        const pos={...to,p:old.p+(to.p-old.p)*ease,s:old.s+(to.s-old.s)*ease,lane:old.lane+(to.lane-old.lane)*ease};
-        place(id,pos);positions.set(id,pos);
-      });
-      if(t<1)raf=requestAnimationFrame(tick);else settle();
-    };raf=requestAnimationFrame(tick);
-  }
-  function display(next,animate=false) {
+  function paint(next){positions=next;positions.forEach((p,id)=>place(id,p));}
+  function transition(active){q('.cc-transition').hidden=!active;section.dataset.transition=String(active);}
+  function display(next) {
+    const focused=section.getRootNode().activeElement;
     index=next;const frame=frames[index];section.dataset.frame=String(index);
+    q('.cc-grid-caption').toggleAttribute('hidden',index!==0);q('.cc-grid-slots').toggleAttribute('hidden',index!==0);
     q('.cc-race').textContent=raceName(frame);q('.cc-round').textContent=`${frame.round?`${pt?'Ronda':'Round'} ${frame.round} · `:''}${frame.completed} / ${model.totalRaces} ${pt?'corridas concluídas':'races completed'}`;
     q('.cc-target').textContent=fmt(frame.target);q('.cc-remaining').textContent=fmt(frame.remaining);
     q('.cc-opportunities').textContent=frame.remaining==null?'':`${pt?'Ainda por disputar':'Still to race'}: ${frame.remainingRaces} ${pt?'GPs':'Grands Prix'} · ${frame.remainingSprints} Sprints.`;
@@ -289,33 +305,67 @@ function mountChampionship(root, model, pt) {
       const finished=e.progress===1&&frame.remaining===0&&frame.target>0;
       car.setAttribute('aria-label',description);row.setAttribute('aria-label',description);car.dataset.progress=String(e.progress??'');car.classList.toggle('cc-finished',finished);
       car.querySelector('text').textContent=d.label+(finished?' \u2713':'');
+      q('.cc-lanes').append(lane);lane.dataset.position=String(e.position);
       lane.setAttribute('aria-label',description);lane.title=description;lane.dataset.progress=String(e.progress??'');lane.classList.toggle('cc-finished',finished);
       lane.querySelector('.cc-lane-rank').textContent=`P${e.position}`;lane.querySelector('.cc-lane-points').textContent=fmt(e.points);
       lane.querySelector('.cc-lane-gap').textContent=e.gap?`\u2212${fmt(e.gap)}`:'—';lane.querySelector('.cc-lane-progress').textContent=e.progress==null?'—':`${fmt(e.progress*100)}%`;
     });
-    move(frame,animate);showDriver();
+    if(focused&&section.contains(focused)&&focused!==section.getRootNode().activeElement)focused.focus({preventScroll:true});
+    showDriver();
   }
-  function pause(){playing=false;clearTimeout(timer);stateLabel();}
-  function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(!playing||disposed)return;if(index<frames.length-1){display(index+1,true);schedule();}else pause();},2700/speed);}
-  q('.cc-play').addEventListener('click',()=>{if(playing){pause();return;}if(!started||index===frames.length-1)display(0,false);started=true;playing=true;stateLabel();schedule();});
-  q('.cc-restart').addEventListener('click',()=>{pause();started=true;display(0);});
-  const seek=i=>{pause();started=true;display(Math.max(0,Math.min(frames.length-1,i)),true);};
+  function tick(now){
+    if(disposed)return;
+    const elapsed=Math.max(0,now-lastTime);lastTime=now;
+    if(motion?.running){
+      motion.elapsed+=elapsed;const t=Math.min(1,motion.elapsed/600),ease=t*t*(3-2*t);
+      const next=new Map();motion.to.forEach((to,id)=>{
+        const from=motion.from.get(id)||to,p={...to};
+        for(const key of ['p','s','lane','row'])p[key]=from[key]+(to[key]-from[key])*ease;
+        next.set(id,p);
+      });paint(next);
+      if(t===1){motion=null;transition(false);}
+    }else if(playing){
+      cursor=advanceChampionship(cursor,elapsed,speed,frames.length-1);
+      const checkpoint=reduce.matches?Math.floor(cursor):Math.ceil(cursor-1e-9),changed=checkpoint!==index;
+      if(changed)display(checkpoint);
+      if(!reduce.matches||changed)paint(sample(reduce.matches?checkpoint:cursor));
+      transition(!reduce.matches&&cursor<frames.length-1);
+      if(cursor===frames.length-1){playing=false;paint(sample(cursor));transition(false);stateLabel();}
+    }
+    section.dataset.cursor=String(cursor);
+    if(playing||motion?.running)raf=requestAnimationFrame(tick);
+  }
+  function run(){cancelAnimationFrame(raf);lastTime=performance.now();raf=requestAnimationFrame(tick);}
+  function pause(){playing=false;cancelAnimationFrame(raf);if(motion)motion.running=false;stateLabel();}
+  function reset(){motion=null;cursor=0;display(0);paint(sample(0));section.dataset.cursor='0';transition(false);}
+  q('.cc-play').addEventListener('click',()=>{
+    if(playing){pause();return;}
+    if(!started||cursor>=frames.length-1)reset();
+    started=true;playing=true;if(motion)motion.running=true;stateLabel();run();
+  });
+  q('.cc-restart').addEventListener('click',()=>{pause();started=true;reset();});
+  const seek=i=>{
+    pause();started=true;cursor=Math.max(0,Math.min(frames.length-1,i));display(cursor);section.dataset.cursor=String(cursor);
+    const to=sample(cursor);
+    if(reduce.matches||!positions.size){motion=null;paint(to);transition(false);}
+    else{motion={from:new Map(positions),to,elapsed:0,running:true};transition(true);run();}
+  };
   q('.cc-prev').addEventListener('click',()=>seek(index-1));q('.cc-next').addEventListener('click',()=>seek(index+1));
   q('.cc-select').addEventListener('change',e=>seek(Number(e.target.value)));q('.cc-timeline').addEventListener('input',e=>seek(Number(e.target.value)));
-  q('.cc-speed').addEventListener('change',e=>{speed=Number(e.target.value);if(playing){move(frames[index],true);schedule();}});
+  q('.cc-speed').addEventListener('change',e=>{speed=Number(e.target.value)||1;});
   ['.cc-play','.cc-restart','.cc-select','.cc-timeline','.cc-speed'].forEach(s=>{q(s).disabled=!model.playback||frames.length<=1;});
   function setView(next){
     view=next;section.dataset.view=view;hovered=null;
     q('.cc-layout').hidden=view==='straight';q('.cc-straight').hidden=view!=='straight';q('.cc-pack-note').hidden=view==='straight';
     q('.cc-view-circuit').setAttribute('aria-pressed',String(view==='circuit'));
-    q('.cc-view-straight').setAttribute('aria-pressed',String(view==='straight'));showDriver();
+    q('.cc-view-straight').setAttribute('aria-pressed',String(view==='straight'));positions.forEach((p,id)=>place(id,p));showDriver();
   }
   q('.cc-view-circuit').addEventListener('click',()=>setView('circuit'));
   q('.cc-view-straight').addEventListener('click',()=>setView('straight'));
-  setView('circuit');
-  const onMotion=()=>{if(reduce.matches)settle();};reduce.addEventListener('change',onMotion);
+  setView('straight');
+  const onMotion=()=>{if(reduce.matches){motion=null;cursor=index;paint(sample(index));transition(false);}};reduce.addEventListener('change',onMotion);
   const onVisibility=()=>{if(document.hidden)pause();};document.addEventListener('visibilitychange',onVisibility);
-  display(index);stateLabel();
-  return ()=>{disposed=true;clearTimeout(timer);cancelAnimationFrame(raf);reduce.removeEventListener('change',onMotion);document.removeEventListener('visibilitychange',onVisibility);};
+  display(index);paint(sample(cursor));section.dataset.cursor=String(cursor);transition(false);stateLabel();
+  return ()=>{disposed=true;cancelAnimationFrame(raf);reduce.removeEventListener('change',onMotion);document.removeEventListener('visibilitychange',onVisibility);};
 }
 '''
