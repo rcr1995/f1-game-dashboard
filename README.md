@@ -30,6 +30,11 @@ points within each team. Equal scores use alphabetical ordering for stability.
   Cancelled future races are excluded; corrected Excel points are never rescored.
   Missing/ambiguous history disables playback without hiding current standings.
   Unknown scoring/calendars show an explanation instead of an invented target.
+  Switch between a wider circuit with a two-column starting grid and a straight
+  with fixed driver lanes, progressing left to right. Circuit cars use bounded
+  on-track packing; coloured dots retain their exact points positions when crowded.
+  The straight uses exact progress without packing. Both views share selection,
+  checkpoints and eased animation, and respect reduced-motion preferences.
   For legacy 2026 calendars without `Has Sprint`, the agreed fallback is the
   [official 2026 Sprint venues](https://www.fia.com/news/fia-and-formula-1-announce-2026-sprint-calendar):
   China, Miami, Canada, Britain, Netherlands, Singapore. The season year applies
