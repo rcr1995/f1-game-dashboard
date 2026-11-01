@@ -30,14 +30,15 @@ points within each team. Equal scores use alphabetical ordering for stability.
   Cancelled future races are excluded; corrected Excel points are never rescored.
   Missing/ambiguous history disables playback without hiding current standings.
   Unknown scoring/calendars show an explanation instead of an invented target.
-  The default straight view progresses left to right; entire driver rows move
-  up/down with the official standings. One playback clock and monotone cubic
-  interpolation carry motion through race checkpoints without per-race pauses
-  or forced stops. Pause/resume and speed changes retain the current progress.
-  A wider circuit with a two-column starting grid remains available. Its cars use bounded
-  on-track packing; coloured dots retain their exact points positions when crowded.
-  The straight uses exact progress without packing. Both views share selection,
-  checkpoints and continuous playback, and respect reduced-motion preferences.
+  The default straight view fits all 22 drivers and playback controls in one
+  viewport. Names stay in the latest championship order throughout playback.
+  One playback clock and monotone cubic interpolation carry motion through race
+  checkpoints without per-race pauses. The circuit uses fixed lateral lanes on
+  a wider, smooth track: rank changes never shift a car backwards along it.
+  Zero-point cars wait in fixed pit bays and use a forward pit-exit route when
+  they first score. Genuine points reductions fade/snap to the corrected result
+  instead of animating reverse driving. Both views retain the historical points
+  formula, shared selection and reduced-motion support.
   For legacy 2026 calendars without `Has Sprint`, the agreed fallback is the
   [official 2026 Sprint venues](https://www.fia.com/news/fia-and-formula-1-announce-2026-sprint-calendar):
   China, Miami, Canada, Britain, Netherlands, Singapore. The season year applies

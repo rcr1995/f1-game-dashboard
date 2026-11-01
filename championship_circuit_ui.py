@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import html
 
-TRACK = "M 850 650 L 970 650 C 1135 650 1150 495 1040 410 C 975 360 930 355 875 310 C 810 250 860 150 740 145 C 650 140 610 215 530 200 L 320 130 C 180 80 95 160 145 280 C 180 360 290 370 265 445 C 250 495 135 460 140 545 C 145 620 195 650 300 650 L 850 650"
+TRACK = "M1000 800 L1160 800 C1303 800 1420 680 1420 520 C1420 350 1390 220 1250 220 C1110 220 1020 400 880 400 C740 400 700 200 560 200 L480 200 C300 200 180 340 180 520 C180 680 300 800 480 800 L1000 800"
 
 NOTES = {
     "sprint_2026": ("Sprint schedule: 2026 F1 venues, unless explicitly set in Excel. China · Miami · Canada · Britain · Netherlands · Singapore.",
@@ -52,29 +52,28 @@ def render(model: dict | None, lang="en") -> str:
         <span>{'Mesmos pontos, duas perspetivas' if pt else 'Same points, two perspectives'}</span>
       </div>
       <div class="cc-layout" hidden><div class="cc-course">
-        <div class="cc-map"><svg class="cc-svg" viewBox="0 0 1200 800" aria-label="{'Circuito virtual do campeonato' if pt else 'Virtual championship circuit'}" role="group">
+        <div class="cc-map"><svg class="cc-svg" viewBox="0 0 1600 1080" aria-label="{'Circuito virtual do campeonato' if pt else 'Virtual championship circuit'}" role="group">
           <defs><linearGradient id="cc-grass" x2=".8" y2="1"><stop stop-color="#35503c"/><stop offset="1" stop-color="#1c332e"/></linearGradient>
           <pattern id="cc-flag" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#f4f6ed"/><path d="M0 0h7v7H0zM7 7h7v7H7z" fill="#182129"/></pattern>
           <filter id="cc-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity=".4"/></filter></defs>
-          <rect width="1200" height="800" rx="18" fill="url(#cc-grass)"/>
+          <rect width="1600" height="1080" rx="18" fill="url(#cc-grass)"/>
           <path d="M0 228 Q300 70 520 345T1200 570 M0 370Q310 210 500 420T1200 630" fill="none" stroke="#688666" stroke-width="45" opacity=".10"/>
           <g aria-hidden="true" transform="translate(60 50)">{trees}</g>
-          <path d="{TRACK}" fill="#2d4837" stroke="#b7a985" stroke-width="144" stroke-linejoin="round"/>
-          <path d="{TRACK}" fill="none" stroke="#e6e6d7" stroke-width="130"/>
-          <path d="{TRACK}" fill="none" stroke="#c34942" stroke-width="130" stroke-dasharray="18 18"/>
-          <path d="{TRACK}" fill="none" stroke="#cdd0c7" stroke-width="120"/>
-          <path class="cc-track" d="{TRACK}" fill="none" stroke="#424b50" stroke-width="116"/>
+          <path d="{TRACK}" fill="#2d4837" stroke="#b7a985" stroke-width="228" stroke-linejoin="round"/>
+          <path d="{TRACK}" fill="none" stroke="#e6e6d7" stroke-width="216"/>
+          <path d="{TRACK}" fill="none" stroke="#c34942" stroke-width="216" stroke-dasharray="18 18"/>
+          <path d="{TRACK}" fill="none" stroke="#cdd0c7" stroke-width="206"/>
+          <path class="cc-track" d="{TRACK}" fill="none" stroke="#424b50" stroke-width="200"/>
           <path d="{TRACK}" fill="none" stroke="#9ba49f" stroke-opacity=".24" stroke-width="1" stroke-dasharray="8 10"/>
-          <path d="M350 690L410 735H905Q943 735 963 693" fill="none" stroke="#b7bab1" stroke-width="15"/>
-          <path d="M350 690L410 735H905Q943 735 963 693" fill="none" stroke="#5c6668" stroke-width="11"/>
-          <path d="M410 735H905" stroke="#dfdfca" stroke-width="1" stroke-dasharray="10 8"/>
-          <path d="M465 760h280" stroke="#96a38d" stroke-width="20"/>
-          <path d="M475 758h35m8 0h35m8 0h35m8 0h35m8 0h35m8 0h35" stroke="#e5dfbe" stroke-width="8"/>
-          <rect x="843" y="592" width="14" height="116" fill="url(#cc-flag)"/>
-          <path d="M895 650h22m-7-6 7 6-7 6" fill="none" stroke="#ffffff" stroke-width="2" opacity=".65"/>
-          <text x="850" y="785" text-anchor="middle" class="cc-map-caption">{'PARTIDA / META' if pt else 'START / FINISH'}</text>
+          <rect x="210" y="940" width="665" height="100" rx="10" fill="#46535a"/>
+          <path d="M230 960H900C1000 960 900 800 1000 800" fill="none" stroke="#b8c0b4" stroke-width="32"/>
+          <path d="M230 960H900C1000 960 900 800 1000 800" fill="none" stroke="#46535a" stroke-width="27"/>
+          <path d="M880 960C980 960 900 700 1000 700L1000 900C950 900 1000 975 880 975Z" fill="#46535a"/>
+          <rect x="993" y="700" width="14" height="200" fill="url(#cc-flag)"/>
+          <path d="M1070 800h30m-8-6 8 6-8 6" fill="none" stroke="#ffffff" stroke-width="2" opacity=".65"/>
+          <text x="1190" y="1018" text-anchor="middle" class="cc-map-caption">{'PARTIDA / META' if pt else 'START / FINISH'}</text>
+          <text x="525" y="1070" text-anchor="middle" class="cc-map-caption">{'BOXES · 0 PONTOS' if pt else 'PIT BAYS · 0 POINTS'}</text>
           <g class="cc-grid-slots" aria-hidden="true"></g>
-          <text x="560" y="400" text-anchor="middle" class="cc-grid-caption" hidden>{'GRELHA DE PARTIDA · 0 PONTOS' if pt else 'STARTING GRID · 0 POINTS'}</text>
           <g class="cc-anchors" aria-hidden="true" pointer-events="none"></g><g class="cc-cars"></g>
         </svg><span class="cc-transition" hidden>{'Transição entre classificações' if pt else 'Standings transition'}</span></div>
         <div class="cc-driver-detail" aria-live="off"></div>
@@ -85,7 +84,7 @@ def render(model: dict | None, lang="en") -> str:
       <div class="cc-straight">
         <div class="cc-straight-heading"><span>{'Piloto' if pt else 'Driver'}</span><div class="cc-axis"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><span>{'Pontos' if pt else 'Points'}</span></div>
         <div class="cc-lanes" role="group" aria-label="{'Reta do campeonato, da esquerda para a direita' if pt else 'Championship straight, left to right'}"></div>
-        <p class="cc-note">{'Partida à esquerda, meta à direita. Os pilotos sobem ou descem com a classificação. O centro de cada carro indica o progresso; os números mostram a corrida selecionada.' if pt else 'Start on the left, finish on the right. Drivers move up or down with the standings. Each car’s centre marks progress; the numbers show the selected race.'}</p>
+        <p class="cc-note">{'Partida à esquerda, meta à direita. Ordem fixa da classificação mais recente. O centro de cada carro indica o progresso; os números mostram a corrida selecionada.' if pt else 'Start on the left, finish on the right. Names stay in the latest championship order. Each car’s centre marks progress; the numbers show the selected race.'}</p>
       </div>
       <div class="cc-controls"><div class="cc-buttons">
         <button class="cc-play cc-primary" type="button">{'Reproduzir' if pt else 'Play'}</button>
@@ -97,7 +96,7 @@ def render(model: dict | None, lang="en") -> str:
       <label class="cc-timeline-label"><span>{'Época' if pt else 'Season timeline'}</span><input class="cc-timeline" type="range" min="0" max="0" value="0" aria-label="{'Linha temporal da época' if pt else 'Season timeline'}"/></label>
       <p class="cc-explanation">{explanation}</p>
       <p class="cc-note cc-opportunities"></p>
-      <p class="cc-note cc-pack-note">{'No circuito, os carros próximos formam pequenos grupos dentro da pista; os pontos coloridos marcam a distância exata. A reta mostra cada distância numa faixa separada.' if pt else 'On the circuit, closely matched cars form compact groups within the track; coloured dots mark their exact points positions. The straight shows each exact distance in a separate lane.'}</p>
+      <p class="cc-note cc-pack-note">{'Cada piloto mantém a sua faixa. Carros sem pontos esperam nas boxes e saem quando pontuam. Correções que reduzem pontos são atualizadas sem condução em marcha-atrás.' if pt else 'Each driver keeps a fixed track lane. Zero-point cars wait in pit bays and join when they score. Points reductions update at the corrected checkpoint without reverse driving.'}</p>
       <p class="cc-note">{'Calendário e resultados publicados, incluindo correções. As animações ligam classificações confirmadas; não representam posições ou ultrapassagens durante um GP.' if pt else 'Published calendar and results, including corrections. Movement connects confirmed standings; it does not represent live positions or overtakes in a GP.'}</p>
       {notes}
     </section>'''
@@ -118,6 +117,14 @@ STYLE = '''<style>
 @media(max-width:900px){.cc{margin:16px 16px 28px;padding:18px}.cc-header{align-items:start;flex-wrap:wrap}.cc-metrics{gap:24px}.cc-metrics strong{font-size:24px}.cc-layout{grid-template-columns:1fr}.cc-list{max-height:265px;display:grid;grid-template-columns:1fr 1fr;gap:0 12px}.cc-board{margin-top:8px}}
 @media(max-width:520px){.cc{margin:14px 8px 24px;padding:14px 10px;border-radius:12px}.cc-header{gap:16px}.cc-metrics{width:100%;justify-content:space-between;padding-top:10px;border-top:1px solid #2b3542}.cc-metrics span{font-size:10px}.cc-layout{gap:8px}.cc-list{grid-template-columns:1fr;max-height:258px}.cc-row{min-height:44px}.cc-controls{gap:12px}.cc-buttons{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr 1fr}.cc button:not(.cc-row):not(.cc-lane){padding:9px 4px;min-height:44px}.cc .cc-controls button.cc-primary{min-width:0}.cc-prev span,.cc-next span{font-size:10px}.cc-driver-detail{gap:12px 15px}.cc-driver-detail .cc-detail-name{flex-basis:100%}.cc-detail-stat{flex:1}.cc-timeline-label{gap:8px;font-size:10px}.cc-view-switch span{display:none}.cc-straight-heading,.cc .cc-lane{grid-template-columns:86px minmax(0,1fr) 52px;gap:5px}.cc-straight-heading{padding-left:4px;padding-right:4px}.cc-lanes{--cc-lane-height:48px}.cc .cc-lane{padding:4px;font-size:10px;min-height:48px}.cc-lane-name{gap:4px}.cc-lane-name b{min-width:17px;font-size:10px}.cc-lane-score{gap:2px;flex-direction:column;align-items:end}.cc-lane-score small{font-size:9px}.cc-lane-car{width:32px}.cc-axis,.cc-lane-track{margin-left:17px;margin-right:17px}.cc-axis{font-size:9px}.cc .cc-view-switch button{flex:1}}
 @media(prefers-reduced-motion:reduce){.cc *{scroll-behavior:auto!important;transition:none!important}}
+
+/* The field and controls share one viewport-sized panel. */
+.cc{display:flex;flex-direction:column;height:var(--cc-height,calc(100svh - 145px));min-height:420px;max-height:1000px;padding:10px 14px;margin-top:8px;margin-bottom:12px;overflow:hidden}
+.cc-header{margin-bottom:7px;gap:12px;flex-shrink:0}.cc-context{font-size:10px;margin-bottom:2px}.cc .cc-race{font-size:19px;margin-bottom:2px}.cc-round{font-size:10px;min-height:14px}.cc-metrics{gap:20px}.cc-metrics span{font-size:9px}.cc-metrics strong{font-size:23px}.cc-view-switch{margin-bottom:6px;gap:5px;flex-shrink:0}.cc-view-switch span{font-size:10px}
+.cc button:not(.cc-row):not(.cc-lane),.cc select{min-height:28px;padding:4px 9px;font-size:11px}.cc .cc-controls button.cc-primary{min-width:68px}.cc .cc-view-switch button{min-width:80px}.cc-controls{gap:10px;margin:0 0 5px;padding:5px 0;flex-shrink:0}.cc-controls label{font-size:9px;gap:2px}.cc-timeline-label{margin:0 0 5px;min-height:20px;font-size:10px;flex-shrink:0}.cc-timeline{min-height:20px}.cc-straight{display:flex;flex:1;flex-direction:column;min-height:0}.cc-straight-heading{padding:0 7px 4px;font-size:9px;flex-shrink:0}.cc-lanes{height:auto;min-height:0;flex:1}.cc .cc-lane{height:calc((100% - 2px)/var(--cc-count));min-height:0;padding:0 7px;font-size:11px;will-change:auto}.cc-lane-name{gap:6px;white-space:nowrap;overflow:hidden}.cc-lane-name span{overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}.cc-lane-name b{font-size:9px;min-width:17px}.cc-lane-track{height:100%;min-height:0}.cc-lane-car{width:28px;height:18px}.cc-lane-trail{top:calc(50% - 2px);height:4px}.cc-lane-score b{font-size:10px}.cc-lane-score small{font-size:9px}.cc-lane-progress{display:none!important}.cc-straight>.cc-note{display:none}
+.cc-driver-detail{min-height:25px;flex-shrink:0;gap:6px;padding:5px 0 0;font-size:10px;flex-wrap:nowrap}.cc-driver-detail strong{font-size:11px}.cc-driver-detail .cc-detail-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cc-driver-detail .cc-detail-stat{min-width:45px;gap:1px}.cc-detail-stat span{font-size:8px}.cc-detail-stat b{font-size:10px}.cc-explanation{font-size:9px;line-height:1.3;margin:5px 0 0;flex-shrink:0}.cc>.cc-note{display:none}.cc>.cc-warning{display:block;font-size:9px;line-height:1.25;padding:3px 5px;margin:2px 0 0}.cc-layout{flex:1;min-height:0;align-items:stretch;gap:12px}.cc-course{min-height:0;display:flex}.cc-map{width:100%;height:100%;display:flex;align-items:center;justify-content:center}.cc-svg{max-height:100%;width:100%;height:100%;object-fit:contain;overflow:hidden}.cc-board{min-height:0;display:flex;flex-direction:column}.cc-board-heading{padding-bottom:4px;flex-shrink:0}.cc-board-heading h3{font-size:11px}.cc-list{max-height:none;overflow:hidden;flex:1;display:flex;flex-direction:column;padding:0}.cc-row{min-height:0;flex:1;padding:0 4px;font-size:10px;gap:5px;grid-template-columns:17px 6px minmax(0,1fr) auto}.cc-row .cc-dot{height:10px;width:4px}.cc-row .cc-score{gap:6px}.cc-row .cc-score small{font-size:8px;min-width:20px}.cc-car-label{opacity:0;pointer-events:none}.cc-car[aria-pressed=true] .cc-car-label,.cc-car.cc-hover .cc-car-label,.cc-car:focus-visible .cc-car-label{opacity:1}.cc-car .cc-car-halo{stroke-width:3}.cc-car text{font-size:11px}
+@media(max-width:900px){.cc{margin-left:8px;margin-right:8px;padding:8px 10px}.cc-layout{grid-template-columns:minmax(0,1fr) 185px}.cc-board{margin-top:0}.cc-list{display:flex;gap:0}.cc-header{flex-wrap:nowrap}.cc-metrics strong{font-size:20px}}
+@media(max-width:520px){.cc{height:var(--cc-height,calc(100svh - 210px));padding:7px 6px;min-height:450px}.cc-header{gap:6px;flex-wrap:wrap;margin-bottom:4px}.cc-context{font-size:8px}.cc .cc-race{font-size:15px}.cc-round{font-size:9px}.cc-metrics{width:100%;flex-direction:row;justify-content:space-between;border:0;padding:0;gap:8px}.cc-metrics>div{flex-direction:row;align-items:center;gap:6px}.cc-metrics span{font-size:8px;max-width:80px}.cc-metrics strong{font-size:18px}.cc-view-switch{margin-bottom:3px}.cc .cc-view-switch button{min-height:27px;padding:3px}.cc-controls{gap:4px;display:grid;grid-template-columns:minmax(0,1fr) 52px;padding:4px 0;margin-bottom:3px}.cc-buttons{grid-column:1/-1;gap:4px}.cc button:not(.cc-row):not(.cc-lane){min-height:27px;padding:3px;font-size:10px}.cc .cc-controls button.cc-primary{min-width:0}.cc-controls select{min-height:27px;padding:3px;font-size:10px}.cc-controls label{font-size:8px}.cc-race-select{min-width:0}.cc-timeline-label{font-size:9px;min-height:18px}.cc-straight-heading,.cc .cc-lane{grid-template-columns:86px minmax(0,1fr) 42px;gap:3px}.cc-straight-heading{padding-left:3px;padding-right:3px;font-size:8px}.cc .cc-lane{font-size:9px;min-height:0;padding:0 3px}.cc-lane-name{gap:3px}.cc-lane-name b{font-size:8px;min-width:13px}.cc-axis,.cc-lane-track{margin:0 12px}.cc-lane-car{width:22px;height:100%;max-height:14px}.cc-lane-score{flex-direction:row;gap:3px;align-items:center}.cc-lane-score b{font-size:9px}.cc-lane-score small{font-size:7px;min-width:16px}.cc-driver-detail{gap:4px;min-height:26px}.cc-driver-detail .cc-detail-name{flex-basis:auto;font-size:9px}.cc-driver-detail .cc-detail-stat{min-width:31px;flex:0}.cc-detail-stat span{font-size:7px}.cc-detail-stat b{font-size:9px}.cc-explanation{font-size:8px;margin-top:3px}.cc-layout{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr);gap:4px}.cc-list{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(11,minmax(0,1fr));grid-auto-flow:column}.cc-row{font-size:9px;gap:3px;min-height:0}.cc-row .cc-score small{display:none}.cc-board-heading{display:none}}
 </style>'''
 
 
@@ -141,43 +148,33 @@ function championshipSeries(values) {
 function advanceChampionship(cursor,elapsed,speed,last) {
   return Math.min(last,Math.max(0,cursor+Math.max(0,elapsed)*speed/2400));
 }
-// Collision spacing only changes the glyph position. The points fraction stays
-// intact; a coloured anchor marks it, and the straight uses it without offsets.
-function championshipPack(standings, length, pointAt) {
-  const result=new Map(), occupied=[];
-  const grid=standings.every(e=>!(e.progress>0));
-  const sorted=[...standings].sort((a,b)=>a.position-b.position);
-  sorted.forEach((e,i)=>{
-    const p=Math.min(1,Math.max(0,e.progress||0));
-    if(grid){result.set(e.id,{p,s:-44*(Math.floor(i/2)+1),lane:i%2?24:-24,grid:true});return;}
-    let chosen;
-    // Bounded lateral lanes: even the rotated car's corners remain on asphalt.
-    // Search along the track for a free space instead of fanning onto the grass.
-    for(let step=0;step<=standings.length*3&&!chosen;step++){
-      const shifts=step===0?[0]:[-step*42,step*42];
-      for(const shift of shifts){
-        for(const lane of [0,-40,40]){
-          const s=p*length+shift;
-          if(s<0||s>length)continue;
-          const point=pointAt(s,lane);
-          if(occupied.every(other=>Math.abs(point.x-other.x)>=40||Math.abs(point.y-other.y)>=38)){
-            chosen={p,s,lane,grid:false};occupied.push(point);break;
-          }
-        }
-        if(chosen)break;
-      }
-    }
-    // The full roster bounds the search; a full lap has many more spaces than
-    // drivers. This guard keeps unexpected input on the road as well.
-    result.set(e.id,chosen||{p,s:p*length,lane:0,grid:false});
-  });
-  return result;
+// Every driver retains one lateral lane; rank never changes track distance.
+function championshipTrackLayout(standings, order, length) {
+  return new Map(standings.map(e=>{
+    const row=order.indexOf(e.id),p=Math.max(0,Math.min(1,e.progress||0));
+    return [e.id,{p,s:p*length,lane:(row-(order.length-1)/2)*8,pit:!(e.points>0),pitIndex:row,row}];
+  }));
+}
+function championshipPitDistance(p,length,pitLength,firstProgress) {
+  return firstProgress>0&&p>=firstProgress?p*length:p*length-pitLength*Math.pow(1-(firstProgress>0?p/firstProgress:0),3);
+}
+function championshipCorrectionOpacity(values,at) {
+  if(at>=values.length-1)return 1;
+  const i=Math.floor(at),t=at-i;
+  if(values[i+1]<values[i]&&t>.85)return Math.max(0,(1-t)/.15);
+  if(i>0&&values[i]<values[i-1]&&t<.15)return t/.15;
+  return 1;
+}
+function championshipForwardProgress(values,cursor) {
+  const at=Math.max(0,Math.min(values.length-1,cursor)),i=Math.floor(at);
+  // Corrections are shown at their checkpoint, never as reverse driving.
+  return i<values.length-1&&values[i+1]<values[i]?values[i]:championshipSeries(values)(at);
 }
 function mountChampionship(root, model, pt) {
   const section = root.querySelector('.cc');
   if (!section || !model?.frames?.length) return () => {};
   const q = s => section.querySelector(s), NS = 'http://www.w3.org/2000/svg';
-  const frames = model.frames, drivers = new Map(model.drivers.map(d => [d.id,d]));
+  const frames = model.frames, order=frames[frames.length-1].standings.map(e=>e.id), drivers = new Map(model.drivers.map(d => [d.id,d]));
   const path = q('.cc-track'), length = path.getTotalLength(), cars = new Map(), rows = new Map(), anchors = new Map(), lanes = new Map();
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   const fmt = n => n == null ? '—' : new Intl.NumberFormat(pt?'pt-PT':'en-GB',{maximumFractionDigits:2}).format(n);
@@ -187,17 +184,45 @@ function mountChampionship(root, model, pt) {
   let index=model.defaultIndex, playing=false, started=false, raf=0, selected=frames[index].standings[0]?.id, hovered=null;
   let positions=new Map(), speed=1, disposed=false, view='straight',cursor=index,lastTime=0,motion=null;
   const segments=Math.ceil(length/2),samples=Array.from({length:segments+1},(_,i)=>path.getPointAtLength(i*length/segments));
+  const tangents=samples.map((_,i)=>{
+    const before=samples[(i-1+segments)%segments],after=samples[(i+1)%segments],dx=after.x-before.x,dy=after.y-before.y,n=Math.hypot(dx,dy)||1;
+    return {x:dx/n,y:dy/n};
+  });
   // A distance may be negative for grid slots behind the start. Only geometry
   // wraps: a champion retains p=1, a finished state and the finish-line marker.
   function pointAt(s,lane=0){
-    const distance=((s%length)+length)%length,u=distance/length*segments,i=Math.min(segments-1,Math.floor(u)),t=u-i;
-    const before=samples[i],after=samples[i+1],point={x:before.x+(after.x-before.x)*t,y:before.y+(after.y-before.y)*t};
-    const angle=Math.atan2(after.y-before.y,after.x-before.x);
-    return {x:point.x-Math.sin(angle)*lane,y:point.y+Math.cos(angle)*lane,angle};
+    const offset=v=>{
+      const distance=((v%length)+length)%length,u=distance/length*segments,i=Math.min(segments-1,Math.floor(u)),t=u-i;
+      const before=samples[i],after=samples[i+1],tx=tangents[i].x*(1-t)+tangents[i+1].x*t,ty=tangents[i].y*(1-t)+tangents[i+1].y*t,n=Math.hypot(tx,ty)||1;
+      return {x:before.x+(after.x-before.x)*t-ty/n*lane,y:before.y+(after.y-before.y)*t+tx/n*lane};
+    };
+    const point=offset(s),before=offset(s-1),after=offset(s+1);
+    return {...point,angle:Math.atan2(after.y-before.y,after.x-before.x)};
+  }
+  const pitRoutes=new Map(order.map((id,i)=>{
+    const x=230+i*28,lane=(i-(order.length-1)/2)*8,endY=800+lane,route=[{x,y:1010}];
+    const cubic=(a,b,c,d)=>{for(let j=1;j<=60;j++){const t=j/60,u=1-t;route.push({x:u*u*u*a.x+3*u*u*t*b.x+3*u*t*t*c.x+t*t*t*d.x,y:u*u*u*a.y+3*u*u*t*b.y+3*u*t*t*c.y+t*t*t*d.y});}};
+    cubic({x,y:1010},{x,y:990},{x:x+20,y:960},{x:x+40,y:960});
+    route.push({x:900,y:960});
+    cubic({x:900,y:960},{x:1000,y:960},{x:900,y:endY},{x:1000,y:endY});
+    let total=0;route.forEach((p,i)=>{if(i)total+=Math.hypot(p.x-route[i-1].x,p.y-route[i-1].y);p.distance=total;});
+    const first=frames.find(f=>f.standings.find(e=>e.id===id)?.points>0)?.standings.find(e=>e.id===id)?.progress||0;
+    return [id,{route,total,first}];
+  }));
+  function travelDistance(id,p){
+    const route=pitRoutes.get(id);
+    return championshipPitDistance(p,length,route.total,route.first);
+  }
+  function pitPoint(id,s){
+    const {route,total}=pitRoutes.get(id),d=Math.max(0,Math.min(total,total+s));
+    let i=1;while(i<route.length-1&&route[i].distance<d)i++;
+    const a=route[i-1],b=route[i],t=(d-a.distance)/(b.distance-a.distance||1);
+    return {x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t,angle:Math.atan2(b.y-a.y,b.x-a.x)};
   }
   // Put shared playback controls above either view, including a long lane list.
   section.insertBefore(q('.cc-controls'),q('.cc-layout'));
   section.insertBefore(q('.cc-timeline-label'),q('.cc-layout'));
+  section.insertBefore(q('.cc-driver-detail'),q('.cc-explanation'));
   const stateLabel = () => {q('.cc-play').textContent=playing?(pt?'Pausar':'Pause'):(pt?'Reproduzir':'Play');q('.cc-play').setAttribute('aria-pressed',String(playing));section.dataset.playing=String(playing);};
   const selectDriver = (id, temporary=false) => {if(temporary)hovered=id;else{selected=id;hovered=null;}showDriver();};
   function showDriver() {
@@ -219,7 +244,7 @@ function mountChampionship(root, model, pt) {
     const anchor=svgEl('g',{class:'cc-anchor'});anchor.append(svgEl('path',{fill:'none',stroke:d.color,'stroke-width':1.3,'stroke-dasharray':'3 4'}),svgEl('circle',{r:2.5,fill:d.color}));
     q('.cc-anchors').append(anchor);anchors.set(d.id,anchor);
     const car=svgEl('g',{class:'cc-car',tabindex:'0',role:'button','data-driver-id':d.id,'aria-pressed':'false'});
-    const hit=svgEl('rect',{class:'cc-hit',x:-19,y:-24,width:38,height:38,rx:6});car.append(hit);
+    const hit=svgEl('rect',{class:'cc-hit',x:-21,y:-4,width:42,height:8,rx:6});car.append(hit);
     const body=svgEl('g',{class:'cc-car-body'});
     body.append(svgEl('rect',{class:'cc-car-halo',x:-20,y:-12,width:39,height:24,rx:5}));
     [[-14,-10,8,5],[-14,5,8,5],[7,-10,7,5],[7,5,7,5]].forEach(([x,y,w,h])=>body.append(svgEl('rect',{x,y,width:w,height:h,rx:1,fill:'#071014',stroke:'#91a4aa','stroke-width':.6})));
@@ -249,23 +274,25 @@ function mountChampionship(root, model, pt) {
     lanes.set(d.id,lane);
   });
   q('.cc-lanes').style.setProperty('--cc-count',String(model.drivers.length));
-  frames[model.defaultIndex].standings.forEach(e=>q('.cc-lanes').append(lanes.get(e.id)));
-  model.drivers.forEach((d,i)=>{
-    const p=pointAt(-44*(Math.floor(i/2)+1),i%2?24:-24);
-    q('.cc-grid-slots').append(svgEl('path',{d:`M${p.x-17} ${p.y-10}h34v20h-34`,fill:'none',stroke:'#d9e2d5','stroke-width':1,'stroke-opacity':.35}));
+  order.forEach(id=>{q('.cc-lanes').append(lanes.get(id));q('.cc-list').append(rows.get(id));});
+  order.forEach((id,i)=>{
+    const x=230+i*28;
+    q('.cc-grid-slots').append(svgEl('path',{d:`M${x} 1010V960`,stroke:'#687b80','stroke-width':12}));
+    q('.cc-grid-slots').append(svgEl('rect',{x:x-11,y:993,width:22,height:35,fill:'none',stroke:'#c4d0bf','stroke-width':1}));
   });
   frames.forEach((f,i)=>{const option=htmlEl('option','',`${f.round?`R${f.round} · `:''}${raceName(f)}`);option.value=String(i);q('.cc-select').append(option);});
   q('.cc-timeline').max=String(frames.length-1);
   const layouts=frames.map(frame=>{
-    const result=championshipPack(frame.standings,length,pointAt);
-    frame.standings.forEach(e=>result.get(e.id).row=e.position-1);
+    const result=championshipTrackLayout(frame.standings,order,length);
     return result;
   });
   const curves=new Map(model.drivers.map(d=>[d.id,Object.fromEntries(['p','s','lane','row'].map(key=>[key,championshipSeries(layouts.map(frame=>frame.get(d.id)[key]))]))]));
   function sample(at){
     return new Map(model.drivers.map(d=>{
       const curve=curves.get(d.id),position=Object.fromEntries(Object.entries(curve).map(([key,get])=>[key,get(at)]));
-      return [d.id,{...position,grid:at===0&&layouts[0].get(d.id).grid}];
+      const values=layouts.map(f=>f.get(d.id).p),p=championshipForwardProgress(values,at);
+      const opacity=championshipCorrectionOpacity(values,at);
+      return [d.id,{...position,p,s:p*length,lane:layouts[0].get(d.id).lane,row:layouts[0].get(d.id).row,opacity}];
     }));
   }
   function place(id, position) {
@@ -274,14 +301,16 @@ function mountChampionship(root, model, pt) {
     lane.querySelector('.cc-lane-car').style.left=`${position.p*100}%`;
     lane.querySelector('.cc-lane-trail').style.width=`${position.p*100}%`;
     lane.dataset.visualProgress=String(position.p);lane.dataset.visualRank=String(position.row+1);
-    car.dataset.visualProgress=String(position.p);car.dataset.trackDistance=String(position.s);car.dataset.lane=String(position.lane);
+    car.dataset.visualProgress=String(position.p);car.dataset.lane=String(position.lane);car.style.opacity=String(position.opacity??1);
     // The default view only animates lightweight row transforms and car progress.
     // Hidden circuit geometry is repainted when that view is selected.
     if(view!=='circuit')return;
-    const point=pointAt(position.s,position.lane),exact=pointAt(position.p*length);
+    const travel=travelDistance(id,position.p),point=travel<0?pitPoint(id,travel):pointAt(travel,position.lane),exact=pointAt(position.p*length);
+    car.dataset.trackDistance=String(travel);car.dataset.inPit=String(travel<0);
     car.setAttribute('transform',`translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`);
-    car.querySelector('.cc-car-body').setAttribute('transform',`rotate(${point.angle*180/Math.PI}) scale(.75)`);
-    const anchor=anchors.get(id);anchor.style.display=position.grid?'none':'';
+    car.querySelector('.cc-car-body').setAttribute('transform',`rotate(${point.angle*180/Math.PI}) scale(1 .30)`);
+    car.querySelector('.cc-hit').setAttribute('transform',`rotate(${point.angle*180/Math.PI})`);
+    const anchor=anchors.get(id);anchor.style.display='none';
     let line=`M${exact.x} ${exact.y}`;
     const delta=position.s-position.p*length,steps=Math.max(1,Math.ceil(Math.abs(delta)/15));
     for(let i=0;i<=steps;i++){const a=pointAt(position.p*length+delta*i/steps,position.lane);line+=`L${a.x} ${a.y}`;}
@@ -293,21 +322,21 @@ function mountChampionship(root, model, pt) {
   function display(next) {
     const focused=section.getRootNode().activeElement;
     index=next;const frame=frames[index];section.dataset.frame=String(index);
-    q('.cc-grid-caption').toggleAttribute('hidden',index!==0);q('.cc-grid-slots').toggleAttribute('hidden',index!==0);
+
     q('.cc-race').textContent=raceName(frame);q('.cc-round').textContent=`${frame.round?`${pt?'Ronda':'Round'} ${frame.round} · `:''}${frame.completed} / ${model.totalRaces} ${pt?'corridas concluídas':'races completed'}`;
     q('.cc-target').textContent=fmt(frame.target);q('.cc-remaining').textContent=fmt(frame.remaining);
     q('.cc-opportunities').textContent=frame.remaining==null?'':`${pt?'Ainda por disputar':'Still to race'}: ${frame.remainingRaces} ${pt?'GPs':'Grands Prix'} · ${frame.remainingSprints} Sprints.`;
     q('.cc-select').value=String(index);q('.cc-timeline').value=String(index);q('.cc-timeline').setAttribute('aria-valuetext',raceName(frame));
     q('.cc-prev').disabled=index===0||!model.playback;q('.cc-next').disabled=index===frames.length-1||!model.playback;
     frame.standings.forEach(e=>{const d=drivers.get(e.id),row=rows.get(e.id),car=cars.get(e.id),lane=lanes.get(e.id);
-      row.querySelector('.cc-pos').textContent=String(e.position).padStart(2,'0');row.querySelector('.cc-points').textContent=fmt(e.points);row.querySelector('.cc-gap').textContent=e.gap?`\u2212${fmt(e.gap)}`:'—';q('.cc-list').append(row);
+      row.querySelector('.cc-pos').textContent=String(order.indexOf(e.id)+1).padStart(2,'0');row.querySelector('.cc-points').textContent=fmt(e.points);row.querySelector('.cc-gap').textContent=e.gap?`\u2212${fmt(e.gap)}`:'—';
       const description=`${d.name}, ${fmt(e.points)} ${pt?'pontos':'points'}, P${e.position}, ${pt?'diferença para o líder':'gap to leader'} ${fmt(e.gap)}, ${e.progress==null?'—':fmt(e.progress*100)+'%'} ${pt?'do circuito':'of circuit'}`;
       const finished=e.progress===1&&frame.remaining===0&&frame.target>0;
       car.setAttribute('aria-label',description);row.setAttribute('aria-label',description);car.dataset.progress=String(e.progress??'');car.classList.toggle('cc-finished',finished);
       car.querySelector('text').textContent=d.label+(finished?' \u2713':'');
-      q('.cc-lanes').append(lane);lane.dataset.position=String(e.position);
+      lane.dataset.position=String(e.position);lane.dataset.latestPosition=String(order.indexOf(e.id)+1);
       lane.setAttribute('aria-label',description);lane.title=description;lane.dataset.progress=String(e.progress??'');lane.classList.toggle('cc-finished',finished);
-      lane.querySelector('.cc-lane-rank').textContent=`P${e.position}`;lane.querySelector('.cc-lane-points').textContent=fmt(e.points);
+      lane.querySelector('.cc-lane-rank').textContent=`${order.indexOf(e.id)+1}`;lane.querySelector('.cc-lane-points').textContent=fmt(e.points);
       lane.querySelector('.cc-lane-gap').textContent=e.gap?`\u2212${fmt(e.gap)}`:'—';lane.querySelector('.cc-lane-progress').textContent=e.progress==null?'—':`${fmt(e.progress*100)}%`;
     });
     if(focused&&section.contains(focused)&&focused!==section.getRootNode().activeElement)focused.focus({preventScroll:true});
@@ -347,7 +376,7 @@ function mountChampionship(root, model, pt) {
   const seek=i=>{
     pause();started=true;cursor=Math.max(0,Math.min(frames.length-1,i));display(cursor);section.dataset.cursor=String(cursor);
     const to=sample(cursor);
-    if(reduce.matches||!positions.size){motion=null;paint(to);transition(false);}
+    if(reduce.matches||!positions.size||[...to].some(([id,p])=>p.p<positions.get(id).p)){motion=null;paint(to);transition(false);}
     else{motion={from:new Map(positions),to,elapsed:0,running:true};transition(true);run();}
   };
   q('.cc-prev').addEventListener('click',()=>seek(index-1));q('.cc-next').addEventListener('click',()=>seek(index+1));
@@ -365,7 +394,12 @@ function mountChampionship(root, model, pt) {
   setView('straight');
   const onMotion=()=>{if(reduce.matches){motion=null;cursor=index;paint(sample(index));transition(false);}};reduce.addEventListener('change',onMotion);
   const onVisibility=()=>{if(document.hidden)pause();};document.addEventListener('visibilitychange',onVisibility);
+  function fit(){
+    const nav=root.querySelector('nav[aria-label="Season sections"]'),chrome=(nav?.getBoundingClientRect().height||70)+(window.innerWidth<520?112:80);
+    section.style.setProperty('--cc-height',`${Math.max(420,window.innerHeight-chrome)}px`);
+  }
+  fit();window.addEventListener('resize',fit);
   display(index);paint(sample(cursor));section.dataset.cursor=String(cursor);transition(false);stateLabel();
-  return ()=>{disposed=true;cancelAnimationFrame(raf);reduce.removeEventListener('change',onMotion);document.removeEventListener('visibilitychange',onVisibility);};
+  return ()=>{disposed=true;cancelAnimationFrame(raf);window.removeEventListener('resize',fit);reduce.removeEventListener('change',onMotion);document.removeEventListener('visibilitychange',onVisibility);};
 }
 '''
