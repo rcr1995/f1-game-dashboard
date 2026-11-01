@@ -1,5 +1,7 @@
 """Fixed championship lanes must preserve points and forward circuit progress."""
 import shutil
+import math
+import re
 import subprocess
 import unittest
 
@@ -8,6 +10,46 @@ import championship_circuit_ui as ui
 
 @unittest.skipUnless(shutil.which("node"), "Node.js is needed for geometry tests")
 class ChampionshipLayoutTests(unittest.TestCase):
+    def test_wide_circuit_turns_do_not_reverse_the_outer_lane_trajectory(self):
+        tokens = re.findall(r"[MLC]|-?\d+(?:\.\d+)?", ui.TRACK)
+        i, current, radii = 0, (0, 0), []
+        while i < len(tokens):
+            command = tokens[i]
+            i += 1
+            count = 6 if command == "C" else 2
+            values = list(map(float, tokens[i:i + count]))
+            i += count
+            if command == "C":
+                a, b, c, d = current, values[:2], values[2:4], values[4:6]
+                for step in range(1001):
+                    t, u = step / 1000, 1 - step / 1000
+                    velocity = [3*u*u*(b[k]-a[k])+6*u*t*(c[k]-b[k])+3*t*t*(d[k]-c[k]) for k in (0, 1)]
+                    acceleration = [6*u*(c[k]-2*b[k]+a[k])+6*t*(d[k]-2*c[k]+b[k]) for k in (0, 1)]
+                    cross = abs(velocity[0]*acceleration[1]-velocity[1]*acceleration[0])
+                    if cross:
+                        radii.append(math.hypot(*velocity)**3/cross)
+            current = tuple(values[-2:])
+        self.assertGreater(min(radii), 260, "turn radius must clear the 240-unit half-road and all 22 lanes")
+
+    def test_swimming_style_seeding_keeps_leaders_central_and_every_driver_unique(self):
+        script = ui.JS + r"""
+const assert=require('node:assert/strict');
+for(const n of [0,1,2,3,5,22]){
+  const ids=Array.from({length:n},(_,i)=>String(i)),seeded=championshipSeededOrder(ids),middle=(n-1)/2;
+  assert.equal(seeded.length,n);assert.equal(new Set(seeded).size,n);
+  assert.deepEqual([...seeded].sort(),[...ids].sort());
+  let distance=-1;
+  ids.forEach(id=>{const next=Math.abs(seeded.indexOf(id)-middle);assert.ok(next>=distance);distance=next;});
+  assert.deepEqual(championshipSeededOrder(ids),seeded);
+}
+const seeded=championshipSeededOrder(Array.from({length:22},(_,i)=>String(i)));
+assert.equal(seeded[10],'0');assert.equal(seeded[11],'1');
+assert.equal(seeded[9],'2');assert.equal(seeded[12],'3');
+"""
+        result = subprocess.run([shutil.which("node"), "-"], input=script,
+                                text=True, encoding="utf-8", capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_pit_departure_is_forward_and_corrections_do_not_drive_backwards(self):
         script = ui.JS + r"""
 const assert=require('node:assert/strict');
@@ -84,8 +126,8 @@ function check(values) {
     assert.equal(p.p,Math.min(1,Math.max(0,e.progress||0)));
     assert.equal(p.s,p.p*length,'distance is solely the points fraction, with no crowding adjustment');
     assert.ok(Number.isFinite(p.s));assert.ok(p.s>=0&&p.s<=length);
-    assert.equal(p.lane,(i-(order.length-1)/2)*8);
-    assert.ok(Math.abs(p.lane)<=84,'22 lanes remain within the widened road');
+    assert.equal(p.lane,(i-(order.length-1)/2)*20);
+    assert.ok(Math.abs(p.lane)<=210,'22 lanes remain within the widened road');
     assert.equal(p.row,i,'straight rows use the fixed latest order');
     assert.equal(p.pit,!(e.points>0));assert.equal(p.pitIndex,i);
   });

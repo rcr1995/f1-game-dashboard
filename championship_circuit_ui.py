@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import html
 
-TRACK = "M1000 800 L1160 800 C1303 800 1420 680 1420 520 C1420 350 1390 220 1250 220 C1110 220 1020 400 880 400 C740 400 700 200 560 200 L480 200 C300 200 180 340 180 520 C180 680 300 800 480 800 L1000 800"
+TRACK = "M2800 1100 L3450 1100 C3698.528 1100 3900 909.721 3900 675 C3900 440.279 3698.528 250 3450 250 L2850 250 C2550 250 2500 500 2200 500 C1900 500 1850 250 1550 250 L750 250 C501.472 250 300 440.279 300 675 C300 909.721 501.472 1100 750 1100 L2800 1100"
 
 NOTES = {
     "sprint_2026": ("Sprint schedule: 2026 F1 venues, unless explicitly set in Excel. China · Miami · Canada · Britain · Netherlands · Singapore.",
@@ -28,11 +28,11 @@ def render(model: dict | None, lang="en") -> str:
     # Deterministic small vector scenery; never used to position the data marks.
     for band, count in ((0, 32), (1, 22), (2, 16)):
         for i in range(count):
-            x = 22 + ((i * 137 + band * 83) % 956)
-            y = (25 + i % 4 * 9) if band == 0 else (590 + i % 3 * 17) if band == 1 else (265 + i % 3 * 22)
-            if band == 2 and (x < 245 or x > 700):
+            x = 90 + ((i * 397 + band * 179) % 4020)
+            y = (40 + i % 4 * 15) if band == 0 else (1520 + i % 3 * 17) if band == 1 else (550 + i % 3 * 22)
+            if band == 2 and (x < 800 or x > 3200):
                 continue
-            r = 10 + i % 4 * 2
+            r = 20 + i % 4 * 5
             trees += f'<ellipse cx="{x+4}" cy="{y+6}" rx="{r}" ry="{r*.7}" fill="#0b1f18" opacity=".5"/><circle cx="{x}" cy="{y}" r="{r}" fill="{["#345d3e","#456e44","#597b4a"][i%3]}"/><circle cx="{x-3}" cy="{y-4}" r="{r*.6}" fill="#729259" opacity=".36"/>'
     notes = "".join(f'<p class="cc-note {"cc-warning" if n != "sprint_2026" else ""}">{esc(NOTES[n][int(pt)])}</p>' for n in model["notes"])
     meta = model["meta"]
@@ -52,27 +52,27 @@ def render(model: dict | None, lang="en") -> str:
         <span>{'Mesmos pontos, duas perspetivas' if pt else 'Same points, two perspectives'}</span>
       </div>
       <div class="cc-layout" hidden><div class="cc-course">
-        <div class="cc-map"><svg class="cc-svg" viewBox="0 0 1600 1080" aria-label="{'Circuito virtual do campeonato' if pt else 'Virtual championship circuit'}" role="group">
+        <div class="cc-map"><svg class="cc-svg" viewBox="0 0 4200 1640" preserveAspectRatio="none" aria-label="{'Circuito virtual do campeonato' if pt else 'Virtual championship circuit'}" role="group">
           <defs><linearGradient id="cc-grass" x2=".8" y2="1"><stop stop-color="#35503c"/><stop offset="1" stop-color="#1c332e"/></linearGradient>
           <pattern id="cc-flag" width="14" height="14" patternUnits="userSpaceOnUse"><rect width="14" height="14" fill="#f4f6ed"/><path d="M0 0h7v7H0zM7 7h7v7H7z" fill="#182129"/></pattern>
           <filter id="cc-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-opacity=".4"/></filter></defs>
-          <rect width="1600" height="1080" rx="18" fill="url(#cc-grass)"/>
+          <rect width="4200" height="1640" rx="18" fill="url(#cc-grass)"/>
           <path d="M0 228 Q300 70 520 345T1200 570 M0 370Q310 210 500 420T1200 630" fill="none" stroke="#688666" stroke-width="45" opacity=".10"/>
           <g aria-hidden="true" transform="translate(60 50)">{trees}</g>
-          <path d="{TRACK}" fill="#2d4837" stroke="#b7a985" stroke-width="228" stroke-linejoin="round"/>
-          <path d="{TRACK}" fill="none" stroke="#e6e6d7" stroke-width="216"/>
-          <path d="{TRACK}" fill="none" stroke="#c34942" stroke-width="216" stroke-dasharray="18 18"/>
-          <path d="{TRACK}" fill="none" stroke="#cdd0c7" stroke-width="206"/>
-          <path class="cc-track" d="{TRACK}" fill="none" stroke="#424b50" stroke-width="200"/>
+          <path d="{TRACK}" fill="#2d4837" stroke="#b7a985" stroke-width="512" stroke-linejoin="round"/>
+          <path d="{TRACK}" fill="none" stroke="#e6e6d7" stroke-width="500"/>
+          <path d="{TRACK}" fill="none" stroke="#c34942" stroke-width="500" stroke-dasharray="34 34"/>
+          <path d="{TRACK}" fill="none" stroke="#cdd0c7" stroke-width="486"/>
+          <path class="cc-track" d="{TRACK}" fill="none" stroke="#424b50" stroke-width="480"/>
           <path d="{TRACK}" fill="none" stroke="#9ba49f" stroke-opacity=".24" stroke-width="1" stroke-dasharray="8 10"/>
-          <rect x="210" y="940" width="665" height="100" rx="10" fill="#46535a"/>
-          <path d="M230 960H900C1000 960 900 800 1000 800" fill="none" stroke="#b8c0b4" stroke-width="32"/>
-          <path d="M230 960H900C1000 960 900 800 1000 800" fill="none" stroke="#46535a" stroke-width="27"/>
-          <path d="M880 960C980 960 900 700 1000 700L1000 900C950 900 1000 975 880 975Z" fill="#46535a"/>
-          <rect x="993" y="700" width="14" height="200" fill="url(#cc-flag)"/>
-          <path d="M1070 800h30m-8-6 8 6-8 6" fill="none" stroke="#ffffff" stroke-width="2" opacity=".65"/>
-          <text x="1190" y="1018" text-anchor="middle" class="cc-map-caption">{'PARTIDA / META' if pt else 'START / FINISH'}</text>
-          <text x="525" y="1070" text-anchor="middle" class="cc-map-caption">{'BOXES · 0 PONTOS' if pt else 'PIT BAYS · 0 POINTS'}</text>
+          <rect x="650" y="1370" width="1490" height="205" rx="18" fill="#46535a"/>
+          <path d="M700 1400H2580C2800 1400 2580 1100 2800 1100" fill="none" stroke="#b8c0b4" stroke-width="56"/>
+          <path d="M700 1400H2580C2800 1400 2580 1100 2800 1100" fill="none" stroke="#46535a" stroke-width="48"/>
+          <path d="M2540 1400C2780 1400 2580 860 2800 860L2800 1340C2680 1340 2800 1440 2540 1440Z" fill="#46535a"/>
+          <rect x="2788" y="860" width="24" height="480" fill="url(#cc-flag)"/>
+          <path d="M2910 1100h60m-16-12 16 12-16 12" fill="none" stroke="#ffffff" stroke-width="4" opacity=".65"/>
+          <text x="3270" y="1520" text-anchor="middle" class="cc-map-caption">{'PARTIDA / META' if pt else 'START / FINISH'}</text>
+          <text x="1380" y="1620" text-anchor="middle" class="cc-map-caption">{'BOXES · 0 PONTOS' if pt else 'PIT BAYS · 0 POINTS'}</text>
           <g class="cc-grid-slots" aria-hidden="true"></g>
           <g class="cc-anchors" aria-hidden="true" pointer-events="none"></g><g class="cc-cars"></g>
         </svg><span class="cc-transition" hidden>{'Transição entre classificações' if pt else 'Standings transition'}</span></div>
@@ -84,7 +84,7 @@ def render(model: dict | None, lang="en") -> str:
       <div class="cc-straight">
         <div class="cc-straight-heading"><span>{'Piloto' if pt else 'Driver'}</span><div class="cc-axis"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><span>{'Pontos' if pt else 'Points'}</span></div>
         <div class="cc-lanes" role="group" aria-label="{'Reta do campeonato, da esquerda para a direita' if pt else 'Championship straight, left to right'}"></div>
-        <p class="cc-note">{'Partida à esquerda, meta à direita. Ordem fixa da classificação mais recente. O centro de cada carro indica o progresso; os números mostram a corrida selecionada.' if pt else 'Start on the left, finish on the right. Names stay in the latest championship order. Each car’s centre marks progress; the numbers show the selected race.'}</p>
+        <p class="cc-note">{'Partida à esquerda, meta à direita. Faixas fixas, com os líderes ao centro. O centro de cada carro indica o progresso; os números mostram a corrida selecionada.' if pt else 'Start on the left, finish on the right. Fixed lanes, with the strongest drivers seeded in the centre. Each car’s centre marks progress; the numbers show the selected race.'}</p>
       </div>
       <div class="cc-controls"><div class="cc-buttons">
         <button class="cc-play cc-primary" type="button">{'Reproduzir' if pt else 'Play'}</button>
@@ -107,7 +107,7 @@ STYLE = '''<style>
 .cc *{box-sizing:border-box}.cc-header{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:22px}.cc-context{margin:0 0 6px;color:#abb7c6;font-size:12px}.cc .cc-race{font:750 clamp(18px,2vw,26px) Inter,system-ui;margin:0 0 6px;letter-spacing:-.03em}.cc-round{font-size:12px;color:#aeb9c9;margin:0;min-height:18px}
 .cc-metrics{display:flex;gap:30px;flex-shrink:0}.cc-metrics>div{display:flex;flex-direction:column;gap:4px}.cc-metrics span{font-size:11px;color:#b5c0cf}.cc-metrics strong{font-size:28px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.cc-target{color:#d9ed9c}
 .cc-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(235px,28%);gap:22px;align-items:start}.cc-course{min-width:0}.cc-map{position:relative;overflow:hidden;border-radius:14px;background:#223c30}.cc-svg{display:block;width:100%;height:auto;overflow:visible}.cc-map-caption{fill:#d4ddca;font:600 15px Inter,system-ui;letter-spacing:3px}
-.cc-car{cursor:pointer;outline:none}.cc-car .cc-car-body{filter:url(#cc-shadow)}.cc-car .cc-car-halo{fill:none;stroke:#fff;stroke-width:2;opacity:0}.cc-car[aria-pressed=true] .cc-car-halo,.cc-car:focus-visible .cc-car-halo,.cc-car.cc-hover .cc-car-halo{opacity:1}.cc-car.cc-finished .cc-car-halo{opacity:1;stroke:#e2f3a3;stroke-width:3}.cc-car text{fill:#f6f8fc;font:750 10px Inter,system-ui;paint-order:stroke;stroke:#172328;stroke-width:2;stroke-linejoin:round}.cc-car .cc-label-bg{fill:#0b141bee;stroke:#bbc7cc55;stroke-width:.7}.cc-car.cc-finished .cc-label-bg{stroke:#d9ed9c;stroke-width:2}.cc-car .cc-hit{fill:transparent}.cc-transition{position:absolute;left:12px;top:12px;background:#14242de8;border-radius:5px;padding:5px 8px;color:#e1e9f0;font-size:11px;pointer-events:none}
+.cc-car{cursor:pointer;outline:none}.cc-car .cc-car-body{filter:url(#cc-shadow);pointer-events:none}.cc-car .cc-car-halo{fill:none;stroke:#fff;stroke-width:2;opacity:0}.cc-car[aria-pressed=true] .cc-car-halo,.cc-car:focus-visible .cc-car-halo,.cc-car.cc-hover .cc-car-halo{opacity:1}.cc-car.cc-finished .cc-car-halo{opacity:1;stroke:#e2f3a3;stroke-width:3}.cc-car text{fill:#f6f8fc;font:750 10px Inter,system-ui;paint-order:stroke;stroke:#172328;stroke-width:2;stroke-linejoin:round}.cc-car .cc-label-bg{fill:#0b141bee;stroke:#bbc7cc55;stroke-width:.7}.cc-car.cc-finished .cc-label-bg{stroke:#d9ed9c;stroke-width:2}.cc-car .cc-hit{fill:transparent}.cc-transition{position:absolute;left:12px;top:12px;background:#14242de8;border-radius:5px;padding:5px 8px;color:#e1e9f0;font-size:11px;pointer-events:none}
 .cc-driver-detail{min-height:74px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 2px 0;font-size:12px;color:#c0c9d6}.cc-driver-detail strong{font-size:14px;color:#f5f7fc}.cc-driver-detail .cc-detail-name{display:block;flex:1 1 160px}.cc-driver-detail .cc-detail-stat{display:flex;flex-direction:column;gap:3px;min-width:52px}.cc-detail-stat span{font-size:10px;color:#9ba8bc}.cc-detail-stat b{font-size:13px;color:#edf1f7;font-variant-numeric:tabular-nums}
 .cc-board-heading{display:flex;justify-content:space-between;align-items:center;padding:0 2px 10px;border-bottom:1px solid #2b3542}.cc-board-heading h3{margin:0;font:650 14px Inter,system-ui}.cc-board-heading>span{font-size:10px;color:#a7b3c6}.cc-list{max-height:430px;overflow:auto;scrollbar-width:thin;scrollbar-color:#566372 #171d26;padding:6px 3px 4px 0}.cc-row{width:100%;display:grid;grid-template-columns:22px 8px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:43px;padding:7px 8px;border:1px solid transparent;border-radius:7px;background:none;text-align:left;color:#e5ebf4;font:12px Inter,system-ui;cursor:pointer}.cc-row:hover,.cc-row[aria-pressed=true],.cc-row.cc-hover{background:#222d38;border-color:#50606c}.cc-row:focus-visible{outline:2px solid #d9ed9c;outline-offset:-2px}.cc-row .cc-pos{color:#8f9db1;font-variant-numeric:tabular-nums}.cc-row .cc-dot{width:6px;height:20px;border-radius:3px}.cc-row .cc-name{overflow-wrap:anywhere}.cc-row .cc-score{text-align:right;display:flex;gap:10px;align-items:center;font-variant-numeric:tabular-nums}.cc-row .cc-score small{font-size:10px;color:#9eafc3;min-width:24px}
 .cc-controls{display:flex;align-items:end;gap:16px;margin-top:20px;padding-top:20px;border-top:1px solid #2b3542;flex-wrap:wrap}.cc-buttons{display:flex;gap:6px;flex-wrap:wrap}.cc button:not(.cc-row):not(.cc-lane),.cc select{min-height:42px;border:1px solid #414d60;border-radius:7px;background:#1b2430;color:#eef3fa;font:600 12px Inter,system-ui;padding:9px 12px;cursor:pointer}.cc .cc-controls button.cc-primary{background:#e10600;border-color:#e10600;min-width:82px}.cc button:disabled,.cc select:disabled{opacity:.4;cursor:default}.cc button:focus-visible,.cc select:focus-visible,.cc input:focus-visible{outline:2px solid #d9ed9c;outline-offset:3px}.cc-controls label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#aab8cb}.cc-race-select{flex:1;min-width:170px}.cc-select{width:100%}.cc-controls select{color-scheme:dark}.cc-timeline-label{display:flex;align-items:center;gap:16px;color:#abb7c9;font-size:11px;margin:20px 0}.cc-timeline{flex:1;width:0;accent-color:#dcf3a0;cursor:pointer;min-height:24px}.cc-explanation{font-size:12px;color:#d0d8e3;line-height:1.65;margin:16px 0 8px;max-width:1000px}.cc-note{font-size:11px;color:#9caec0;line-height:1.6;margin:6px 0 0}.cc-warning{color:#ffd49d;padding:10px 12px;border-left:2px solid #f3bb75;background:#d3951910;margin-top:10px}
@@ -121,14 +121,26 @@ STYLE = '''<style>
 /* The field and controls share one viewport-sized panel. */
 .cc{display:flex;flex-direction:column;height:var(--cc-height,calc(100svh - 145px));min-height:420px;max-height:1000px;padding:10px 14px;margin-top:8px;margin-bottom:12px;overflow:hidden}
 .cc-header{margin-bottom:7px;gap:12px;flex-shrink:0}.cc-context{font-size:10px;margin-bottom:2px}.cc .cc-race{font-size:19px;margin-bottom:2px}.cc-round{font-size:10px;min-height:14px}.cc-metrics{gap:20px}.cc-metrics span{font-size:9px}.cc-metrics strong{font-size:23px}.cc-view-switch{margin-bottom:6px;gap:5px;flex-shrink:0}.cc-view-switch span{font-size:10px}
-.cc button:not(.cc-row):not(.cc-lane),.cc select{min-height:28px;padding:4px 9px;font-size:11px}.cc .cc-controls button.cc-primary{min-width:68px}.cc .cc-view-switch button{min-width:80px}.cc-controls{gap:10px;margin:0 0 5px;padding:5px 0;flex-shrink:0}.cc-controls label{font-size:9px;gap:2px}.cc-timeline-label{margin:0 0 5px;min-height:20px;font-size:10px;flex-shrink:0}.cc-timeline{min-height:20px}.cc-straight{display:flex;flex:1;flex-direction:column;min-height:0}.cc-straight-heading{padding:0 7px 4px;font-size:9px;flex-shrink:0}.cc-lanes{height:auto;min-height:0;flex:1}.cc .cc-lane{height:calc((100% - 2px)/var(--cc-count));min-height:0;padding:0 7px;font-size:11px;will-change:auto}.cc-lane-name{gap:6px;white-space:nowrap;overflow:hidden}.cc-lane-name span{overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}.cc-lane-name b{font-size:9px;min-width:17px}.cc-lane-track{height:100%;min-height:0}.cc-lane-car{width:28px;height:18px}.cc-lane-trail{top:calc(50% - 2px);height:4px}.cc-lane-score b{font-size:10px}.cc-lane-score small{font-size:9px}.cc-lane-progress{display:none!important}.cc-straight>.cc-note{display:none}
+.cc button:not(.cc-row):not(.cc-lane),.cc select{min-height:28px;padding:4px 9px;font-size:11px}.cc .cc-controls button.cc-primary{min-width:68px}.cc .cc-view-switch button{min-width:80px}.cc-controls{gap:10px;margin:0 0 5px;padding:5px 0;flex-shrink:0}.cc-controls label{font-size:9px;gap:2px}.cc-timeline-label{margin:0 0 5px;min-height:20px;font-size:10px;flex-shrink:0}.cc-timeline{min-height:20px}.cc-straight{display:flex;flex:1;flex-direction:column;min-height:0}.cc-straight-heading{padding:0 7px 4px;font-size:9px;flex-shrink:0}.cc-lanes{height:auto;min-height:0;flex:1}.cc .cc-lane{height:calc((100% - 2px)/var(--cc-count));min-height:0;padding:0 7px;font-size:11px;will-change:auto}.cc-lane-name{gap:6px;white-space:nowrap;overflow:hidden}.cc-lane-name span{overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}.cc-lane-name b{display:none}.cc-lane-name{border-left:2px solid var(--driver-color);padding-left:6px}.cc-lane-track{height:100%;min-height:0}.cc-lane-car{width:28px;height:18px}.cc-lane-trail{top:calc(50% - 2px);height:4px}.cc-lane-score b{font-size:10px}.cc-lane-score small{font-size:9px}.cc-lane-progress{display:none!important}.cc-straight>.cc-note{display:none}
 .cc-driver-detail{min-height:25px;flex-shrink:0;gap:6px;padding:5px 0 0;font-size:10px;flex-wrap:nowrap}.cc-driver-detail strong{font-size:11px}.cc-driver-detail .cc-detail-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cc-driver-detail .cc-detail-stat{min-width:45px;gap:1px}.cc-detail-stat span{font-size:8px}.cc-detail-stat b{font-size:10px}.cc-explanation{font-size:9px;line-height:1.3;margin:5px 0 0;flex-shrink:0}.cc>.cc-note{display:none}.cc>.cc-warning{display:block;font-size:9px;line-height:1.25;padding:3px 5px;margin:2px 0 0}.cc-layout{flex:1;min-height:0;align-items:stretch;gap:12px}.cc-course{min-height:0;display:flex}.cc-map{width:100%;height:100%;display:flex;align-items:center;justify-content:center}.cc-svg{max-height:100%;width:100%;height:100%;object-fit:contain;overflow:hidden}.cc-board{min-height:0;display:flex;flex-direction:column}.cc-board-heading{padding-bottom:4px;flex-shrink:0}.cc-board-heading h3{font-size:11px}.cc-list{max-height:none;overflow:hidden;flex:1;display:flex;flex-direction:column;padding:0}.cc-row{min-height:0;flex:1;padding:0 4px;font-size:10px;gap:5px;grid-template-columns:17px 6px minmax(0,1fr) auto}.cc-row .cc-dot{height:10px;width:4px}.cc-row .cc-score{gap:6px}.cc-row .cc-score small{font-size:8px;min-width:20px}.cc-car-label{opacity:0;pointer-events:none}.cc-car[aria-pressed=true] .cc-car-label,.cc-car.cc-hover .cc-car-label,.cc-car:focus-visible .cc-car-label{opacity:1}.cc-car .cc-car-halo{stroke-width:3}.cc-car text{font-size:11px}
 @media(max-width:900px){.cc{margin-left:8px;margin-right:8px;padding:8px 10px}.cc-layout{grid-template-columns:minmax(0,1fr) 185px}.cc-board{margin-top:0}.cc-list{display:flex;gap:0}.cc-header{flex-wrap:nowrap}.cc-metrics strong{font-size:20px}}
-@media(max-width:520px){.cc{height:var(--cc-height,calc(100svh - 210px));padding:7px 6px;min-height:450px}.cc-header{gap:6px;flex-wrap:wrap;margin-bottom:4px}.cc-context{font-size:8px}.cc .cc-race{font-size:15px}.cc-round{font-size:9px}.cc-metrics{width:100%;flex-direction:row;justify-content:space-between;border:0;padding:0;gap:8px}.cc-metrics>div{flex-direction:row;align-items:center;gap:6px}.cc-metrics span{font-size:8px;max-width:80px}.cc-metrics strong{font-size:18px}.cc-view-switch{margin-bottom:3px}.cc .cc-view-switch button{min-height:27px;padding:3px}.cc-controls{gap:4px;display:grid;grid-template-columns:minmax(0,1fr) 52px;padding:4px 0;margin-bottom:3px}.cc-buttons{grid-column:1/-1;gap:4px}.cc button:not(.cc-row):not(.cc-lane){min-height:27px;padding:3px;font-size:10px}.cc .cc-controls button.cc-primary{min-width:0}.cc-controls select{min-height:27px;padding:3px;font-size:10px}.cc-controls label{font-size:8px}.cc-race-select{min-width:0}.cc-timeline-label{font-size:9px;min-height:18px}.cc-straight-heading,.cc .cc-lane{grid-template-columns:86px minmax(0,1fr) 42px;gap:3px}.cc-straight-heading{padding-left:3px;padding-right:3px;font-size:8px}.cc .cc-lane{font-size:9px;min-height:0;padding:0 3px}.cc-lane-name{gap:3px}.cc-lane-name b{font-size:8px;min-width:13px}.cc-axis,.cc-lane-track{margin:0 12px}.cc-lane-car{width:22px;height:100%;max-height:14px}.cc-lane-score{flex-direction:row;gap:3px;align-items:center}.cc-lane-score b{font-size:9px}.cc-lane-score small{font-size:7px;min-width:16px}.cc-driver-detail{gap:4px;min-height:26px}.cc-driver-detail .cc-detail-name{flex-basis:auto;font-size:9px}.cc-driver-detail .cc-detail-stat{min-width:31px;flex:0}.cc-detail-stat span{font-size:7px}.cc-detail-stat b{font-size:9px}.cc-explanation{font-size:8px;margin-top:3px}.cc-layout{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr);gap:4px}.cc-list{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(11,minmax(0,1fr));grid-auto-flow:column}.cc-row{font-size:9px;gap:3px;min-height:0}.cc-row .cc-score small{display:none}.cc-board-heading{display:none}}
+@media(max-width:520px){.cc{height:var(--cc-height,calc(100svh - 210px));padding:7px 6px;min-height:450px}.cc-header{gap:6px;flex-wrap:wrap;margin-bottom:4px}.cc-context{font-size:8px}.cc .cc-race{font-size:15px}.cc-round{font-size:9px}.cc-metrics{width:100%;flex-direction:row;justify-content:space-between;border:0;padding:0;gap:8px}.cc-metrics>div{flex-direction:row;align-items:center;gap:6px}.cc-metrics span{font-size:8px;max-width:80px}.cc-metrics strong{font-size:18px}.cc-view-switch{margin-bottom:3px}.cc .cc-view-switch button{min-height:27px;padding:3px}.cc-controls{gap:4px;display:grid;grid-template-columns:minmax(0,1fr) 52px;padding:4px 0;margin-bottom:3px}.cc-buttons{grid-column:1/-1;gap:4px}.cc button:not(.cc-row):not(.cc-lane){min-height:27px;padding:3px;font-size:10px}.cc .cc-controls button.cc-primary{min-width:0}.cc-controls select{min-height:27px;padding:3px;font-size:10px}.cc-controls label{font-size:8px}.cc-race-select{min-width:0}.cc-timeline-label{font-size:9px;min-height:18px}.cc-straight-heading,.cc .cc-lane{grid-template-columns:86px minmax(0,1fr) 42px;gap:3px}.cc-straight-heading{padding-left:3px;padding-right:3px;font-size:8px}.cc .cc-lane{font-size:9px;min-height:0;padding:0 3px}.cc-lane-name{gap:3px}.cc-lane-name b{display:none}.cc-lane-name{padding-left:4px}.cc-axis,.cc-lane-track{margin:0 12px}.cc-lane-car{width:22px;height:100%;max-height:14px}.cc-lane-score{flex-direction:row;gap:3px;align-items:center}.cc-lane-score b{font-size:9px}.cc-lane-score small{font-size:7px;min-width:16px}.cc-driver-detail{gap:4px;min-height:26px}.cc-driver-detail .cc-detail-name{flex-basis:auto;font-size:9px}.cc-driver-detail .cc-detail-stat{min-width:31px;flex:0}.cc-detail-stat span{font-size:7px}.cc-detail-stat b{font-size:9px}.cc-explanation{font-size:8px;margin-top:3px}.cc-layout{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr);gap:4px}.cc-list{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(11,minmax(0,1fr));grid-auto-flow:column}.cc-row{font-size:9px;gap:3px;min-height:0}.cc-row .cc-score small{display:none}.cc-board-heading{display:none}}
+
+.cc-layout{display:flex;flex-direction:column;gap:5px}.cc-course{flex:1;min-height:0}.cc-board{flex:0 0 48px;height:48px;margin:0}.cc-board-heading{display:none}.cc-list{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));grid-auto-flow:row;gap:2px 4px;overflow:hidden}.cc-row{display:grid;grid-template-columns:4px minmax(0,1fr) auto;padding:0 3px;gap:4px;font-size:9px;border-radius:4px}.cc-row .cc-pos{display:none}.cc-row .cc-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}.cc-row .cc-score small{display:none}.cc-row .cc-score{gap:0;font-size:9px}.cc-map-caption{font-size:30px;letter-spacing:5px}.cc-car text{font-size:46px}.cc-car .cc-label-bg{stroke-width:2}.cc-car .cc-car-halo{stroke-width:2}.cc-car-label{opacity:0;pointer-events:none}
+@media(max-width:900px){.cc-board{flex-basis:62px;height:62px}.cc-list{grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr))}.cc-row{font-size:9px}}
+@media(max-width:520px){.cc-board{flex-basis:88px;height:88px}.cc-list{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(6,minmax(0,1fr));gap:1px 3px}.cc-row{font-size:8px;gap:3px}.cc-row .cc-score{font-size:8px}.cc-map{border-radius:7px}}
 </style>'''
 
 
 JS = r'''
+// Seed the strongest drivers into the middle two lanes, then alternate outwards.
+// This changes presentation only; official results and tie-breaking stay intact.
+function championshipSeededOrder(ids) {
+  const middle=(ids.length-1)/2,result=Array(ids.length);
+  const slots=ids.map((_,i)=>i).sort((a,b)=>Math.abs(a-middle)-Math.abs(b-middle)||a-b);
+  ids.forEach((id,i)=>result[slots[i]]=id);
+  return result;
+}
 // Monotone cubic interpolation meets every published checkpoint with continuous
 // velocity. Only the start/end or a genuinely flat/reversing series has to stop.
 function championshipSeries(values) {
@@ -152,7 +164,7 @@ function advanceChampionship(cursor,elapsed,speed,last) {
 function championshipTrackLayout(standings, order, length) {
   return new Map(standings.map(e=>{
     const row=order.indexOf(e.id),p=Math.max(0,Math.min(1,e.progress||0));
-    return [e.id,{p,s:p*length,lane:(row-(order.length-1)/2)*8,pit:!(e.points>0),pitIndex:row,row}];
+    return [e.id,{p,s:p*length,lane:(row-(order.length-1)/2)*20,pit:!(e.points>0),pitIndex:row,row}];
   }));
 }
 function championshipPitDistance(p,length,pitLength,firstProgress) {
@@ -174,7 +186,7 @@ function mountChampionship(root, model, pt) {
   const section = root.querySelector('.cc');
   if (!section || !model?.frames?.length) return () => {};
   const q = s => section.querySelector(s), NS = 'http://www.w3.org/2000/svg';
-  const frames = model.frames, order=frames[frames.length-1].standings.map(e=>e.id), drivers = new Map(model.drivers.map(d => [d.id,d]));
+  const frames = model.frames, order=frames[frames.length-1].standings.map(e=>e.id), straightOrder=championshipSeededOrder(order), drivers = new Map(model.drivers.map(d => [d.id,d]));
   const path = q('.cc-track'), length = path.getTotalLength(), cars = new Map(), rows = new Map(), anchors = new Map(), lanes = new Map();
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   const fmt = n => n == null ? '—' : new Intl.NumberFormat(pt?'pt-PT':'en-GB',{maximumFractionDigits:2}).format(n);
@@ -200,11 +212,11 @@ function mountChampionship(root, model, pt) {
     return {...point,angle:Math.atan2(after.y-before.y,after.x-before.x)};
   }
   const pitRoutes=new Map(order.map((id,i)=>{
-    const x=230+i*28,lane=(i-(order.length-1)/2)*8,endY=800+lane,route=[{x,y:1010}];
+    const x=700+i*64,lane=(i-(order.length-1)/2)*20,endY=1100+lane,route=[{x,y:1510}];
     const cubic=(a,b,c,d)=>{for(let j=1;j<=60;j++){const t=j/60,u=1-t;route.push({x:u*u*u*a.x+3*u*u*t*b.x+3*u*t*t*c.x+t*t*t*d.x,y:u*u*u*a.y+3*u*u*t*b.y+3*u*t*t*c.y+t*t*t*d.y});}};
-    cubic({x,y:1010},{x,y:990},{x:x+20,y:960},{x:x+40,y:960});
-    route.push({x:900,y:960});
-    cubic({x:900,y:960},{x:1000,y:960},{x:900,y:endY},{x:1000,y:endY});
+    cubic({x,y:1510},{x,y:1470},{x:x+40,y:1400},{x:x+80,y:1400});
+    route.push({x:2580,y:1400});
+    cubic({x:2580,y:1400},{x:2800,y:1400},{x:2580,y:endY},{x:2800,y:endY});
     let total=0;route.forEach((p,i)=>{if(i)total+=Math.hypot(p.x-route[i-1].x,p.y-route[i-1].y);p.distance=total;});
     const first=frames.find(f=>f.standings.find(e=>e.id===id)?.points>0)?.standings.find(e=>e.id===id)?.progress||0;
     return [id,{route,total,first}];
@@ -239,12 +251,13 @@ function mountChampionship(root, model, pt) {
       const stat=htmlEl('div','cc-detail-stat');stat.append(htmlEl('span','',label),htmlEl('b','',value));detail.append(stat);
     });
     section.dataset.selectedDriver=id;
+    if(view==='circuit')positions.forEach((p,key)=>place(key,p));
   }
   model.drivers.forEach(d=>{
     const anchor=svgEl('g',{class:'cc-anchor'});anchor.append(svgEl('path',{fill:'none',stroke:d.color,'stroke-width':1.3,'stroke-dasharray':'3 4'}),svgEl('circle',{r:2.5,fill:d.color}));
     q('.cc-anchors').append(anchor);anchors.set(d.id,anchor);
     const car=svgEl('g',{class:'cc-car',tabindex:'0',role:'button','data-driver-id':d.id,'aria-pressed':'false'});
-    const hit=svgEl('rect',{class:'cc-hit',x:-21,y:-4,width:42,height:8,rx:6});car.append(hit);
+    const hit=svgEl('rect',{class:'cc-hit',x:-58,y:-10,width:116,height:20,rx:6});car.append(hit);
     const body=svgEl('g',{class:'cc-car-body'});
     body.append(svgEl('rect',{class:'cc-car-halo',x:-20,y:-12,width:39,height:24,rx:5}));
     [[-14,-10,8,5],[-14,5,8,5],[7,-10,7,5],[7,5,7,5]].forEach(([x,y,w,h])=>body.append(svgEl('rect',{x,y,width:w,height:h,rx:1,fill:'#071014',stroke:'#91a4aa','stroke-width':.6})));
@@ -252,8 +265,8 @@ function mountChampionship(root, model, pt) {
       svgEl('rect',{x:-15,y:-9,width:3,height:18,rx:1,fill:d.color}),svgEl('rect',{x:12,y:-8,width:3,height:16,rx:1,fill:d.color}),
       svgEl('ellipse',{cx:-3,cy:0,rx:4,ry:3,fill:'#17242e'}));
     car.append(body);
-    const label=svgEl('g',{class:'cc-car-label'});label.append(svgEl('rect',{class:'cc-label-bg',x:-18,y:-24,width:36,height:13,rx:3}));
-    const text=svgEl('text',{x:0,y:-14,'text-anchor':'middle'});text.textContent=d.label;label.append(text);car.append(label);
+    const label=svgEl('g',{class:'cc-car-label'});label.append(svgEl('rect',{class:'cc-label-bg',x:-100,y:-106,width:200,height:68,rx:3}));
+    const text=svgEl('text',{x:0,y:-58,'text-anchor':'middle'});text.textContent=d.label;label.append(text);car.append(label);
     car.addEventListener('click',()=>selectDriver(d.id));car.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();selectDriver(d.id);}});
     car.addEventListener('focus',()=>selectDriver(d.id));car.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')selectDriver(d.id,true);});car.addEventListener('pointerleave',()=>{hovered=null;showDriver();});
     q('.cc-cars').append(car);cars.set(d.id,car);
@@ -274,16 +287,18 @@ function mountChampionship(root, model, pt) {
     lanes.set(d.id,lane);
   });
   q('.cc-lanes').style.setProperty('--cc-count',String(model.drivers.length));
-  order.forEach(id=>{q('.cc-lanes').append(lanes.get(id));q('.cc-list').append(rows.get(id));});
+  straightOrder.forEach(id=>q('.cc-lanes').append(lanes.get(id)));
+  order.forEach(id=>q('.cc-list').append(rows.get(id)));
   order.forEach((id,i)=>{
-    const x=230+i*28;
-    q('.cc-grid-slots').append(svgEl('path',{d:`M${x} 1010V960`,stroke:'#687b80','stroke-width':12}));
-    q('.cc-grid-slots').append(svgEl('rect',{x:x-11,y:993,width:22,height:35,fill:'none',stroke:'#c4d0bf','stroke-width':1}));
+    const x=700+i*64;
+    q('.cc-grid-slots').append(svgEl('path',{d:`M${x} 1510V1400`,stroke:'#687b80','stroke-width':26}));
+    q('.cc-grid-slots').append(svgEl('rect',{x:x-25,y:1445,width:50,height:135,fill:'none',stroke:'#c4d0bf','stroke-width':1}));
   });
   frames.forEach((f,i)=>{const option=htmlEl('option','',`${f.round?`R${f.round} · `:''}${raceName(f)}`);option.value=String(i);q('.cc-select').append(option);});
   q('.cc-timeline').max=String(frames.length-1);
   const layouts=frames.map(frame=>{
     const result=championshipTrackLayout(frame.standings,order,length);
+    result.forEach((position,id)=>position.row=straightOrder.indexOf(id));
     return result;
   });
   const curves=new Map(model.drivers.map(d=>[d.id,Object.fromEntries(['p','s','lane','row'].map(key=>[key,championshipSeries(layouts.map(frame=>frame.get(d.id)[key]))]))]));
@@ -308,7 +323,8 @@ function mountChampionship(root, model, pt) {
     const travel=travelDistance(id,position.p),point=travel<0?pitPoint(id,travel):pointAt(travel,position.lane),exact=pointAt(position.p*length);
     car.dataset.trackDistance=String(travel);car.dataset.inPit=String(travel<0);
     car.setAttribute('transform',`translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`);
-    car.querySelector('.cc-car-body').setAttribute('transform',`rotate(${point.angle*180/Math.PI}) scale(1 .30)`);
+    const width=id===(hovered||selected)?2.35:.9;
+    car.querySelector('.cc-car-body').setAttribute('transform',`rotate(${point.angle*180/Math.PI}) scale(2.8 ${width})`);
     car.querySelector('.cc-hit').setAttribute('transform',`rotate(${point.angle*180/Math.PI})`);
     const anchor=anchors.get(id);anchor.style.display='none';
     let line=`M${exact.x} ${exact.y}`;
@@ -336,7 +352,7 @@ function mountChampionship(root, model, pt) {
       car.querySelector('text').textContent=d.label+(finished?' \u2713':'');
       lane.dataset.position=String(e.position);lane.dataset.latestPosition=String(order.indexOf(e.id)+1);
       lane.setAttribute('aria-label',description);lane.title=description;lane.dataset.progress=String(e.progress??'');lane.classList.toggle('cc-finished',finished);
-      lane.querySelector('.cc-lane-rank').textContent=`${order.indexOf(e.id)+1}`;lane.querySelector('.cc-lane-points').textContent=fmt(e.points);
+      lane.querySelector('.cc-lane-rank').textContent='';lane.querySelector('.cc-lane-points').textContent=fmt(e.points);
       lane.querySelector('.cc-lane-gap').textContent=e.gap?`\u2212${fmt(e.gap)}`:'—';lane.querySelector('.cc-lane-progress').textContent=e.progress==null?'—':`${fmt(e.progress*100)}%`;
     });
     if(focused&&section.contains(focused)&&focused!==section.getRootNode().activeElement)focused.focus({preventScroll:true});
@@ -384,7 +400,7 @@ function mountChampionship(root, model, pt) {
   q('.cc-speed').addEventListener('change',e=>{speed=Number(e.target.value)||1;});
   ['.cc-play','.cc-restart','.cc-select','.cc-timeline','.cc-speed'].forEach(s=>{q(s).disabled=!model.playback||frames.length<=1;});
   function setView(next){
-    view=next;section.dataset.view=view;hovered=null;
+    view=next;section.dataset.view=view;hovered=null;q('.cc-view-switch span').textContent=view==='straight'?(pt?'Líderes ao centro · faixas fixas':'Centre-seeded · fixed lanes'):(pt?'Seleciona um piloto para ampliar o carro':'Select a driver to enlarge their car');
     q('.cc-layout').hidden=view==='straight';q('.cc-straight').hidden=view!=='straight';q('.cc-pack-note').hidden=view==='straight';
     q('.cc-view-circuit').setAttribute('aria-pressed',String(view==='circuit'));
     q('.cc-view-straight').setAttribute('aria-pressed',String(view==='straight'));positions.forEach((p,id)=>place(id,p));showDriver();

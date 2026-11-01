@@ -31,10 +31,13 @@ points within each team. Equal scores use alphabetical ordering for stability.
   Missing/ambiguous history disables playback without hiding current standings.
   Unknown scoring/calendars show an explanation instead of an invented target.
   The default straight view fits all 22 drivers and playback controls in one
-  viewport. Names stay in the latest championship order throughout playback.
+  viewport. Names stay in fixed, swimming-style centre-seeded lanes: the strongest two
+  drivers occupy the middle pair, with the remaining seeds alternating outwards.
+  The name column does not display latest-rank numbers.
   One playback clock and monotone cubic interpolation carry motion through race
   checkpoints without per-race pauses. The circuit uses fixed lateral lanes on
-  a wider, smooth track: rank changes never shift a car backwards along it.
+  a wide stadium/S track, with larger cars and a compact driver strip below the
+  full-width map: rank changes never shift a car backwards along it.
   Zero-point cars wait in fixed pit bays and use a forward pit-exit route when
   they first score. Genuine points reductions fade/snap to the corrected result
   instead of animating reverse driving. Both views retain the historical points
