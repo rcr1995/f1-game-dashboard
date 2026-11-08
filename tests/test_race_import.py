@@ -283,6 +283,81 @@ class ScreenshotMergeTests(unittest.TestCase):
         self.assertEqual(merged[0].raw_text, "P5 Polingua Red Bull")
         self.assertEqual(merged[0].issues, ["first note", "second note"])
 
+    def test_exact_name_survives_a_higher_confidence_row_with_only_a_suggestion(self):
+        fuzzy = extracted(
+            9, None, "Screenshot 1", confidence=0.961,
+            raw_text="9 AlAlexander ALBON Williams", suggestion="Alexander Albon",
+            issues=["OCR name is an imperfect match; confirm the suggested driver.",
+                    "OCR finishing position was corrected from contiguous detail rows; confirm it."],
+        )
+        fuzzy.match_method = "fuzzy"
+        exact = extracted(
+            9, "Alexander Albon", "Screenshot 2", confidence=0.904,
+            raw_text="9 AI Alexander ALBON Williams", suggestion="Alexander Albon",
+        )
+        for pages in ([[fuzzy], [exact]], [[exact], [fuzzy]]):
+            with self.subTest(first=pages[0][0].sources):
+                merged = race.merge_screenshot_results(pages)
+                self.assertEqual(len(merged), 1)
+                row = merged[0]
+                self.assertEqual(row.driver, "Alexander Albon")
+                self.assertEqual(row.suggested_driver, "Alexander Albon")
+                self.assertEqual(row.match_method, "exact")
+                self.assertEqual(row.confidence, 0.961)
+                self.assertEqual(row.raw_text, fuzzy.raw_text)
+                self.assertEqual(row.sources, ["Screenshot 1", "Screenshot 2"])
+                self.assertEqual(row.issues, [
+                    "OCR finishing position was corrected from contiguous detail rows; confirm it."
+                ])
+        self.assertIsNone(fuzzy.driver, "merging must not change source candidates")
+
+    def test_accepted_alias_survives_unresolved_overlap_and_keeps_timing_warnings(self):
+        accepted = extracted(19, "Valtteri Bottas", "Screenshot 1", confidence=0.8,
+                             suggestion="Valtteri Bottas")
+        accepted.match_method = "alias"
+        accepted.time_issues = ["Confirm result time."]
+        uncertain = extracted(19, None, "Screenshot 2", confidence=0.99,
+                              suggestion="Valtteri Bottas",
+                              issues=["Driver name is ambiguous or was not recognized."])
+        uncertain.fastest_lap_issues = ["Confirm fastest lap."]
+        for pages in ([[accepted], [uncertain]], [[uncertain], [accepted]]):
+            with self.subTest(first=pages[0][0].sources):
+                row = race.merge_screenshot_results(pages)[0]
+                self.assertEqual((row.driver, row.match_method), ("Valtteri Bottas", "alias"))
+                self.assertNotIn("Driver name is ambiguous or was not recognized.", row.issues)
+                self.assertEqual(row.time_issues, ["Confirm result time."])
+                self.assertEqual(row.fastest_lap_issues, ["Confirm fastest lap."])
+
+    def test_low_confidence_exact_and_fuzzy_suggestions_do_not_confirm_each_other(self):
+        low = extracted(9, None, "Screenshot 1", confidence=0.4,
+                        suggestion="Alexander Albon",
+                        issues=["Low OCR confidence; confirm the driver."])
+        low.match_method = "exact"
+        fuzzy = extracted(9, None, "Screenshot 2", confidence=0.99,
+                          suggestion="Alexander Albon",
+                          issues=["OCR name is an imperfect match; confirm the suggested driver."])
+        fuzzy.match_method = "fuzzy"
+        for pages in ([[low], [fuzzy]], [[fuzzy], [low]]):
+            with self.subTest(first=pages[0][0].sources):
+                row = race.merge_screenshot_results(pages)[0]
+                self.assertIsNone(row.driver)
+                self.assertEqual(row.suggested_driver, "Alexander Albon")
+                self.assertIn("Low OCR confidence; confirm the driver.", row.issues)
+                self.assertIn("OCR name is an imperfect match; confirm the suggested driver.", row.issues)
+
+    def test_accepted_name_does_not_hide_conflicting_overlap_identity(self):
+        accepted = extracted(9, "Alexander Albon", "Screenshot 1", confidence=0.9,
+                             suggestion="Alexander Albon")
+        contradictory = extracted(9, None, "Screenshot 2", confidence=0.99,
+                                  suggestion="Valtteri Bottas")
+        for pages in ([[accepted], [contradictory]], [[contradictory], [accepted]]):
+            with self.subTest(first=pages[0][0].sources):
+                rows = race.merge_screenshot_results(pages)
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(sum(row.driver is not None for row in rows), 1)
+                self.assertTrue(all("Conflicting drivers were read for this position." in row.issues
+                                    for row in rows))
+
     def test_same_driver_at_two_positions_flags_position_conflict_on_both_rows(self):
         merged = race.merge_screenshot_results(
             [

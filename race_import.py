@@ -208,6 +208,25 @@ def _exact_compact_name_token(needle: str, haystack: str) -> bool:
     return False
 
 
+def _ocr_given_name_matches(needle: str, haystack: str) -> bool:
+    """Allow only i/l OCR confusion in a complete first-name word.
+
+    Every remaining roster-name word must match exactly. This avoids guessing
+    surname boundaries or accepting incomplete names from team/menu text.
+    """
+    expected = needle.split()
+    if len(expected) < 2 or len(expected[0]) < 3:
+        return False
+    words = haystack.split()
+    fold = str.maketrans({"l": "i"})
+    for start in range(len(words) - len(expected) + 1):
+        candidate = words[start:start + len(expected)]
+        if (candidate[1:] == expected[1:]
+                and candidate[0].translate(fold) == expected[0].translate(fold)):
+            return True
+    return False
+
+
 def match_driver(
     raw_text: str,
     roster: Sequence[DriverEntry] | Sequence[str],
@@ -220,9 +239,8 @@ def match_driver(
 ) -> DriverMatch:
     """Match OCR text only against the selected championship roster.
 
-    Exact canonical names and controlled aliases may be accepted when OCR
-    confidence is healthy. Fuzzy matches are suggestions that require an
-    explicit user selection in the review screen.
+    Exact names, controlled aliases and unique full-name OCR i/l variants may
+    be accepted when confidence is healthy. Fuzzy matches require selection.
     """
     roster_names = [entry.driver if isinstance(entry, DriverEntry) else str(entry) for entry in roster]
     normalized_roster = {normalize_name(name): name for name in roster_names}
@@ -279,6 +297,24 @@ def match_driver(
             low_confidence,
             "Low OCR confidence; confirm the driver." if low_confidence else "",
         )
+
+    if not exact and not alias_hits:
+        ocr_variants = [
+            name for normalized, name in normalized_roster.items()
+            if any(_ocr_given_name_matches(normalized, variant) for variant in raw_variants)
+        ]
+        if len(ocr_variants) == 1:
+            canonical = ocr_variants[0]
+            return DriverMatch(
+                raw_text,
+                None if low_confidence else canonical,
+                canonical,
+                1.0,
+                0.0,
+                "ocr_variant",
+                low_confidence,
+                "Low OCR confidence; confirm the driver." if low_confidence else "",
+            )
 
     scored = sorted(
         (
@@ -1039,6 +1075,18 @@ def _merge_timing_field(
 
 def merge_screenshot_results(result_sets: Sequence[Sequence[ExtractedResult]]) -> list[ExtractedResult]:
     """Merge exact overlap and surface every conflicting duplicate."""
+    name_review_issues = {
+        "Low OCR confidence; confirm the driver.",
+        "OCR name is an imperfect match; confirm the suggested driver.",
+        "Driver name is ambiguous or was not recognized.",
+    }
+
+    def name_evidence(row: ExtractedResult) -> tuple[bool, int, float]:
+        # A healthy canonical match is evidence about the name itself. The
+        # average confidence of the whole row must not demote it to a guess.
+        method_rank = {"exact": 3, "alias": 2, "ocr_variant": 1}.get(row.match_method, 0)
+        return (bool(row.driver), method_rank if row.driver else 0, row.confidence)
+
     merged: list[ExtractedResult] = []
     for result in (item for result_set in result_sets for item in result_set):
         identity = result.driver or result.suggested_driver
@@ -1073,13 +1121,16 @@ def merge_screenshot_results(result_sets: Sequence[Sequence[ExtractedResult]]) -
                 label="fastest-lap",
             )
             duplicate.timing_expected = duplicate.timing_expected or result.timing_expected
-            if result.confidence > duplicate.confidence:
-                duplicate.raw_text = result.raw_text
-                duplicate.confidence = result.confidence
+            if name_evidence(result) > name_evidence(duplicate):
                 duplicate.driver = result.driver
                 duplicate.suggested_driver = result.suggested_driver
                 duplicate.match_method = result.match_method
+            if result.confidence > duplicate.confidence:
+                duplicate.raw_text = result.raw_text
+                duplicate.confidence = result.confidence
             duplicate.issues = sorted(set(duplicate.issues + result.issues))
+            if duplicate.driver:
+                duplicate.issues = [issue for issue in duplicate.issues if issue not in name_review_issues]
             continue
         merged.append(
             ExtractedResult(
