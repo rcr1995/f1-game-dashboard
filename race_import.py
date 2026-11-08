@@ -716,7 +716,10 @@ def _extract_timing_from_cluster(
     )
 
 
-def _position_from_line(tokens: Sequence[OcrToken], grid_size: int) -> int | None:
+def _position_from_line(
+    tokens: Sequence[OcrToken], grid_size: int, *, minimum_confidence: float | None = None,
+) -> int | None:
+    """Read a position; independent correction anchors may require clear digits."""
     if not tokens:
         return None
     left = min(token.x_min for token in tokens)
@@ -727,13 +730,18 @@ def _position_from_line(tokens: Sequence[OcrToken], grid_size: int) -> int | Non
             continue
         match = POSITION_RE.match(token.text.strip())
         if match and 1 <= int(match.group(1)) <= grid_size:
+            if minimum_confidence is not None and token.confidence < minimum_confidence:
+                return None
             return int(match.group(1))
     leading = re.match(
         r"^\s*(\d{1,2})(?:st|nd|rd|th)?(?:\s|[.):\-](?!\d))",
         " ".join(token.text for token in tokens),
         re.IGNORECASE,
     )
-    if leading and 1 <= int(leading.group(1)) <= grid_size:
+    first_text_token = next((token for token in tokens if token.text.strip()), None)
+    if (leading and 1 <= int(leading.group(1)) <= grid_size
+            and (minimum_confidence is None or (
+                first_text_token is not None and first_text_token.confidence >= minimum_confidence))):
         return int(leading.group(1))
     return None
 
@@ -757,7 +765,7 @@ def _recover_ordered_positions(
     grid_size: int,
     columns: TimingColumns,
 ) -> dict[int, int]:
-    """Infer only positions forced by contiguous detail rows and anchors."""
+    """Recover positions forced by contiguous detail rows and anchors."""
     slots: list[tuple[int, float, int | None]] = []
     for cluster_index, cluster in enumerate(clusters):
         if _is_detail_result_cluster(cluster, columns):
@@ -781,8 +789,58 @@ def _recover_ordered_positions(
     minimum_gap = normal_gap * 0.45
     maximum_gap = normal_gap * 1.65
 
+    credible_anchors = {
+        slot_index for slot_index, (cluster_index, _, position) in enumerate(slots)
+        if position is not None and _position_from_line(
+            clusters[cluster_index], grid_size, minimum_confidence=0.65,
+        ) == position
+    }
+    # A clear digit can still be the wrong digit: photographed 9s can read as
+    # 6, and 15 can lose its leading 1. Correct only an isolated, plausible
+    # misread whose position is independently forced by two other anchors.
+    # Interior rows need anchors on both sides; an edge row needs two aligned
+    # anchors on its visible side. No result rows are inserted or removed.
+    corrected: dict[int, int] = {}
+    for slot_index, (cluster_index, _, recognized) in enumerate(slots):
+        if recognized is None:
+            continue
+        before = [(i, p) for i, p in anchors if i < slot_index]
+        after = [(i, p) for i, p in anchors if i > slot_index]
+        if before and after:
+            support = (before[-1], after[0])
+        elif slot_index == 0 and len(after) >= 2:
+            support = (after[0], after[1])
+        elif slot_index == len(slots) - 1 and len(before) >= 2:
+            support = (before[-2], before[-1])
+        else:
+            continue
+        (left_index, left_position), (right_index, right_position) = support
+        if left_index not in credible_anchors or right_index not in credible_anchors:
+            continue
+        if right_position - left_position != right_index - left_index:
+            continue
+        expected = left_position + slot_index - left_index
+        expected_text, recognized_text = str(expected), str(recognized)
+        plausible = (
+            expected_text.translate(str.maketrans("69", "96")) == recognized_text
+            or (len(expected_text) == 2 and expected_text[1:] == recognized_text)
+        )
+        if (expected == recognized or not 1 <= expected <= grid_size or not plausible
+                or any(p == expected for i, p in anchors if i != slot_index)):
+            continue
+        start, end = min(slot_index, left_index), max(slot_index, right_index)
+        if any(gap < minimum_gap or gap > maximum_gap for gap in gaps[start:end]):
+            continue
+        corrected[cluster_index] = expected
+    # Conflicting local proposals are not independent evidence.
+    counts = {position: list(corrected.values()).count(position) for position in corrected.values()}
+    corrected = {index: position for index, position in corrected.items() if counts[position] == 1}
+    if corrected:
+        slots = [(index, y, corrected.get(index, position)) for index, y, position in slots]
+        anchors = [(i, position) for i, (_, _, position) in enumerate(slots) if position is not None]
+
     used_positions = {position for _, position in anchors}
-    recovered: dict[int, int] = {}
+    recovered: dict[int, int] = dict(corrected)
     boundaries = [(-1, 0), *anchors, (len(slots), grid_size + 1)]
     for (left_index, left_position), (right_index, right_position) in zip(boundaries, boundaries[1:]):
         if right_position <= left_position:
@@ -886,7 +944,7 @@ def extract_results_from_tokens(
         if not line_text:
             continue
         recognized_position = _position_from_line(cluster, len(roster))
-        position = recognized_position or recovered_positions.get(cluster_index)
+        position = recovered_positions.get(cluster_index, recognized_position)
         line_words = set(normalize_name(line_text).split())
         if position is None and "driver" in line_words and ({"pos", "team"} & line_words):
             continue
@@ -903,6 +961,8 @@ def extract_results_from_tokens(
         issues: list[str] = []
         if position is None:
             issues.append("Finishing position was not recognized.")
+        elif recognized_position is not None and recognized_position != position:
+            issues.append("OCR finishing position was corrected from contiguous detail rows; confirm it.")
         elif recognized_position is None:
             issues.append("Finishing position was inferred from contiguous detail rows; confirm it.")
         if match.needs_review:

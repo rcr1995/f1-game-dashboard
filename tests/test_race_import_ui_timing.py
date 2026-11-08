@@ -391,6 +391,89 @@ class ResultsSessionPreflightTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    def test_sao_paulo_spacing_variants_match_across_two_screenshots(self):
+        uploads = [synthetic_image("red"), synthetic_image("blue")]
+        token_sets = []
+        for index, (heading, confidence) in enumerate(
+            [("SAO PAULO GRAND PRIX-RACE", 0.93443),
+             ("SAOPAULO GRAND PRIX-RACE", 0.94205)],
+            start=1,
+        ):
+            source = f"Screenshot {index}"
+            tokens = detail_tokens(
+                source, position=9, driver="Alice", team="Red",
+                fastest_lap="1:14.882", result_time="+1 Lap",
+            )
+            tokens.append(token(heading, confidence, 300, 135, 600, 155, source))
+            token_sets.append(tokens)
+
+        self.assertEqual(
+            ui.validate_results_session_set(
+                uploads, token_sets, "R", expected_gp="São Paulo GP",
+                selected_tabs=["R", "R"],
+            ),
+            [],
+        )
+
+    def test_sao_paulo_identity_can_be_split_across_same_line_tokens(self):
+        for words in (
+            ["SAO", "PAU", "LO", "GRAND", "PRIX-RACE"],
+            ["FORMULA", "1", "SÃO", "PAU", "LOGRANDPRIX-RACE"],
+        ):
+            with self.subTest(words=words):
+                tokens = detail_tokens(
+                    "Screenshot 1", position=9, driver="Alice", team="Red",
+                    fastest_lap="1:14.882", result_time="+1 Lap",
+                )
+                tokens.extend(
+                    token(word, 0.99, 250 + index * 70, 135,
+                          315 + index * 70, 155, "Screenshot 1")
+                    for index, word in enumerate(words)
+                )
+                self.assertEqual(
+                    ui.validate_results_session_set(
+                        [synthetic_image("red")], [tokens], "R",
+                        expected_gp="São Paulo GP", selected_tabs=["R"],
+                    ),
+                    [],
+                )
+
+    def test_compact_heading_identity_does_not_borrow_untrusted_evidence(self):
+        cases = {
+            "low confidence": [
+                token("SAOPAULO GRANDPRIX-RACE", 0.64, 300, 135, 600, 155, "Screenshot 1"),
+            ],
+            "different lines": [
+                token("SAOPAU", 0.99, 300, 120, 395, 135, "Screenshot 1"),
+                token("LO GRANDPRIX-RACE", 0.99, 400, 150, 600, 165, "Screenshot 1"),
+            ],
+            "body only": [
+                token("SAOPAULO GRANDPRIX-RACE", 0.99, 300, 225, 600, 245, "Screenshot 1"),
+            ],
+            "missing Grand Prix anchor": [
+                token("SAOPAULO RACE", 0.99, 300, 135, 600, 155, "Screenshot 1"),
+            ],
+            "substring of another name": [
+                token("OTHERSAOPAULO GRANDPRIX-RACE", 0.99, 300, 135, 600, 155, "Screenshot 1"),
+            ],
+            "different screenshots": [
+                token("SAOPAU", 0.99, 300, 135, 395, 155, "Screenshot 1"),
+                token("LOGRANDPRIX-RACE", 0.99, 400, 135, 600, 155, "Screenshot 2"),
+            ],
+        }
+        for reason, heading_tokens in cases.items():
+            with self.subTest(reason=reason):
+                tokens = detail_tokens(
+                    "Screenshot 1", position=9, driver="Alice", team="Red",
+                    fastest_lap="1:14.882", result_time="+1 Lap",
+                ) + heading_tokens
+                errors = ui.validate_results_session_set(
+                    [synthetic_image("red")], [tokens], "R",
+                    expected_gp="São Paulo GP", selected_tabs=["R"],
+                )
+                self.assertEqual(len(errors), 1)
+                self.assertIn("Grand Prix heading does not safely match São Paulo GP", errors[0])
+
     def test_wrong_grand_prix_heading_is_rejected(self):
         uploads = [synthetic_image("red"), synthetic_image("blue")]
         token_sets = [

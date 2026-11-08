@@ -890,14 +890,39 @@ def _gp_identity_matches(tokens: list[ri.OcrToken], expected_gp: str) -> bool:
     timing_columns = ri.detect_timing_columns(tokens)
     if timing_columns is None:
         return False
+    heading_tokens = [
+        token for token in tokens
+        if token.confidence >= 0.65 and token.y_center < timing_columns.header_y
+    ]
     observed_words = {
         word
-        for token in tokens
-        if token.confidence >= 0.65 and token.y_center < timing_columns.header_y
+        for token in heading_tokens
         for word in ri.normalize_name(token.text).split()
         if word not in _GP_IDENTITY_STOP_WORDS
     }
-    return all(expected in observed_words for expected in expected_words)
+    if all(expected in observed_words for expected in expected_words):
+        return True
+
+    # OCR can join or split words in the photographed title (SAOPAULO versus
+    # SAO PAULO). Accept whitespace differences only within a single heading
+    # line, using the full identity before GRAND PRIX rather than fuzzy text.
+    expected_identity = "".join(expected_words)
+    for anchor in heading_tokens:
+        line = sorted(
+            (token for token in heading_tokens
+             if token.source == anchor.source
+             and min(token.y_max, anchor.y_max) - max(token.y_min, anchor.y_min)
+             >= min(token.height, anchor.height) * 0.45),
+            key=lambda token: token.x_min,
+        )
+        compact = "".join(ri.normalize_name(" ".join(token.text for token in line)).split())
+        if compact.count("grandprix") != 1:
+            continue
+        identity = compact.split("grandprix", 1)[0]
+        identity = re.sub(r"^formula1?", "", identity)
+        if identity == expected_identity:
+            return True
+    return False
 
 
 def validate_results_session_set(
