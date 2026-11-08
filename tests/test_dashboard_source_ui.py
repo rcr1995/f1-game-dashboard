@@ -268,6 +268,8 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
         def browser_response(name, *args, **kwargs):
             if name == 'f1_circuits_preference':
                 return lambda **mounted: {'preference': saved['key']}
+            if name == 'f1_circuits_sort_preference':
+                return lambda **mounted: {'preference': 'races'}
             return factory(name, *args, **kwargs)
 
         with (patch('streamlit.components.v2.component', side_effect=browser_response),
@@ -275,16 +277,28 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
             app = self.app(view='circuits')
             self.assert_rendered(app)
             self.assertEqual(app.selectbox(key='circuits_league').value, saved['key'])
+            self.assertEqual(app.selectbox(key='circuits_sort').value, 'races')
             australia = next(card for card in gallery.call_args.args[0] if card['gp_name'] == 'Australian GP')
             self.assertEqual(australia['leaders'], [{'driver': 'Polingua', 'wins': 1}])
             app.query_params['view'] = 'overview'
             app.run()
             self.assert_rendered(app)
             self.assertEqual(app.session_state[ui_preferences.CIRCUITS_VALUE_KEY], saved['key'])
+            self.assertEqual(app.session_state[ui_preferences.SORT_VALUE_KEY], 'races')
             app.query_params['view'] = 'circuits'
             app.run()
             self.assert_rendered(app)
             self.assertEqual(app.selectbox(key='circuits_league').value, saved['key'])
+            self.assertEqual(app.selectbox(key='circuits_sort').value, 'races')
+            app.selectbox(key='circuits_sort').set_value('country').run()
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='circuits_sort').value, 'country')
+            self.assertEqual(app.selectbox(key='circuits_league').value, saved['key'])
+            app.session_state['app_lang'] = 'Português (Portugal)'
+            app.run()
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='circuits_sort').label, 'Ordenar por')
+            self.assertEqual(app.selectbox(key='circuits_sort').value, 'country')
             # Explicit All beats a replay of the old browser response.
             app.selectbox(key='circuits_league').set_value('all').run()
             self.assert_rendered(app)
@@ -292,6 +306,7 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
             fresh = self.app(view='circuits')
             self.assert_rendered(fresh)
             self.assertEqual(fresh.selectbox(key='circuits_league').value, saved['key'])
+            self.assertEqual(fresh.selectbox(key='circuits_sort').value, 'races')
 
     def test_empty_circuit_catalog_explains_why_no_cards_are_shown(self):
         import circuit_history

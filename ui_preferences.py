@@ -1,7 +1,7 @@
 """Browser-local, non-sensitive display preferences shared by every page.
 
 The registered Streamlit v2 components exchange allowlisted language codes and
-public league catalog keys. They never receive identity or authentication data.
+public league catalog keys and sorting codes. They never receive identity or authentication data.
 An initial browser read is acknowledged before any write is allowed, so a new
 Streamlit session cannot replace a remembered choice with the default language.
 """
@@ -130,11 +130,18 @@ CIRCUITS_READY_KEY = "ui_circuits_ready"
 CIRCUITS_VALUE_KEY = "ui_circuits_selection"
 CIRCUITS_OPTIONS_KEY = "ui_circuits_options"
 CIRCUITS_WRITE_KEY = "ui_circuits_write"
+SORT_COMPONENT_KEY = "ui_browser_circuits_sort"
+SORT_READY_KEY = "ui_circuits_sort_ready"
+SORT_VALUE_KEY = "ui_circuits_sort_selection"
+SORT_OPTIONS_KEY = "ui_circuits_sort_options"
+SORT_WRITE_KEY = "ui_circuits_sort_write"
+SORT_OPTIONS = ("name", "country", "races")
 
 CIRCUITS_COMPONENT_JS = r"""
-const storageKey = "f1puskasleague.circuits.league.v1";
 const written = new Set();
 export default function ({data, setStateValue}) {
+    const sorting = data.kind === "sort";
+    const storageKey = sorting ? "f1puskasleague.circuits.sort.v1" : "f1puskasleague.circuits.league.v1";
     const valid = value => typeof value === "string" && data.options.includes(value);
     // Only an explicit selection creates a write. A rerun in an older tab must
     // not keep replacing a choice made more recently elsewhere in this browser.
@@ -146,7 +153,7 @@ export default function ({data, setStateValue}) {
         return;
     }
     if (data.ready) return;
-    let selection = "all";
+    let selection = sorting ? "name" : "all";
     try {
         const saved = window.localStorage.getItem(storageKey);
         if (valid(saved)) selection = saved;
@@ -157,59 +164,90 @@ export default function ({data, setStateValue}) {
 """
 
 
-def hydrate_circuits(state: MutableMapping[str, Any], value: object) -> None:
+def _circuit_preference_keys(sort):
+    if sort:
+        return (SORT_COMPONENT_KEY, SORT_READY_KEY, SORT_VALUE_KEY, SORT_OPTIONS_KEY,
+                SORT_WRITE_KEY, "circuits_sort", "name")
+    return (CIRCUITS_COMPONENT_KEY, CIRCUITS_READY_KEY, CIRCUITS_VALUE_KEY, CIRCUITS_OPTIONS_KEY,
+            CIRCUITS_WRITE_KEY, "circuits_league", "all")
+
+
+def hydrate_circuits(state: MutableMapping[str, Any], value: object, *, sort=False) -> None:
     """Restore once; a native selection always wins over delayed browser state."""
-    if state.get(CIRCUITS_READY_KEY):
+    _, ready_key, value_key, options_key, _, widget_key, default = _circuit_preference_keys(sort)
+    if state.get(ready_key):
         return
-    options = state.get(CIRCUITS_OPTIONS_KEY, ("all",))
-    selected = value if isinstance(value, str) and value in options else "all"
-    state[CIRCUITS_VALUE_KEY] = selected
-    state["circuits_league"] = selected
-    state[CIRCUITS_READY_KEY] = True
+    options = state.get(options_key, (default,))
+    selected = value if isinstance(value, str) and value in options else default
+    state[value_key] = selected
+    state[widget_key] = selected
+    state[ready_key] = True
 
 
-def _receive_circuits_preference() -> None:
+def _receive_circuits_preference(*, sort=False) -> None:
     import streamlit as st
-    result = st.session_state.get(CIRCUITS_COMPONENT_KEY, {})
+    component_key = _circuit_preference_keys(sort)[0]
+    result = st.session_state.get(component_key, {})
     if hasattr(result, "get") and result.get("preference") is not None:
-        hydrate_circuits(st.session_state, result["preference"])
+        hydrate_circuits(st.session_state, result["preference"], sort=sort)
 
 
-def select_circuits_from_widget() -> None:
+def select_circuits_from_widget(*, sort=False) -> None:
     """Commit an explicit selection separately from the disposable widget key."""
     import streamlit as st
     state = st.session_state
-    value = state.get("circuits_league")
-    if not isinstance(value, str) or value not in state.get(CIRCUITS_OPTIONS_KEY, ()):
+    _, ready_key, value_key, options_key, write_key, widget_key, _ = _circuit_preference_keys(sort)
+    value = state.get(widget_key)
+    if not isinstance(value, str) or value not in state.get(options_key, ()):
         return
-    state[CIRCUITS_VALUE_KEY] = value
-    state[CIRCUITS_READY_KEY] = True
-    state[CIRCUITS_WRITE_KEY] = uuid4().hex
+    state[value_key] = value
+    state[ready_key] = True
+    state[write_key] = uuid4().hex
 
 
-def mount_circuits_preference(options: list[str]) -> None:
+def mount_circuits_preference(options: list[str], *, sort=False) -> None:
     """Restore before the selectbox is instantiated; never block page rendering."""
     import streamlit as st
     state = st.session_state
-    state[CIRCUITS_OPTIONS_KEY] = tuple(options)
-    selected = state.get(CIRCUITS_VALUE_KEY, state.get("circuits_league", "all"))
+    component_key, ready_key, value_key, options_key, write_key, widget_key, default = _circuit_preference_keys(sort)
+    state[options_key] = tuple(options)
+    selected = state.get(value_key, state.get(widget_key, default))
     if not isinstance(selected, str) or selected not in options:
-        selected = "all"
+        selected = default
         # A removed catalog entry must never be sent back as a pending write.
-        state.pop(CIRCUITS_WRITE_KEY, None)
-    state[CIRCUITS_VALUE_KEY] = selected
-    state["circuits_league"] = selected
-    component = st.components.v2.component("f1_circuits_preference", js=CIRCUITS_COMPONENT_JS)
+        state.pop(write_key, None)
+    state[value_key] = selected
+    state[widget_key] = selected
+    component = st.components.v2.component(
+        "f1_circuits_sort_preference" if sort else "f1_circuits_preference", js=CIRCUITS_COMPONENT_JS)
+    data = {"options": options, "ready": state.get(ready_key) is True,
+            "selection": selected, "write": state.get(write_key)}
+    if sort:
+        data["kind"] = "sort"
     result = component(
-        key=CIRCUITS_COMPONENT_KEY,
-        data={"options": options, "ready": state.get(CIRCUITS_READY_KEY) is True,
-              "selection": selected, "write": state.get(CIRCUITS_WRITE_KEY)},
-        on_preference_change=_receive_circuits_preference,
+        key=component_key, data=data,
+        on_preference_change=_receive_circuits_sort_preference if sort else _receive_circuits_preference,
         height=0, width="stretch",
     )
     # A reconnect may replay a result without invoking its callback.
     if hasattr(result, "get") and result.get("preference") is not None:
-        hydrate_circuits(state, result["preference"])
+        hydrate_circuits(state, result["preference"], sort=sort)
+
+
+def hydrate_circuits_sort(state: MutableMapping[str, Any], value: object) -> None:
+    hydrate_circuits(state, value, sort=True)
+
+
+def _receive_circuits_sort_preference() -> None:
+    _receive_circuits_preference(sort=True)
+
+
+def select_circuits_sort_from_widget() -> None:
+    select_circuits_from_widget(sort=True)
+
+
+def mount_circuits_sort_preference() -> None:
+    mount_circuits_preference(list(SORT_OPTIONS), sort=True)
 
 
 HEADER_JS = r"""

@@ -1,5 +1,6 @@
 """Winner details preserve source context and cannot execute workbook text."""
 import unittest
+from copy import deepcopy
 
 import pandas as pd
 
@@ -130,6 +131,44 @@ class CircuitHistoryUiTests(unittest.TestCase):
                          'Game &amp; Edition', '&lt;country&gt;',
                          '1 unresolved results · partial totals'):
             self.assertIn(expected, output)
+
+    def test_circuit_achievements_rank_both_tables_without_mutating_source_order(self):
+        rows = self.comparison()
+        rows[0].update(wins=0, podiums=2, best_lap_ms=72513)
+        rows[1].update(wins=2, podiums=3, best_lap_ms=72217)
+        rows[2].update(wins=1, podiums=2, best_lap_ms=72423, has_results=True)
+        original = deepcopy(rows)
+        preview, full = ui._head_to_head_html(rows, 'Interlagos', False)
+        for table in (preview, full):
+            self.assertLess(table.index('>Polingua<'), table.index('>Fatacuida<'))
+            self.assertLess(table.index('>Fatacuida<'), table.index('>TomasRodri21<'))
+        self.assertEqual(rows, original)
+        self.assertIn('Ordered by GP wins, then podiums, then fastest lap.', full)
+        _, portuguese = ui._head_to_head_html(rows, 'Interlagos', True)
+        self.assertIn('Ordenado por vitórias em GP, depois pódios e melhor volta.', portuguese)
+
+    def test_podiums_then_laps_break_equal_win_counts_in_both_tables(self):
+        rows = self.comparison()
+        rows[0].update(wins=1, podiums=3, best_lap_ms=73000)
+        rows[1].update(wins=1, podiums=2, best_lap_ms=71000)
+        rows[2].update(wins=1, podiums=2, best_lap_ms=72000, has_results=True)
+        for table in ui._head_to_head_html(rows, 'Interlagos', False):
+            self.assertLess(table.index('>TomasRodri21<'), table.index('>Polingua<'))
+            self.assertLess(table.index('>Polingua<'), table.index('>Fatacuida<'))
+
+    def test_missing_metrics_follow_known_zeros_and_complete_ties_use_stable_names(self):
+        rows = self.comparison()
+        for row in rows:
+            row.update(wins=0, podiums=0, best_lap=None, best_lap_ms=None, has_results=True)
+        rows[0].update(has_results=False)
+        for ordered in (rows, list(reversed(rows))):
+            for table in ui._head_to_head_html(ordered, 'Interlagos', False):
+                self.assertLess(table.index('>Fatacuida<'), table.index('>Polingua<'))
+                self.assertLess(table.index('>Polingua<'), table.index('>TomasRodri21<'))
+                self.assertNotIn('class="ch-best"', table)
+        rows[1].update(best_lap='1:11.200', best_lap_ms=71200)
+        for table in ui._head_to_head_html(rows, 'Interlagos', False):
+            self.assertLess(table.index('>Polingua<'), table.index('>Fatacuida<'))
 
 
 if __name__ == '__main__':

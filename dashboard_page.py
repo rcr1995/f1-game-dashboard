@@ -1377,6 +1377,7 @@ if view_page == "circuits":
     circuit_leagues = {entry['key']: entry for entry in championship_catalog(base_all)}
     circuit_options = ['all', *circuit_leagues]
     ui_preferences.mount_circuits_preference(circuit_options)
+    ui_preferences.mount_circuits_sort_preference()
     league_control, search_control, sort_control = st.columns([2.2, 2, 1.2])
     with league_control:
         circuit_selection = st.selectbox(
@@ -1401,12 +1402,11 @@ if view_page == "circuits":
             if lang == 'en' else
             {'name': 'Grande Prémio (A–Z)', 'country': 'País (A–Z)', 'races': 'Mais corridas'}
         )
-        if st.session_state.get('circuits_sort', 'name') not in circuit_sort_labels:
-            st.session_state['circuits_sort'] = 'name'
         circuit_sort = st.selectbox(
             'Sort by' if lang == 'en' else 'Ordenar por',
             list(circuit_sort_labels), format_func=circuit_sort_labels.get,
             key='circuits_sort',
+            on_change=ui_preferences.select_circuits_sort_from_widget,
         )
     circuit_meta = circuit_leagues[circuit_selection]['meta'] if circuit_selection != 'all' else None
     circuit_scope = circuit_leagues[circuit_selection]['label'] if circuit_meta else None

@@ -1,6 +1,7 @@
 """Accessible circuit gallery and complete main-race winner histories."""
 from datetime import date
 from html import escape
+import math
 
 from circuit_records import league_lap_records
 from puskas_html import (CIRCUIT_SVG_MAP, CIRCUIT_LAP_RECORDS_CSS,
@@ -19,12 +20,31 @@ def _date_label(value, pt):
     return f'{parsed.day:02d} {months[parsed.month - 1]} {parsed.year}'
 
 
+def _head_to_head_rank(row):
+    """Rank saved achievements, keeping unavailable metrics behind known zeros."""
+    def count(field):
+        value = row.get(field)
+        if (row.get('has_results') is False or isinstance(value, bool)
+                or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0):
+            return -1
+        return value
+
+    lap = row.get('best_lap_ms')
+    if isinstance(lap, bool) or not isinstance(lap, (int, float)) or not math.isfinite(lap) or lap <= 0:
+        lap = math.inf
+    name = str(row.get('driver') or '')
+    return (-count('wins'), -count('podiums'), lap, name.casefold(), name)
+
+
 def _head_to_head_html(rows, venue, pt):
     """Compact card comparison and a fully labelled, mobile-readable table."""
     if not rows:
         return '', ''
+    rows = sorted(rows, key=_head_to_head_rank)
     esc = lambda value: escape(str(value if value is not None else ''), quote=True)
     title = 'Frente a frente' if pt else 'Head-to-head'
+    ranking = ('Ordenado por vitórias em GP, depois pódios e melhor volta.' if pt else
+               'Ordered by GP wins, then podiums, then fastest lap.')
     labels = {'driver': 'Piloto' if pt else 'Driver',
               'starts': 'Resultados GP' if pt else 'GP results',
               'wins': 'Vitórias' if pt else 'Wins',
@@ -67,7 +87,7 @@ def _head_to_head_html(rows, venue, pt):
         + ''.join(f'<td class="{"ch-best" if highlighted(row, field) else ""}">'
                   + number(row, field) + lead_description(row, field) + '</td>'
                   for field in ('wins', 'podiums')) + '</tr>' for row in rows)
-    preview = (f'<table class="ch-compare-preview"><caption>{title}</caption>'
+    preview = (f'<table class="ch-compare-preview"><caption title="{esc(ranking)}">{title}</caption>'
                f'<thead><tr><th scope="col" class="ch-sr-only">{labels["driver"]}</th>'
                f'<th scope="col">{labels["wins"]}</th><th scope="col">{labels["podiums"]}</th>'
                '</tr></thead><tbody>' + preview + '</tbody></table>')
@@ -98,7 +118,7 @@ def _head_to_head_html(rows, venue, pt):
             'Os valores refletem apenas os resultados guardados; 0 resultados GP significa que não há classificação de GP registada.' if pt else
             'GP results, wins and podiums: main races only. Best laps include Races and Sprints. '
             'Values reflect saved results only; 0 GP results means no recorded GP classification.')
-    comparison = (f'<section class="ch-comparison"><h3>{title}</h3><p class="ch-muted">{note}</p>'
+    comparison = (f'<section class="ch-comparison"><h3>{title}</h3><p class="ch-muted">{ranking} {note}</p>'
                   '<div class="ch-table-wrap"><table class="ch-h2h-table">'
                   f'<caption class="ch-sr-only">{title} · {esc(venue)}</caption><thead><tr>'
                   + ''.join(f'<th scope="col">{label}</th>' for label in labels.values())
