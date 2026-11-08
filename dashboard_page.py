@@ -1368,16 +1368,37 @@ if view_page == "race-centre":
         render_movers_chart(df_gp, entity_col=entity_col)
 
 if view_page == "circuits":
+    from championship_circuit import championship_catalog
     from circuit_history import circuit_history
     from circuit_history_ui import render as render_circuit_history
 
-    circuits = circuit_history(base_all, calendar_raw)
+    st.markdown("### " + ("Circuit Layouts" if lang == "en" else "Layouts dos Circuitos"))
+    circuit_leagues = {entry['key']: entry for entry in championship_catalog(base_all)}
+    circuit_options = ['all', *circuit_leagues]
+    if st.session_state.get('circuits_league', 'all') not in circuit_options:
+        st.session_state['circuits_league'] = 'all'
+    circuit_selection = st.selectbox(
+        'League / season' if lang == 'en' else 'Liga / época',
+        circuit_options,
+        format_func=lambda key: ('All leagues / seasons' if lang == 'en' else 'Todas as ligas / épocas')
+            if key == 'all' else circuit_leagues[key]['label'],
+        key='circuits_league',
+    )
+    circuit_meta = circuit_leagues[circuit_selection]['meta'] if circuit_selection != 'all' else None
+    circuit_scope = circuit_leagues[circuit_selection]['label'] if circuit_meta else None
+    circuit_results = base_all
+    if circuit_meta:
+        for column in ('Game', 'SeasonLabel', 'League Name'):
+            circuit_results = circuit_results[circuit_results[column] == circuit_meta[column]]
+    # Keep the complete source for safe calendar provenance, even for one league.
+    circuits = circuit_history(base_all, calendar_raw, **({'meta': circuit_meta} if circuit_meta else {}))
     if not circuits:
-        st.info(tr(lang, "no_gp_winners"))
+        st.info(("No race-by-race circuit history is available for this league/season."
+                 if lang == 'en' else "Não existe histórico de circuitos corrida a corrida para esta liga/época.")
+                if circuit_meta else tr(lang, "no_gp_winners"))
     else:
-        st.markdown("### " + ("Circuit Layouts" if lang == "en" else "Layouts dos Circuitos"))
         dashboard_surface.render(
-            render_circuit_history(circuits, base_all, lang=lang),
+            render_circuit_history(circuits, circuit_results, lang=lang, scope_label=circuit_scope),
             lang=lang,
             key="circuits_surface",
         )

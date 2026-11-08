@@ -160,10 +160,62 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
                 self.assertGreater(len(cards), 0)
                 self.assertEqual(len(cards), len({card['key'] for card in cards}))
                 pd.testing.assert_frame_equal(gallery.call_args.args[1], expected)
-                self.assertEqual(gallery.call_args.kwargs, {'lang': lang})
+                self.assertEqual(gallery.call_args.kwargs, {'lang': lang, 'scope_label': None})
                 self.assertEqual(surface.call_args.kwargs, {'lang': lang, 'key': 'circuits_surface'})
                 self.assertIn('p-track-card', surface.call_args.args[0])
                 self.assertIn('<dialog', surface.call_args.args[0])
+
+    def test_circuit_filter_scopes_cards_history_and_lap_records_without_changing_source(self):
+        import championship_circuit
+        import circuit_history_ui
+        import dashboard_core as core
+        results = core.load_standings_data(WORKBOOK)
+        catalog = championship_circuit.championship_catalog(results)
+        with patch.object(circuit_history_ui, 'render', wraps=circuit_history_ui.render) as gallery:
+            app = self.app(view='circuits')
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='circuits_league').value, 'all')
+            for season, winner in [('2026-T02', 'TomasRodri21'), ('2026-T01', 'Polingua')]:
+                selected = next(entry for entry in catalog if entry['meta']['SeasonLabel'] == season)
+                app.selectbox(key='circuits_league').set_value(selected['key']).run()
+                self.assert_rendered(app)
+                displayed = gallery.call_args.args[1]
+                for column, value in selected['meta'].items():
+                    self.assertEqual(set(displayed[column]), {value})
+                australia = next(card for card in gallery.call_args.args[0] if card['gp_name'] == 'Australian GP')
+                self.assertEqual(australia['race_count'], 1)
+                self.assertEqual(australia['leaders'], [{'driver': winner, 'wins': 1}])
+                self.assertEqual(gallery.call_args.kwargs['scope_label'], selected['label'])
+            app.session_state['app_lang'] = 'Português (Portugal)'
+            app.run()
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='circuits_league').value, selected['key'])
+            self.assertEqual(app.selectbox(key='circuits_league').label, 'Liga / época')
+            app.selectbox(key='circuits_league').set_value('all').run()
+            self.assert_rendered(app)
+            pd.testing.assert_frame_equal(gallery.call_args.args[1], results)
+            australia = next(card for card in gallery.call_args.args[0] if card['gp_name'] == 'Australian GP')
+            self.assertGreater(australia['race_count'], 1)
+
+    def test_circuit_filter_handles_summary_only_seasons_and_stale_selection(self):
+        import championship_circuit
+        import dashboard_core as core
+        results = core.load_standings_data(WORKBOOK)
+        catalog = championship_circuit.championship_catalog(results)
+        summary = next(entry for entry in catalog if results[
+            (results['Game'] == entry['meta']['Game']) &
+            (results['SeasonLabel'] == entry['meta']['SeasonLabel']) &
+            (results['League Name'] == entry['meta']['League Name'])]['IsSeasonFinal'].all())
+        app = self.app(view='circuits')
+        app.selectbox(key='circuits_league').set_value(summary['key']).run()
+        self.assert_rendered(app)
+        self.assertIn('No race-by-race circuit history is available for this league/season.',
+                      self.messages(app.main, 'info'))
+        with patch.object(championship_circuit, 'championship_catalog',
+                          return_value=[entry for entry in catalog if entry['key'] != summary['key']]):
+            app.run()
+        self.assert_rendered(app)
+        self.assertEqual(app.selectbox(key='circuits_league').value, 'all')
 
     def test_empty_circuit_catalog_explains_why_no_cards_are_shown(self):
         import circuit_history

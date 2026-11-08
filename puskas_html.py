@@ -382,7 +382,7 @@ def get_base64_image(path: str) -> str:
     if not p.exists():
         return ""
     suffix = p.suffix.lower().lstrip(".")
-    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}.get(suffix, "image/png")
+    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}.get(suffix, "image/png")
     data = p.read_bytes()
     b64 = base64.b64encode(data).decode("utf-8")
     return f"data:{mime};base64,{b64}"
@@ -492,8 +492,8 @@ TEAM_SHORT = {
     "Racing Point":  "RPC",
 }
 
-# ── GP name → circuit SVG mapping (latest layout) ──
-_SVG_BASE = "https://raw.githubusercontent.com/julesr0y/f1-circuits-svg/main/circuits/minimal/white-outline"
+# Bundle circuit outlines so upstream moves/outages cannot break any card.
+_SVG_BASE = Path(__file__).parent / "assets" / "circuit-layouts"
 CIRCUIT_SVG_MAP = {
     "British GP":         f"{_SVG_BASE}/silverstone-8.svg",
     "Belgian GP":         f"{_SVG_BASE}/spa-francorchamps-4.svg",
@@ -507,7 +507,7 @@ CIRCUIT_SVG_MAP = {
     "Austrian GP":        f"{_SVG_BASE}/spielberg-3.svg",
     "Hungarian GP":       f"{_SVG_BASE}/hungaroring-3.svg",
     "Dutch GP":           f"{_SVG_BASE}/zandvoort-5.svg",
-    "Italian GP":         f"{_SVG_BASE}/monza-7.svg",
+    "Italian GP":         f"{_SVG_BASE}/monza-6.svg",
     "Azerbaijan GP":      f"{_SVG_BASE}/baku-1.svg",
     "Singapore GP":       f"{_SVG_BASE}/marina-bay-4.svg",
     "United States GP":   f"{_SVG_BASE}/austin-1.svg",
@@ -518,7 +518,7 @@ CIRCUIT_SVG_MAP = {
     "Las Vegas GP":       f"{_SVG_BASE}/las-vegas-1.svg",
     "Qatar GP":           f"{_SVG_BASE}/lusail-1.svg",
     "Abu Dhabi GP":       f"{_SVG_BASE}/yas-marina-2.svg",
-    "Monaco GP":          f"{_SVG_BASE}/monaco-6.svg",
+    "Monaco GP":          f"{_SVG_BASE}/monaco-5.svg",
     "French GP":          f"{_SVG_BASE}/paul-ricard-3.svg",
     "Portuguese GP":      f"{_SVG_BASE}/portimao-1.svg",
     "Brazil GP":          f"{_SVG_BASE}/interlagos-2.svg",
@@ -526,6 +526,7 @@ CIRCUIT_SVG_MAP = {
     "Brazilian GP":       f"{_SVG_BASE}/interlagos-2.svg",
     "Mexican GP":         f"{_SVG_BASE}/mexico-city-3.svg",
 }
+CIRCUIT_SVG_MAP = {gp: get_base64_image(path) for gp, path in CIRCUIT_SVG_MAP.items()}
 
 # GP name → country flag emoji
 GP_FLAGS = {
@@ -623,7 +624,7 @@ CIRCUIT_LAP_RECORDS_CSS = """
 """
 
 
-def circuit_lap_records_html(gp_name: str, circuit: str = "", lang: str = "en", league_records=None) -> str:
+def circuit_lap_records_html(gp_name: str, circuit: str = "", lang: str = "en", league_records=None, *, scope_label=None) -> str:
     """The same two compact record lines for the next race and circuit gallery."""
     real_record = get_circuit_record(gp_name, circuit)
     league_record = (league_records or {}).get(circuit_key(gp_name, circuit))
@@ -634,12 +635,16 @@ def circuit_lap_records_html(gp_name: str, circuit: str = "", lang: str = "en", 
 
     real_value = value(real_record, real_record.year) if real_record else _tr(lang, "record_unavailable")
     league_value = value(league_record, league_record.season) if league_record else _tr(lang, "league_lap_unavailable")
+    league_description = _tr(lang, "league_lap_description")
+    if scope_label:
+        base_description = league_description.rsplit(" · ", 1)[0]
+        league_description = f"{base_description} · {scope_label}"
     return (
         '<div class="p-lap-records">'
         f'<div class="p-lap-record-line" title="{_html_escape(_tr(lang, "real_race_record"))}">'
         '<span class="p-lap-record-label">F1</span>'
         f'<span class="p-lap-record-value">{real_value}</span></div>'
-        f'<div class="p-lap-record-line" title="{_html_escape(_tr(lang, "league_lap_description"))}">'
+        f'<div class="p-lap-record-line" title="{_html_escape(league_description)}">'
         f'<span class="p-lap-record-label">{_tr(lang, "league_lap_label")}</span>'
         f'<span class="p-lap-record-value{ " p-lap-record-missing" if not league_record else ""}">{league_value}</span></div>'
         '</div>'

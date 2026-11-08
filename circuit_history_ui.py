@@ -19,10 +19,11 @@ def _date_label(value, pt):
     return f'{parsed.day:02d} {months[parsed.month - 1]} {parsed.year}'
 
 
-def render(cards, results, lang='en'):
+def render(cards, results, lang='en', scope_label=None):
     pt = lang == 'pt'
     esc = lambda value: escape(str(value if value is not None else ''), quote=True)
     records = league_lap_records(results)
+    scope_text = esc(scope_label) if scope_label else ('todas as ligas e épocas' if pt else 'all leagues and seasons')
     gallery, dialogs = [], []
     columns = [('driver', 'Vencedor' if pt else 'Winner'),
                ('league', 'Liga' if pt else 'League'),
@@ -54,7 +55,7 @@ def render(cards, results, lang='en'):
         gallery.append(f'''<article class="p-track-card" data-circuit-key="{esc(card['key'])}">
           <h3 class="p-track-title">{esc(label).upper()}</h3>
           <div class="p-track-country">{esc(venue)} {_flag_img(gp, height=14)}</div>
-          {image}{circuit_lap_records_html(gp, record_venue, lang, records)}
+          {image}{circuit_lap_records_html(gp, record_venue, lang, records, scope_label=scope_label)}
           <div class="p-track-stats"><div class="ch-stat-label">{'VENCEDORES DO GP' if pt else 'GP WINNERS'}</div>{leaders}</div>
           <button type="button" class="ch-open" data-history-id="{dialog_id}" aria-haspopup="dialog" aria-controls="{dialog_id}"
             aria-label="{esc(('Ver todos os vencedores em ' if pt else 'View all race winners at ') + accessible_venue)}">{action} <span aria-hidden="true">↗</span></button>
@@ -71,8 +72,8 @@ def render(cards, results, lang='en'):
         if card.get('unresolved_events'):
             missing = card['unresolved_events']
             body += f'<p class="ch-muted">{missing} {"corridas sem vencedor confirmado nos dados guardados." if pt else "races have no confirmed winner in the saved data."}</p>'
-        summary = (f'{count} {"corrida" if count == 1 else "corridas"} · {distinct} {"piloto vencedor" if distinct == 1 else "pilotos vencedores"} · todas as ligas e épocas' if pt else
-                   f'{count} {"race" if count == 1 else "races"} · {distinct} winning {"driver" if distinct == 1 else "drivers"} · all leagues and seasons')
+        summary = (f'{count} {"corrida" if count == 1 else "corridas"} · {distinct} {"piloto vencedor" if distinct == 1 else "pilotos vencedores"} · {scope_text}' if pt else
+                   f'{count} {"race" if count == 1 else "races"} · {distinct} winning {"driver" if distinct == 1 else "drivers"} · {scope_text}')
         dialogs.append(f'''<dialog class="ch-dialog" id="{dialog_id}" aria-labelledby="{title_id}" aria-describedby="{summary_id}">
           <header class="ch-dialog-header"><div><p class="ch-kicker">{'HISTÓRICO DO CIRCUITO' if pt else 'CIRCUIT HISTORY'}</p>
           <h2 id="{title_id}">{esc(label)} · {'Vencedores do GP' if pt else 'GP winners'}</h2>
@@ -81,8 +82,12 @@ def render(cards, results, lang='en'):
           <div class="ch-dialog-body">{body}</div>
           <footer class="ch-dialog-footer">{'Só corridas principais. Sprints excluídos. — indica que a data não foi registada.' if pt else 'Main races only. Sprints excluded. — means the date was not recorded.'}</footer>
         </dialog>''')
+    help_text = (('Seleciona um circuito para ver os vencedores de corridas da liga/época selecionada.' if pt else
+                  'Select a circuit to see main-race winners for the selected league/season.') if scope_label else
+                 ('Seleciona um circuito para ver todos os vencedores de corridas nas ligas guardadas.' if pt else
+                  'Select a circuit to see every main-race winner across the saved leagues.'))
     return (STYLE + CIRCUIT_LAP_RECORDS_CSS
-            + f'<p class="ch-gallery-help">{"Seleciona um circuito para ver todos os vencedores de corridas nas ligas guardadas." if pt else "Select a circuit to see every main-race winner across the saved leagues."}</p>'
+            + f'<p class="ch-gallery-help">{help_text}</p>'
             + '<div class="p-tracks-grid">' + ''.join(gallery) + '</div>' + ''.join(dialogs))
 
 

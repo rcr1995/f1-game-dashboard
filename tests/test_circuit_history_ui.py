@@ -51,6 +51,16 @@ class CircuitHistoryUiTests(unittest.TestCase):
                      'Fechar histórico de vencedores'):
             self.assertIn(text,rendered)
 
+    def test_scoped_history_labels_match_selection_and_escape_source_text(self):
+        for lang, expected in (('en', 'selected league/season'), ('pt', 'liga/época selecionada')):
+            rendered = ui.render([self.card()], pd.DataFrame(), lang=lang,
+                                 scope_label='F1 25 · 2026-T02 · <League>')
+            self.assertIn(expected, rendered)
+            self.assertIn('F1 25 · 2026-T02 · &lt;League&gt;', rendered)
+            self.assertNotIn('all leagues and seasons', rendered)
+            self.assertNotIn('todas as ligas e épocas', rendered)
+            self.assertNotIn('<League>', rendered)
+
 
 if __name__ == '__main__':
     unittest.main()

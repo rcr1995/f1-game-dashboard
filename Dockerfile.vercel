@@ -39,6 +39,7 @@ COPY ["assets/hero_wet_night.webp", "./assets/hero_wet_night.webp"]
 COPY ["assets/hero_sunset.webp", "./assets/hero_sunset.webp"]
 COPY ["assets/helmets/", "./assets/helmets/"]
 COPY ["assets/tracks/", "./assets/tracks/"]
+COPY ["assets/circuit-layouts/", "./assets/circuit-layouts/"]
 
 EXPOSE 80
 # Runtime-only secrets are never baked into the image; the launcher execs Streamlit.

@@ -49,6 +49,41 @@ class CircuitHistoryTests(unittest.TestCase):
         card = self.build(rows, [event(Game="F1 25", Season="2026-T02")])[0]
         self.assertEqual([row["date"] for row in card["winners"]], ["2026-11-08", None])
 
+    def test_league_filter_isolates_game_season_and_league_and_recounts_wins(self):
+        selected = {"Game": "F1 25", "SeasonLabel": "2026-T02", "League Name": "League"}
+        rows = [result(Driver="Alice"), result(Round=2, Driver="Bob"),
+                result(SeasonLabel="2026-T01", Driver="Old Winner"),
+                result(Game="F1 24", Driver="Other Game"),
+                result(Driver="Other League", **{"League Name": "Other"}),
+                result(SeasonLabel="2026-T01", **{"GP Name": "Canadian GP"}),
+                result(Type="SR", Driver="Sprint Winner")]
+        original = pd.DataFrame(rows)
+        cards = circuit_history(original, pd.DataFrame([event()]), meta=selected)
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["race_count"], 2)
+        self.assertEqual({row["driver"] for row in cards[0]["winners"]}, {"Alice", "Bob"})
+        self.assertEqual(cards[0]["leaders"], [{"driver": "Alice", "wins": 1}, {"driver": "Bob", "wins": 1}])
+        self.assertEqual(original.to_dict("records"), rows)
+        self.assertEqual(circuit_history(original, meta={**selected, "League Name": "Unknown"}), [])
+
+    def test_filter_does_not_make_an_ambiguous_legacy_calendar_date_look_unique(self):
+        rows = pd.DataFrame([result(), result(SeasonLabel="2025-T01", Driver="Bob")])
+        current = {"Game": "F1 25", "SeasonLabel": "2026-T02", "League Name": "League"}
+        card = circuit_history(rows, pd.DataFrame([event()]), meta=current)[0]
+        self.assertIsNone(card["winners"][0]["date"])
+        card = circuit_history(rows, pd.DataFrame([event(Game="F1 25", Season="2026-T02")]), meta=current)[0]
+        self.assertEqual(card["winners"][0]["date"], "2026-11-08")
+
+    def test_filter_preserves_exact_catalog_identity_for_case_and_spacing_variants(self):
+        selected = {"Game": "F1 25", "SeasonLabel": "2026-T02", "League Name": "League"}
+        rows = pd.DataFrame([result(Driver="Selected Winner"),
+                             result(Driver="Different Case", **{"League Name": "LEAGUE"}),
+                             result(Driver="Different Game", Game="f1 25"),
+                             result(Driver="Different Season", SeasonLabel="2026-t02"),
+                             result(Driver="Different Spaces", **{"League Name": " League "})])
+        card = circuit_history(rows, meta=selected)[0]
+        self.assertEqual(card['leaders'], [{'driver': 'Selected Winner', 'wins': 1}])
+
     def test_league_id_disambiguates_calendar_and_rejects_other_league_id(self):
         rows = [result(**{"League ID": "current"}), result(SeasonLabel="2025-T01", Driver="Bob", **{"League ID": "old"})]
         card = self.build(rows, [event(**{"League ID": "current"})])[0]

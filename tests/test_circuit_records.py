@@ -65,6 +65,9 @@ class CircuitRecordTests(unittest.TestCase):
                     self.assertIn(label, card)
                     self.assertNotIn(get_circuit_record(gp).source, card)
                     self.assertEqual(card.count('class="p-lap-record-line"'), 2)
+                    from puskas_html import CIRCUIT_SVG_MAP
+                    self.assertIn('src="' + CIRCUIT_SVG_MAP[gp] + '"', card)
+                    self.assertNotIn("raw.githubusercontent.com", card)
 
 
 class LeagueLapRecordTests(unittest.TestCase):

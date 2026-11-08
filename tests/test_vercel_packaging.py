@@ -25,6 +25,7 @@ RUNTIME_MODULES = {
 PUBLIC_ASSET_SOURCES = {
     "assets/hero_banner.webp", "assets/helmets/", "assets/tracks/",
     "assets/hero_wet_night.webp", "assets/hero_sunset.webp",
+    "assets/circuit-layouts/",
 }
 
 
@@ -72,6 +73,7 @@ class VercelPackagingTests(unittest.TestCase):
         for directory, suffixes in (
             ("assets/helmets", {".webp"}),
             ("assets/tracks", {".webp", ".jpg", ".png"}),
+            ("assets/circuit-layouts", {".svg", ".txt"}),
         ):
             assets = list((ROOT / directory).iterdir())
             self.assertTrue(assets)
@@ -122,6 +124,8 @@ class VercelPackagingTests(unittest.TestCase):
                     "assets/hero_wet_night.webp", "assets/hero_sunset.webp",
                     "assets/helmets", "assets/helmets/*.webp", "assets/tracks",
                     "assets/tracks/*.webp", "assets/tracks/*.png", "assets/tracks/*.jpg",
+                    "assets/circuit-layouts", "assets/circuit-layouts/*.svg",
+                    "assets/circuit-layouts/LICENSE.txt",
                 }
                 if filename == ".vercelignore":
                     allowed_nonmodules.add(r"assets\\tracks\\Portimão.webp")
@@ -147,6 +151,7 @@ class VercelPackagingTests(unittest.TestCase):
                 ("assets", "assets/hero_banner.webp"),
                 ("assets/helmets", "assets/helmets/*.webp"),
                 ("assets/tracks", "assets/tracks/*.webp"),
+                ("assets/circuit-layouts", "assets/circuit-layouts/*.svg"),
             ):
                 with self.subTest(filename=filename, directory=directory):
                     index = patterns.index(f"!{directory}")

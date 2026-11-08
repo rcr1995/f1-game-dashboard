@@ -59,6 +59,10 @@ assets/tracks/**
 !assets/tracks/*.webp
 !assets/tracks/*.png
 !assets/tracks/*.jpg
+!assets/circuit-layouts
+assets/circuit-layouts/**
+!assets/circuit-layouts/*.svg
+!assets/circuit-layouts/LICENSE.txt
 
 # CLI ignore@4 does not normalize Windows separators in non-ASCII filenames.
 # Include this one public asset explicitly without changing its runtime name.

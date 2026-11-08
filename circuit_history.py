@@ -100,10 +100,13 @@ def _event_calendar(row: dict, calendar: list[dict], scopes: set[tuple]) -> dict
     return matches[0] if len(matches) == 1 else None
 
 
-def circuit_history(results: pd.DataFrame | None, calendar: pd.DataFrame | None = None) -> list[dict]:
+def circuit_history(results: pd.DataFrame | None, calendar: pd.DataFrame | None = None,
+                    meta: dict | None = None) -> list[dict]:
     """Build cards and complete winner lists from published Race results only.
 
     Sprint-only venues remain in the layout catalog with no main-race winners.
+    An optional Game/SeasonLabel/League Name identity limits the visible history.
+    Calendar ambiguity is checked against the full source even when filtering.
     Dates are included only when recorded directly or matched unambiguously to
     the event calendar. Summary-only seasons do not supply invented GP winners.
     """
@@ -112,6 +115,12 @@ def circuit_history(results: pd.DataFrame | None, calendar: pd.DataFrame | None 
         return []
     all_rows = results.to_dict("records")
     scopes = {_scope(row) for row in all_rows}
+    if meta is not None:
+        # The selector uses exact source identities. Case/spacing variants must
+        # not combine histories from separate catalog entries.
+        columns = ('Game', 'SeasonLabel', 'League Name')
+        all_rows = [row for row in all_rows if all(str(row.get(column, '')) == str(meta.get(column, ''))
+                                                 for column in columns)]
     calendar_rows = calendar.to_dict("records") if calendar is not None else []
     cards: dict[str, dict] = {}
     resolved_keys: set[str] = set()
