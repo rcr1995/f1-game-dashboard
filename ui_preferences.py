@@ -1,7 +1,7 @@
 """Browser-local, non-sensitive display preferences shared by every page.
 
-The registered Streamlit v2 component only exchanges the allowlisted language
-code. It never receives session, identity, authentication, or workbook data.
+The registered Streamlit v2 components exchange allowlisted language codes and
+public league catalog keys. They never receive identity or authentication data.
 An initial browser read is acknowledged before any write is allowed, so a new
 Streamlit session cannot replace a remembered choice with the default language.
 """
@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 import logging
 from typing import Any
+from uuid import uuid4
 
 LANGUAGES = {"English": "en", "Português (Portugal)": "pt"}
 LANGUAGE_NAMES = tuple(LANGUAGES)
@@ -122,6 +123,93 @@ def mount_browser_language() -> None:
     if not st.session_state.get(READY_KEY) and not st.session_state.get("ui_language_pending_logged"):
         logging.getLogger(__name__).info("Language preference pending; rendering without blocking navigation")
         st.session_state["ui_language_pending_logged"] = True
+
+
+CIRCUITS_COMPONENT_KEY = "ui_browser_circuits"
+CIRCUITS_READY_KEY = "ui_circuits_ready"
+CIRCUITS_VALUE_KEY = "ui_circuits_selection"
+CIRCUITS_OPTIONS_KEY = "ui_circuits_options"
+CIRCUITS_WRITE_KEY = "ui_circuits_write"
+
+CIRCUITS_COMPONENT_JS = r"""
+const storageKey = "f1puskasleague.circuits.league.v1";
+const written = new Set();
+export default function ({data, setStateValue}) {
+    const valid = value => typeof value === "string" && data.options.includes(value);
+    // Only an explicit selection creates a write. A rerun in an older tab must
+    // not keep replacing a choice made more recently elsewhere in this browser.
+    if (data.write && valid(data.selection)) {
+        if (!written.has(data.write)) {
+            written.add(data.write);
+            try { window.localStorage.setItem(storageKey, data.selection); } catch (_) {}
+        }
+        return;
+    }
+    if (data.ready) return;
+    let selection = "all";
+    try {
+        const saved = window.localStorage.getItem(storageKey);
+        if (valid(saved)) selection = saved;
+    } catch (_) {}
+    // A fresh session reads before writing, including when storage is blocked.
+    setStateValue("preference", selection);
+}
+"""
+
+
+def hydrate_circuits(state: MutableMapping[str, Any], value: object) -> None:
+    """Restore once; a native selection always wins over delayed browser state."""
+    if state.get(CIRCUITS_READY_KEY):
+        return
+    options = state.get(CIRCUITS_OPTIONS_KEY, ("all",))
+    selected = value if isinstance(value, str) and value in options else "all"
+    state[CIRCUITS_VALUE_KEY] = selected
+    state["circuits_league"] = selected
+    state[CIRCUITS_READY_KEY] = True
+
+
+def _receive_circuits_preference() -> None:
+    import streamlit as st
+    result = st.session_state.get(CIRCUITS_COMPONENT_KEY, {})
+    if hasattr(result, "get") and result.get("preference") is not None:
+        hydrate_circuits(st.session_state, result["preference"])
+
+
+def select_circuits_from_widget() -> None:
+    """Commit an explicit selection separately from the disposable widget key."""
+    import streamlit as st
+    state = st.session_state
+    value = state.get("circuits_league")
+    if not isinstance(value, str) or value not in state.get(CIRCUITS_OPTIONS_KEY, ()):
+        return
+    state[CIRCUITS_VALUE_KEY] = value
+    state[CIRCUITS_READY_KEY] = True
+    state[CIRCUITS_WRITE_KEY] = uuid4().hex
+
+
+def mount_circuits_preference(options: list[str]) -> None:
+    """Restore before the selectbox is instantiated; never block page rendering."""
+    import streamlit as st
+    state = st.session_state
+    state[CIRCUITS_OPTIONS_KEY] = tuple(options)
+    selected = state.get(CIRCUITS_VALUE_KEY, state.get("circuits_league", "all"))
+    if not isinstance(selected, str) or selected not in options:
+        selected = "all"
+        # A removed catalog entry must never be sent back as a pending write.
+        state.pop(CIRCUITS_WRITE_KEY, None)
+    state[CIRCUITS_VALUE_KEY] = selected
+    state["circuits_league"] = selected
+    component = st.components.v2.component("f1_circuits_preference", js=CIRCUITS_COMPONENT_JS)
+    result = component(
+        key=CIRCUITS_COMPONENT_KEY,
+        data={"options": options, "ready": state.get(CIRCUITS_READY_KEY) is True,
+              "selection": selected, "write": state.get(CIRCUITS_WRITE_KEY)},
+        on_preference_change=_receive_circuits_preference,
+        height=0, width="stretch",
+    )
+    # A reconnect may replay a result without invoking its callback.
+    if hasattr(result, "get") and result.get("preference") is not None:
+        hydrate_circuits(state, result["preference"])
 
 
 HEADER_JS = r"""

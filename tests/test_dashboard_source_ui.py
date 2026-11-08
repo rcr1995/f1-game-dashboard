@@ -217,6 +217,43 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
         self.assert_rendered(app)
         self.assertEqual(app.selectbox(key='circuits_league').value, 'all')
 
+    def test_circuit_preference_restores_fresh_visits_and_survives_page_navigation(self):
+        import championship_circuit
+        import circuit_history_ui
+        import dashboard_core as core
+        import ui_preferences
+        catalog = championship_circuit.championship_catalog(core.load_standings_data(WORKBOOK))
+        saved = next(entry for entry in catalog if entry['meta']['SeasonLabel'] == '2026-T01')
+        factory = st.components.v2.component
+
+        def browser_response(name, *args, **kwargs):
+            if name == 'f1_circuits_preference':
+                return lambda **mounted: {'preference': saved['key']}
+            return factory(name, *args, **kwargs)
+
+        with (patch('streamlit.components.v2.component', side_effect=browser_response),
+              patch.object(circuit_history_ui, 'render', wraps=circuit_history_ui.render) as gallery):
+            app = self.app(view='circuits')
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='circuits_league').value, saved['key'])
+            australia = next(card for card in gallery.call_args.args[0] if card['gp_name'] == 'Australian GP')
+            self.assertEqual(australia['leaders'], [{'driver': 'Polingua', 'wins': 1}])
+            app.query_params['view'] = 'overview'
+            app.run()
+            self.assert_rendered(app)
+            self.assertEqual(app.session_state[ui_preferences.CIRCUITS_VALUE_KEY], saved['key'])
+            app.query_params['view'] = 'circuits'
+            app.run()
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='circuits_league').value, saved['key'])
+            # Explicit All beats a replay of the old browser response.
+            app.selectbox(key='circuits_league').set_value('all').run()
+            self.assert_rendered(app)
+            self.assertEqual(app.selectbox(key='circuits_league').value, 'all')
+            fresh = self.app(view='circuits')
+            self.assert_rendered(fresh)
+            self.assertEqual(fresh.selectbox(key='circuits_league').value, saved['key'])
+
     def test_empty_circuit_catalog_explains_why_no_cards_are_shown(self):
         import circuit_history
         import circuit_history_ui

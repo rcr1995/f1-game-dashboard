@@ -1375,14 +1375,14 @@ if view_page == "circuits":
     st.markdown("### " + ("Circuit Layouts" if lang == "en" else "Layouts dos Circuitos"))
     circuit_leagues = {entry['key']: entry for entry in championship_catalog(base_all)}
     circuit_options = ['all', *circuit_leagues]
-    if st.session_state.get('circuits_league', 'all') not in circuit_options:
-        st.session_state['circuits_league'] = 'all'
+    ui_preferences.mount_circuits_preference(circuit_options)
     circuit_selection = st.selectbox(
         'League / season' if lang == 'en' else 'Liga / época',
         circuit_options,
         format_func=lambda key: ('All leagues / seasons' if lang == 'en' else 'Todas as ligas / épocas')
             if key == 'all' else circuit_leagues[key]['label'],
         key='circuits_league',
+        on_change=ui_preferences.select_circuits_from_widget,
     )
     circuit_meta = circuit_leagues[circuit_selection]['meta'] if circuit_selection != 'all' else None
     circuit_scope = circuit_leagues[circuit_selection]['label'] if circuit_meta else None
