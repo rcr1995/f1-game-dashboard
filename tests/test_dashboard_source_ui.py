@@ -133,6 +133,48 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
             self.assertEqual(dashboard.call_args.kwargs['circuit_model'], current)
             self.assertEqual(build.call_count, 2)
 
+    def test_circuit_cards_and_history_use_the_full_published_source_in_both_languages(self):
+        import circuit_history
+        import circuit_history_ui
+        import dashboard_core as core
+        import dashboard_surface
+
+        expected = core.load_standings_data(WORKBOOK)
+        for language, lang, heading in (
+            ('English', 'en', 'Circuit Layouts'),
+            ('Português (Portugal)', 'pt', 'Layouts dos Circuitos'),
+        ):
+            with (
+                self.subTest(lang=lang),
+                patch.object(circuit_history, 'circuit_history', wraps=circuit_history.circuit_history) as history,
+                patch.object(circuit_history_ui, 'render', wraps=circuit_history_ui.render) as gallery,
+                patch.object(dashboard_surface, 'render', wraps=dashboard_surface.render) as surface,
+            ):
+                app = self.app(language, view='circuits')
+                self.assert_rendered(app)
+                self.assertTrue(any(heading in item.value for item in app.markdown))
+                history.assert_called_once()
+                pd.testing.assert_frame_equal(history.call_args.args[0], expected)
+                self.assertFalse(history.call_args.args[1].empty)
+                cards = gallery.call_args.args[0]
+                self.assertGreater(len(cards), 0)
+                self.assertEqual(len(cards), len({card['key'] for card in cards}))
+                pd.testing.assert_frame_equal(gallery.call_args.args[1], expected)
+                self.assertEqual(gallery.call_args.kwargs, {'lang': lang})
+                self.assertEqual(surface.call_args.kwargs, {'lang': lang, 'key': 'circuits_surface'})
+                self.assertIn('p-track-card', surface.call_args.args[0])
+                self.assertIn('<dialog', surface.call_args.args[0])
+
+    def test_empty_circuit_catalog_explains_why_no_cards_are_shown(self):
+        import circuit_history
+        import circuit_history_ui
+        with (patch.object(circuit_history, 'circuit_history', return_value=[]),
+              patch.object(circuit_history_ui, 'render') as gallery):
+            app = self.app(view='circuits')
+            self.assert_rendered(app)
+            self.assertIn('No GP winner data available.', self.messages(app.main, 'info'))
+            gallery.assert_not_called()
+
     def test_race_centre_points_follow_league_entity_and_detail_filters(self):
         with patch.object(season_insights, "render_season_insights", wraps=season_insights.render_season_insights) as render:
             app = self.app(view="race-centre")

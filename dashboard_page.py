@@ -6,16 +6,12 @@ import pandas as pd
 from pathlib import Path
 import importlib
 import dashboard_core as core
-from circuit_records import league_lap_records
 core = importlib.reload(core)
 from puskas_html import (
     render_puskas_dashboard,
-    CIRCUIT_SVG_MAP,
     GP_SHORT_TRACK,
     CIRCUIT_LAP_RECORDS_CSS,
-    circuit_lap_records_html,
     _tr_gp,
-    _flag_img,
     _team_badge_html
 )
 
@@ -1372,68 +1368,19 @@ if view_page == "race-centre":
         render_movers_chart(df_gp, entity_col=entity_col)
 
 if view_page == "circuits":
+    from circuit_history import circuit_history
+    from circuit_history_ui import render as render_circuit_history
 
-    circuits = core.circuits_top3(base_all)
-
-    if circuits.empty:
-
+    circuits = circuit_history(base_all, calendar_raw)
+    if not circuits:
         st.info(tr(lang, "no_gp_winners"))
-
     else:
-
-        # ── Circuit SVG Map Gallery ──
         st.markdown("### " + ("Circuit Layouts" if lang == "en" else "Layouts dos Circuitos"))
-
-        d_cir = base_all[(~base_all["IsSeasonFinal"]) & (base_all["Finish Pos"] == 1)].copy()
-        gps = sorted([g for g in base_all[~base_all["IsSeasonFinal"]]["GP Name"].unique() if g and g != "Season Final"])
-
-        cards_html = '<div class="p-tracks-grid">'
-        lap_records = league_lap_records(base_all)
-        for gp in gps:
-            svg_url = CIRCUIT_SVG_MAP.get(gp, "")
-            flag_html = _flag_img(gp, height=14)
-            short_name = tr_track(lang, gp)
-
-            # Wins calculation
-            gp_wins = d_cir[d_cir["GP Name"] == gp].groupby("Driver").size().reset_index(name="Wins")
-            t1_text = "-"
-            t2_text = ""
-            t3_text = ""
-            if not gp_wins.empty:
-                gp_wins = gp_wins.sort_values(["Wins", "Driver"], ascending=[False, True])
-
-                t1_driver = gp_wins.iloc[0]["Driver"]
-                t1_wins = gp_wins.iloc[0]["Wins"]
-                t1_text = f"🥇 {t1_driver} ({t1_wins} 🏆)"
-
-                if len(gp_wins) > 1:
-                    t2_driver = gp_wins.iloc[1]["Driver"]
-                    t2_wins = gp_wins.iloc[1]["Wins"]
-                    t2_text = f"🥈 {t2_driver} ({t2_wins} 🏆)"
-
-                if len(gp_wins) > 2:
-                    t3_driver = gp_wins.iloc[2]["Driver"]
-                    t3_wins = gp_wins.iloc[2]["Wins"]
-                    t3_text = f"🥉 {t3_driver} ({t3_wins} 🏆)"
-
-            svg_img_tag = f'<img class="p-track-image" src="{svg_url}" alt="{gp}" />' if svg_url else f'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#666;border:1px dashed #333;border-radius:6px;margin:0.8rem 0;font-size:0.8rem;">{tr(lang, "no_layout_outline")}</div>'
-
-            cards_html += f"""
-            <div class="p-track-card">
-                <div class="p-track-title">{tr_gp(lang, gp).upper()}</div>
-                <div class="p-track-country">{short_name} {flag_html}</div>
-                {svg_img_tag}
-                {circuit_lap_records_html(gp, lang=lang, league_records=lap_records)}
-                <div class="p-track-stats" style="flex-direction: column; align-items: center; gap: 2px; display: flex; border-top: 1px solid #222; margin-top: 0.6rem; padding-top: 0.5rem;">
-                    <div style="font-size:0.65rem; margin-bottom:4px; opacity:0.6; text-transform:uppercase; letter-spacing:0.05em; color:#aaa;">{tr(lang, "gp_winners")}</div>
-                    <div style="font-size:0.78rem; color:#ffd700; font-weight:700;">{t1_text}</div>
-                    {f'<div style="font-size:0.72rem; color:#e0e0e0; font-weight:600; margin-top:1px;">{t2_text}</div>' if t2_text else ''}
-                    {f'<div style="font-size:0.72rem; color:#cd7f32; font-weight:600; margin-top:1px;">{t3_text}</div>' if t3_text else ''}
-                </div>
-            </div>
-            """
-        cards_html += "</div>"
-        st.html(cards_html)
+        dashboard_surface.render(
+            render_circuit_history(circuits, base_all, lang=lang),
+            lang=lang,
+            key="circuits_surface",
+        )
 
 
 if view_page == "archive":

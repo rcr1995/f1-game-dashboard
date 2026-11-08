@@ -19,7 +19,7 @@ RUNTIME_MODULES = {
     "review_draft_recovery",
     "browser_download", "season_insights",
     "dashboard_surface", "workbook_upload", "calendar_review",
-    "circuit_records",
+    "circuit_records", "circuit_history", "circuit_history_ui",
     "championship_circuit", "championship_circuit_ui",
 }
 PUBLIC_ASSET_SOURCES = {
