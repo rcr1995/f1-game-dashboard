@@ -1370,20 +1370,44 @@ if view_page == "race-centre":
 if view_page == "circuits":
     from championship_circuit import championship_catalog
     from circuit_history import circuit_history
+    from circuit_explorer import filter_circuits
     from circuit_history_ui import render as render_circuit_history
 
     st.markdown("### " + ("Circuit Layouts" if lang == "en" else "Layouts dos Circuitos"))
     circuit_leagues = {entry['key']: entry for entry in championship_catalog(base_all)}
     circuit_options = ['all', *circuit_leagues]
     ui_preferences.mount_circuits_preference(circuit_options)
-    circuit_selection = st.selectbox(
-        'League / season' if lang == 'en' else 'Liga / época',
-        circuit_options,
-        format_func=lambda key: ('All leagues / seasons' if lang == 'en' else 'Todas as ligas / épocas')
-            if key == 'all' else circuit_leagues[key]['label'],
-        key='circuits_league',
-        on_change=ui_preferences.select_circuits_from_widget,
-    )
+    league_control, search_control, sort_control = st.columns([2.2, 2, 1.2])
+    with league_control:
+        circuit_selection = st.selectbox(
+            'League / season' if lang == 'en' else 'Liga / época',
+            circuit_options,
+            format_func=lambda key: ('All leagues / seasons' if lang == 'en' else 'Todas as ligas / épocas')
+                if key == 'all' else circuit_leagues[key]['label'],
+            key='circuits_league',
+            on_change=ui_preferences.select_circuits_from_widget,
+        )
+    with search_control:
+        circuit_query = st.text_input(
+            'Search circuits' if lang == 'en' else 'Pesquisar circuitos',
+            placeholder='Circuit or country' if lang == 'en' else 'Circuito ou país',
+            help=('Search Grand Prix, circuit or country names. Accents are optional.'
+                  if lang == 'en' else 'Pesquisa pelo nome do GP, circuito ou país. Os acentos são opcionais.'),
+            key='circuits_search',
+        )
+    with sort_control:
+        circuit_sort_labels = (
+            {'name': 'Grand Prix (A–Z)', 'country': 'Country (A–Z)', 'races': 'Most races'}
+            if lang == 'en' else
+            {'name': 'Grande Prémio (A–Z)', 'country': 'País (A–Z)', 'races': 'Mais corridas'}
+        )
+        if st.session_state.get('circuits_sort', 'name') not in circuit_sort_labels:
+            st.session_state['circuits_sort'] = 'name'
+        circuit_sort = st.selectbox(
+            'Sort by' if lang == 'en' else 'Ordenar por',
+            list(circuit_sort_labels), format_func=circuit_sort_labels.get,
+            key='circuits_sort',
+        )
     circuit_meta = circuit_leagues[circuit_selection]['meta'] if circuit_selection != 'all' else None
     circuit_scope = circuit_leagues[circuit_selection]['label'] if circuit_meta else None
     circuit_results = base_all
@@ -1392,16 +1416,23 @@ if view_page == "circuits":
             circuit_results = circuit_results[circuit_results[column] == circuit_meta[column]]
     # Keep the complete source for safe calendar provenance, even for one league.
     circuits = circuit_history(base_all, calendar_raw, **({'meta': circuit_meta} if circuit_meta else {}))
+    visible_circuits = filter_circuits(circuits, query=circuit_query, sort=circuit_sort, lang=lang)
     if not circuits:
         st.info(("No race-by-race circuit history is available for this league/season."
                  if lang == 'en' else "Não existe histórico de circuitos corrida a corrida para esta liga/época.")
                 if circuit_meta else tr(lang, "no_gp_winners"))
     else:
-        dashboard_surface.render(
-            render_circuit_history(circuits, circuit_results, lang=lang, scope_label=circuit_scope),
-            lang=lang,
-            key="circuits_surface",
-        )
+        st.caption((f'{len(visible_circuits)} of {len(circuits)} circuits' if lang == 'en' else
+                    f'{len(visible_circuits)} de {len(circuits)} circuitos'))
+        if not visible_circuits:
+            st.info('No circuits match your search. Try another name or country.' if lang == 'en' else
+                    'Nenhum circuito corresponde à pesquisa. Experimenta outro nome ou país.')
+        else:
+            dashboard_surface.render(
+                render_circuit_history(visible_circuits, circuit_results, lang=lang, scope_label=circuit_scope),
+                lang=lang,
+                key="circuits_surface",
+            )
 
 
 if view_page == "archive":

@@ -217,6 +217,45 @@ class DashboardWorkbookSourceTests(unittest.TestCase):
         self.assert_rendered(app)
         self.assertEqual(app.selectbox(key='circuits_league').value, 'all')
 
+    def test_circuit_search_and_sort_combine_with_league_scope_and_head_to_head(self):
+        import championship_circuit
+        import circuit_history_ui
+        import dashboard_core as core
+        catalog = championship_circuit.championship_catalog(core.load_standings_data(WORKBOOK))
+        selected = next(entry for entry in catalog if entry['meta']['SeasonLabel'] == '2026-T01')
+        with patch.object(circuit_history_ui, 'render', wraps=circuit_history_ui.render) as gallery:
+            app = self.app(view='circuits')
+            self.assert_rendered(app)
+            app.text_input(key='circuits_search').set_value('Brasil').run()
+            self.assert_rendered(app)
+            self.assertEqual([card['gp_name'] for card in gallery.call_args.args[0]], ['São Paulo GP'])
+            app.selectbox(key='circuits_league').set_value(selected['key']).run()
+            self.assert_rendered(app)
+            brazil = gallery.call_args.args[0][0]
+            self.assertEqual(brazil['race_count'], 1)
+            polingua = next(row for row in brazil['head_to_head'] if row['driver'] == 'Polingua')
+            self.assertEqual(polingua['wins'], 1)
+            self.assertEqual(polingua['podiums'], 1)
+            self.assertEqual(gallery.call_args.kwargs['scope_label'], selected['label'])
+            app.selectbox(key='circuits_league').set_value('all').run()
+            app.text_input(key='circuits_search').set_value('United States').run()
+            app.selectbox(key='circuits_sort').set_value('races').run()
+            self.assert_rendered(app)
+            cards = gallery.call_args.args[0]
+            self.assertEqual([card['gp_name'] for card in cards],
+                             ['Miami GP', 'United States GP', 'Las Vegas GP'])
+            app.selectbox(key='circuits_sort').set_value('country').run()
+            self.assert_rendered(app)
+            self.assertEqual([card['gp_name'] for card in gallery.call_args.args[0]],
+                             ['Las Vegas GP', 'Miami GP', 'United States GP'])
+            app.text_input(key='circuits_search').set_value('no such circuit').run()
+            self.assert_rendered(app)
+            self.assertIn('No circuits match your search. Try another name or country.',
+                          self.messages(app.main, 'info'))
+            app.text_input(key='circuits_search').set_value('').run()
+            self.assert_rendered(app)
+            self.assertEqual(len(gallery.call_args.args[0]), 26)
+
     def test_circuit_preference_restores_fresh_visits_and_survives_page_navigation(self):
         import championship_circuit
         import circuit_history_ui

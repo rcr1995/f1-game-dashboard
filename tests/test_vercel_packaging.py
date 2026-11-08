@@ -20,6 +20,7 @@ RUNTIME_MODULES = {
     "browser_download", "season_insights",
     "dashboard_surface", "workbook_upload", "calendar_review",
     "circuit_records", "circuit_history", "circuit_history_ui",
+    "circuit_explorer",
     "championship_circuit", "championship_circuit_ui",
 }
 PUBLIC_ASSET_SOURCES = {

@@ -16,6 +16,7 @@
 !circuit_records.py
 !circuit_history.py
 !circuit_history_ui.py
+!circuit_explorer.py
 !league_config.py
 !league_runtime.py
 !league_workbook.py
